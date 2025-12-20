@@ -1,0 +1,62 @@
+\documentclass[11pt,a4paper]{report}
+% Using report class to support \chapter command and automatic new pages
+
+\input{preamble}
+
+\title{Your Project Title}
+\author{Your Name}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+% Copyright page
+\newpage
+\thispagestyle{empty}
+\vspace*{\fill}
+\begin{center}
+\textcopyright\ \the\year\ Your Name. All rights reserved.\\[1em]
+% Optional: Uncomment and customize for academic submissions
+% This work is submitted in partial fulfillment of the requirements\\
+% for the degree of Doctor of Philosophy.
+\end{center}
+\vspace*{\fill}
+\newpage
+
+\begin{abstract}
+\input{chapters/abstract}
+\end{abstract}
+
+\tableofcontents
+\listoffigures
+\listoftables
+
+% Main content
+% Chapters are auto-generated from content/chapter*/README.md via build script
+% The build script converts Markdown to LaTeX and places them in chapters/
+% Update this section to include all your chapters
+
+\input{chapters/chapter1/README}
+\newpage
+
+% Add more chapters as needed:
+% \input{chapters/chapter2/README}
+% \newpage
+% \input{chapters/chapter3/README}
+% \newpage
+
+% Optional: Add watermark for "In Progress" chapters
+% \inprogress
+% \input{chapters/chapter4/README}
+% \newpage
+
+% Bibliography (if you have references)
+% \bibliographystyle{plain}
+% \bibliography{bibliography}
+
+% Appendices (optional)
+% \appendix
+% \input{chapters/appendix}
+
+\end{document}

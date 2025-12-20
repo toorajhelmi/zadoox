@@ -1,0 +1,157 @@
+% LaTeX Preamble for Zadoox
+% Packages and configuration
+
+% Document encoding
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+
+% Math packages
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{mathtools}
+
+% Graphics and figures
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{subcaption}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows,positioning,automata}
+
+% Tables
+\usepackage{booktabs}
+
+% Code listings
+\usepackage{listings}
+\usepackage{xcolor}
+
+% Define code style
+\lstset{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    stringstyle=\color{red},
+    commentstyle=\color{green!60!black},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    stepnumber=1,
+    numbersep=5pt,
+    frame=single,
+    breaklines=true,
+    breakatwhitespace=true,
+    tabsize=4
+}
+
+% Hyperlinks
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan,
+    citecolor=green
+}
+
+% Algorithms (if needed)
+% Uncomment and install with: sudo tlmgr install algorithms algorithmicx
+% \usepackage{algorithm}
+% \usepackage{algorithmic}
+
+% Bibliography
+\usepackage{natbib}
+
+% Custom commands
+% Add your custom commands here, for example:
+% \newcommand{\myterm}{\textsc{MyTerm}}
+
+% Theorem environments
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{axiom}{Axiom}[section]
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}[section]
+
+% Spacing
+\usepackage{setspace}
+\onehalfspacing
+
+% Page margins
+\usepackage[margin=1in]{geometry}
+
+% Headers and footers
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{} % Clear all headers and footers
+\fancyhead[LE]{\leftmark} % Chapter name on left (even pages)
+\fancyhead[RO]{\leftmark} % Chapter name on right (odd pages)
+\fancyfoot[C]{\thepage} % Page number centered
+\renewcommand{\headrulewidth}{0.4pt} % Header rule
+\renewcommand{\footrulewidth}{0pt} % No footer rule
+
+% Plain style for title page and chapter starts
+\fancypagestyle{plain}{%
+  \fancyhf{}%
+  \fancyfoot[C]{\thepage}%
+  \renewcommand{\headrulewidth}{0pt}%
+}
+
+% Watermark support for "In Progress" chapters
+\usepackage{eso-pic}
+
+% Command to add "IN PROGRESS" watermark
+% Usage: \inprogress (before a chapter) - applies to all subsequent pages
+% Note: Remove watermark with \ClearShipoutPictureBG
+\newcommand{\inprogress}{%
+  \AddToShipoutPictureBG{%
+    \AtPageCenter{%
+      \rotatebox{45}{%
+        \makebox[0pt][c]{%
+          \textcolor{red!30!white}{\fontsize{200}{200}\selectfont IN PROGRESS}%
+        }%
+      }%
+    }%
+    % Add second instance offset to ensure full coverage
+    \AtPageCenter{%
+      \rotatebox{45}{%
+        \makebox[0pt][c]{%
+          \raisebox{400pt}{%
+            \textcolor{red!30!white}{\fontsize{200}{200}\selectfont IN PROGRESS}%
+          }%
+        }%
+      }%
+    }%
+    \AtPageCenter{%
+      \rotatebox{45}{%
+        \makebox[0pt][c]{%
+          \raisebox{-400pt}{%
+            \textcolor{red!30!white}{\fontsize{200}{200}\selectfont IN PROGRESS}%
+          }%
+        }%
+      }%
+    }%
+  }%
+}
+
+% Command to remove watermark (if needed between chapters)
+\newcommand{\clearwatermark}{%
+  \ClearShipoutPictureBG%
+}
+
+% Alternative: lighter watermark
+\newcommand{\inprogresslight}{%
+  \AddToShipoutPictureBG{%
+    \AtPageLowerLeft{%
+      \rotatebox{45}{%
+        \makebox[\paperwidth]{%
+          \textcolor{gray!20!white}{\fontsize{60}{60}\selectfont DRAFT}%
+        }%
+      }%
+    }%
+  }%
+}
