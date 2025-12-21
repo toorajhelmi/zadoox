@@ -27,9 +27,15 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy built files and package.json
+# Copy built backend
 COPY --from=builder /app/packages/backend/dist ./dist
-COPY --from=builder /app/packages/backend/package.json ./
+COPY --from=builder /app/packages/backend/package.json ./package.json
+
+# Copy built shared package (needed at runtime)
+COPY --from=builder /app/packages/shared/dist ./node_modules/@zadoox/shared/dist
+COPY --from=builder /app/packages/shared/package.json ./node_modules/@zadoox/shared/package.json
+
+# Copy production node_modules
 COPY --from=builder /app/node_modules ./node_modules
 
 EXPOSE 3001
