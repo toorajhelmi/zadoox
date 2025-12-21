@@ -12,3 +12,8 @@ healthcheckTimeout = 300
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 10
 
+# Note: If Railway still fails, configure these in Railway dashboard:
+# - Root Directory: code/packages/backend
+# - Build Command: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @zadoox/shared build && pnpm --filter backend build
+# - Start Command: node dist/server.js
+
