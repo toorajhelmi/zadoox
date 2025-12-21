@@ -1,0 +1,86 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'code/supabase/migrations/**'
+      - 'code/packages/backend/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  deploy-migrations:
+    name: Deploy Database Migrations
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: ./code
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        working-directory: ./code
+        run: pnpm --filter backend db:migrate
+
+  deploy-backend:
+    name: Deploy Backend API
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    needs: deploy-migrations # Run migrations first
+    # NOTE: This job will be enabled when backend API is ready (Phase 3)
+    # Before using, ensure:
+    # 1. Railway project is created
+    # 2. RAILWAY_TOKEN secret is added to GitHub Secrets
+    # 3. Backend package is built and ready for deployment
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: ./code
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build backend
+        working-directory: ./code
+        run: pnpm build --filter backend
+
+      - name: Deploy to Railway
+        if: ${{ secrets.RAILWAY_TOKEN != '' }}
+        # NOTE: Railway deployment action will be configured when backend is ready
+        run: echo "Backend deployment to Railway - will be configured in Phase 3"
+        # uses: bervProject/railway-deploy@v0.2.5
+        with:
+          railway_token: ${{ secrets.RAILWAY_TOKEN }}
+          service: backend
+          detach: true
+        env:
+          NODE_ENV: production
+
