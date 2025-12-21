@@ -77,6 +77,10 @@ jobs:
         working-directory: ./code
         run: pnpm install --no-frozen-lockfile
 
+      - name: Build shared package
+        working-directory: ./code
+        run: pnpm --filter @zadoox/shared build
+
       - name: Build backend
         working-directory: ./code
         run: pnpm --filter backend build

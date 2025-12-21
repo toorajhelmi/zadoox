@@ -15,7 +15,7 @@ The API documentation is available in OpenAPI format:
 # Install dependencies
 pnpm install
 
-# Set up environment variables (see SETUP.md)
+# Set up environment variables (see `code/implementation/BACKEND_SETUP.md`)
 cp .env.example .env
 
 # Run database migrations
@@ -35,7 +35,7 @@ All API endpoints (except `/health` and `/docs`) require authentication via Bear
 Authorization: Bearer <your-jwt-token>
 ```
 
-Get a JWT token from Supabase Auth (see `API_TESTING.md` for details).
+Get a JWT token from Supabase Auth (see `code/implementation/API_TESTING.md` for details).
 
 ## Endpoints
 
@@ -55,7 +55,7 @@ Get a JWT token from Supabase Auth (see `API_TESTING.md` for details).
 
 ## Testing
 
-See `API_TESTING.md` for detailed testing instructions and curl examples.
+See `code/implementation/API_TESTING.md` for detailed testing instructions and curl examples.
 
 ## Development
 
@@ -81,7 +81,7 @@ pnpm build
 
 ## More Information
 
-- Setup instructions: `SETUP.md`
-- API testing guide: `API_TESTING.md`
+- Setup instructions: `code/implementation/BACKEND_SETUP.md`
+- API testing guide: `code/implementation/API_TESTING.md`
 - Database migrations: `code/supabase/README.md`
 

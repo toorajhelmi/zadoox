@@ -57,7 +57,7 @@ Run the SQL migration files in order using the Supabase SQL Editor:
    - `src/db/migrations/002_rls_policies.sql`
    - `src/db/migrations/003_create_profile_trigger.sql`
 
-See `src/db/migrations/README.md` for more details.
+See `code/supabase/README.md` for more details.
 
 ### 2. Verify Tables
 

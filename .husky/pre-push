@@ -1,0 +1,20 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Pre-push hook to run type-check before allowing push
+cd "$(git rev-parse --show-toplevel)/code" || exit 1
+
+echo "🔍 Running type-check before push..."
+
+if ! command -v pnpm &> /dev/null; then
+  echo "❌ Error: pnpm is not installed"
+  exit 1
+fi
+
+if pnpm type-check; then
+  echo "✅ Type-check passed! Proceeding with push..."
+else
+  echo "❌ Type-check failed! Push aborted."
+  exit 1
+fi
+
