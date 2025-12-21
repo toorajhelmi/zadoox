@@ -203,23 +203,23 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 ### Phase 4: Web App - Setup & Authentication ✅
 **Status**: In Progress
 
-- [ ] Initialize Next.js app
-- [ ] Set up Tailwind CSS
-- [ ] Configure Supabase client (client-side)
-- [ ] Authentication pages:
-  - [ ] Login page
-  - [ ] Signup page
-  - [ ] Auth state management
-- [ ] Protected route middleware
-- [ ] User session handling
+- [x] Initialize Next.js app
+- [x] Set up Tailwind CSS
+- [x] Configure Supabase client (client-side and server-side)
+- [x] Authentication pages:
+  - [x] Login page
+  - [x] Signup page
+  - [x] Auth state management (useAuth hook)
+- [x] Protected route middleware
+- [x] User session handling
 - [ ] Set up web app deployment (Vercel GitHub integration)
 
 **Deliverables**:
-- Next.js app running
-- Authentication working
-- Users can sign up/login
-- Protected routes working
-- Web app deployment configured (Vercel)
+- ✅ Next.js app running (already initialized)
+- ✅ Authentication working (login/signup pages, auth state management)
+- ✅ Users can sign up/login (auth pages implemented)
+- ✅ Protected routes working (middleware + server-side checks)
+- ⏳ Web app deployment configured (Vercel) - TODO
 
 ---
 
