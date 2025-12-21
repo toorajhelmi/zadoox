@@ -11,6 +11,12 @@ import {
   ApiResponse,
   Document,
 } from '@zadoox/shared';
+import {
+  createDocumentSchema,
+  updateDocumentSchema,
+  documentIdSchema,
+  projectIdParamSchema,
+} from '../../validation/schemas.js';
 
 export async function documentRoutes(fastify: FastifyInstance) {
   // All routes require authentication
@@ -24,7 +30,21 @@ export async function documentRoutes(fastify: FastifyInstance) {
     '/projects/:projectId/documents',
     async (request: AuthenticatedRequest, reply) => {
       try {
-        const { projectId } = request.params as { projectId: string };
+        // Validate route parameters
+        const paramValidation = projectIdParamSchema.safeParse(request.params);
+        if (!paramValidation.success) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid project ID',
+              details: paramValidation.error.errors,
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        const { projectId } = paramValidation.data;
         const documentService = new DocumentService(request.supabase!);
         const documents = await documentService.listDocumentsByProject(
           projectId
@@ -57,7 +77,21 @@ export async function documentRoutes(fastify: FastifyInstance) {
     '/documents/:id',
     async (request: AuthenticatedRequest, reply) => {
       try {
-        const { id } = request.params as { id: string };
+        // Validate route parameters
+        const paramValidation = documentIdSchema.safeParse(request.params);
+        if (!paramValidation.success) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid document ID',
+              details: paramValidation.error.errors,
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        const { id } = paramValidation.data;
         const documentService = new DocumentService(request.supabase!);
         const document = await documentService.getDocumentById(id);
 
@@ -87,7 +121,21 @@ export async function documentRoutes(fastify: FastifyInstance) {
    */
   fastify.post('/documents', async (request: AuthenticatedRequest, reply) => {
     try {
-      const body = request.body as CreateDocumentInput;
+      // Validate request body
+      const validationResult = createDocumentSchema.safeParse(request.body);
+      if (!validationResult.success) {
+        const response: ApiResponse<null> = {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid request data',
+            details: validationResult.error.errors,
+          },
+        };
+        return reply.status(400).send(response);
+      }
+
+      const body = validationResult.data as CreateDocumentInput;
       const documentService = new DocumentService(request.supabase!);
       const document = await documentService.createDocument(
         body,
@@ -129,8 +177,36 @@ export async function documentRoutes(fastify: FastifyInstance) {
     '/documents/:id',
     async (request: AuthenticatedRequest, reply) => {
       try {
-        const { id } = request.params as { id: string };
-        const body = request.body as UpdateDocumentInput;
+        // Validate route parameters
+        const paramValidation = documentIdSchema.safeParse(request.params);
+        if (!paramValidation.success) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid document ID',
+              details: paramValidation.error.errors,
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        // Validate request body
+        const bodyValidation = updateDocumentSchema.safeParse(request.body);
+        if (!bodyValidation.success) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid request data',
+              details: bodyValidation.error.errors,
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        const { id } = paramValidation.data;
+        const body = bodyValidation.data as UpdateDocumentInput;
         const documentService = new DocumentService(request.supabase!);
         const document = await documentService.updateDocument(id, body);
 
@@ -170,7 +246,21 @@ export async function documentRoutes(fastify: FastifyInstance) {
     '/documents/:id',
     async (request: AuthenticatedRequest, reply) => {
       try {
-        const { id } = request.params as { id: string };
+        // Validate route parameters
+        const paramValidation = documentIdSchema.safeParse(request.params);
+        if (!paramValidation.success) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid document ID',
+              details: paramValidation.error.errors,
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        const { id } = paramValidation.data;
         const documentService = new DocumentService(request.supabase!);
         await documentService.deleteDocument(id);
 

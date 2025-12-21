@@ -11,6 +11,11 @@ import {
   ApiResponse,
   Project,
 } from '@zadoox/shared';
+import {
+  createProjectSchema,
+  updateProjectSchema,
+  projectIdSchema,
+} from '../../validation/schemas.js';
 
 export async function projectRoutes(fastify: FastifyInstance) {
   // All routes require authentication
@@ -51,7 +56,21 @@ export async function projectRoutes(fastify: FastifyInstance) {
     '/projects/:id',
     async (request: AuthenticatedRequest, reply) => {
       try {
-        const { id } = request.params as { id: string };
+        // Validate route parameters
+        const paramValidation = projectIdSchema.safeParse(request.params);
+        if (!paramValidation.success) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid project ID',
+              details: paramValidation.error.errors,
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        const { id } = paramValidation.data;
         const projectService = new ProjectService(request.supabase!);
         const project = await projectService.getProjectById(
           id,
@@ -84,7 +103,21 @@ export async function projectRoutes(fastify: FastifyInstance) {
    */
   fastify.post('/projects', async (request: AuthenticatedRequest, reply) => {
     try {
-      const body = request.body as CreateProjectInput;
+      // Validate request body
+      const validationResult = createProjectSchema.safeParse(request.body);
+      if (!validationResult.success) {
+        const response: ApiResponse<null> = {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid request data',
+            details: validationResult.error.errors,
+          },
+        };
+        return reply.status(400).send(response);
+      }
+
+      const body = validationResult.data as CreateProjectInput;
       const projectService = new ProjectService(request.supabase!);
       const project = await projectService.createProject(
         body,
@@ -118,8 +151,36 @@ export async function projectRoutes(fastify: FastifyInstance) {
     '/projects/:id',
     async (request: AuthenticatedRequest, reply) => {
       try {
-        const { id } = request.params as { id: string };
-        const body = request.body as UpdateProjectInput;
+        // Validate route parameters
+        const paramValidation = projectIdSchema.safeParse(request.params);
+        if (!paramValidation.success) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid project ID',
+              details: paramValidation.error.errors,
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        // Validate request body
+        const bodyValidation = updateProjectSchema.safeParse(request.body);
+        if (!bodyValidation.success) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid request data',
+              details: bodyValidation.error.errors,
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        const { id } = paramValidation.data;
+        const body = bodyValidation.data as UpdateProjectInput;
         const projectService = new ProjectService(request.supabase!);
         const project = await projectService.updateProject(
           id,
@@ -163,7 +224,21 @@ export async function projectRoutes(fastify: FastifyInstance) {
     '/projects/:id',
     async (request: AuthenticatedRequest, reply) => {
       try {
-        const { id } = request.params as { id: string };
+        // Validate route parameters
+        const paramValidation = projectIdSchema.safeParse(request.params);
+        if (!paramValidation.success) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid project ID',
+              details: paramValidation.error.errors,
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        const { id } = paramValidation.data;
         const projectService = new ProjectService(request.supabase!);
         await projectService.deleteProject(id, request.userId!);
 
