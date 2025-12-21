@@ -34,6 +34,10 @@ jobs:
         working-directory: ./code
         run: pnpm install --no-frozen-lockfile
 
+      - name: Build shared package
+        working-directory: ./code
+        run: pnpm --filter @zadoox/shared build
+
       - name: Type check
         working-directory: ./code
         run: pnpm type-check
