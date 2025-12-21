@@ -135,7 +135,7 @@ describe('DocumentService', () => {
         projectId: 'project-id',
         title: 'Test',
         metadata: { type: 'invalid-type' },
-      } as CreateDocumentInput;
+      } as unknown as CreateDocumentInput;
 
       mockQueryBuilder.single.mockResolvedValue({
         data: { id: 'project-id' },

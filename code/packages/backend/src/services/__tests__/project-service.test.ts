@@ -126,7 +126,7 @@ describe('ProjectService', () => {
       const input = {
         name: 'Test',
         type: 'invalid-type',
-      } as CreateProjectInput;
+      } as unknown as CreateProjectInput;
 
       await expect(service.createProject(input, 'user-id')).rejects.toThrow(
         'Invalid project type'

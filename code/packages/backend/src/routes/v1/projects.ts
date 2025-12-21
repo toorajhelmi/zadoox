@@ -28,7 +28,7 @@ export async function projectRoutes(fastify: FastifyInstance) {
       const response: ApiResponse<Project[]> = {
         success: true,
         data: projects,
-      };
+      } as ApiResponse<Project[]>;
       return reply.send(response);
     } catch (error: any) {
       fastify.log.error(error);
