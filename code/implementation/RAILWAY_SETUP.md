@@ -7,6 +7,12 @@ This guide explains how to set up Railway deployment for the Zadoox backend API.
 1. Railway account (sign up at https://railway.app)
 2. GitHub repository connected to Railway
 3. Backend code ready (Phase 3 ✅)
+4. Railway CLI installed (optional, for local management)
+   ```bash
+   curl -fsSL https://railway.app/install.sh | sh
+   railway login  # Authenticate via browser
+   ```
+   See `code/scripts/RAILWAY_CLI_SETUP.md` for CLI usage guide
 
 ## Setup Steps
 
