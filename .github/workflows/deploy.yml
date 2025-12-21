@@ -84,17 +84,17 @@ jobs:
       - name: Deploy to Railway
         # NOTE: Requires Railway project setup and RAILWAY_TOKEN secret
         # See code/packages/backend/RAILWAY_SETUP.md for setup instructions
-        # Railway deployment will run if RAILWAY_TOKEN secret is configured
-        # If not configured, this step will be skipped (not an error)
+        # This step will be skipped if RAILWAY_TOKEN is not configured
         continue-on-error: true
+        id: railway-deploy
         uses: bervProject/railway-deploy@v0.2.5
         with:
-          railway_token: ${{ secrets.RAILWAY_TOKEN }}
+          railway_token: ${{ secrets.RAILWAY_TOKEN || '' }}
           service: backend
           detach: true
       
-      - name: Railway deployment info
-        if: failure()
+      - name: Railway deployment status
+        if: steps.railway-deploy.outcome == 'failure' || steps.railway-deploy.outcome == 'skipped'
         run: |
           echo "ℹ️ Railway deployment skipped - RAILWAY_TOKEN secret may not be configured"
           echo "See code/packages/backend/RAILWAY_SETUP.md for setup instructions"
