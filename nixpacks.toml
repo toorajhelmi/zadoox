@@ -1,0 +1,12 @@
+[phases.setup]
+nixPkgs = ["nodejs-20_x", "pnpm-8.12.0"]
+
+[phases.install]
+cmds = ["cd code && pnpm install --frozen-lockfile"]
+
+[phases.build]
+cmds = ["cd code && pnpm --filter @zadoox/shared build && pnpm --filter backend build"]
+
+[variables]
+NODE_ENV = "production"
+
