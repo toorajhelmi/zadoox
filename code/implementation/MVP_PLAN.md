@@ -200,29 +200,7 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 
 ---
 
-### Phase 4: Backend API - AI Service ✅
-**Status**: Not Started
-
-- [ ] OpenAI integration
-- [ ] AI Service structure:
-  - [ ] Prompt management
-  - [ ] Context building
-  - [ ] Response caching (basic)
-- [ ] AI endpoints:
-  - [ ] Suggest text completion
-  - [ ] Expand text
-  - [ ] Improve text
-- [ ] Rate limiting
-- [ ] Error handling
-
-**Deliverables**:
-- AI service working
-- OpenAI integration functional
-- AI endpoints tested
-
----
-
-### Phase 5: Web App - Setup & Authentication ✅
+### Phase 4: Web App - Setup & Authentication ✅
 **Status**: Not Started
 
 - [ ] Initialize Next.js app
@@ -242,6 +220,24 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 - Users can sign up/login
 - Protected routes working
 - Web app deployment configured (Vercel)
+
+---
+
+### Phase 5: Web App - Project Dashboard ✅
+**Status**: Not Started
+
+- [ ] Dashboard layout
+- [ ] Project list view
+- [ ] Create project modal/form
+- [ ] Project card component
+- [ ] Project settings page
+- [ ] Navigation structure
+- [ ] API integration (fetch projects)
+
+**Deliverables**:
+- Dashboard page working
+- Can create/view projects
+- Navigation functional
 
 ---
 
@@ -269,21 +265,27 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 
 ---
 
-### Phase 7: Web App - Project Dashboard ✅
+### Phase 7: Backend API - AI Service ✅
 **Status**: Not Started
 
-- [ ] Dashboard layout
-- [ ] Project list view
-- [ ] Create project modal/form
-- [ ] Project card component
-- [ ] Project settings page
-- [ ] Navigation structure
-- [ ] API integration (fetch projects)
+- [ ] Extended Markdown parser
+- [ ] LaTeX converter:
+  - [ ] Markdown → LaTeX conversion
+  - [ ] Placeholder replacement ({REF}, {CH})
+  - [ ] Math support
+  - [ ] Image handling
+- [ ] PDF generation:
+  - [ ] LaTeX compilation integration
+  - [ ] Template support (basic)
+  - [ ] Error handling
+- [ ] Export API endpoint
+- [ ] File storage integration (Supabase Storage)
 
 **Deliverables**:
-- Dashboard page working
-- Can create/view projects
-- Navigation functional
+- Export API working
+- Can convert Extended Markdown to LaTeX
+- Can generate PDF from LaTeX
+- Downloads working
 
 ---
 
@@ -463,7 +465,7 @@ code/
 │   │   │   └── constants/
 │   │   └── package.json
 │   │
-│   ├── backend/              # Phase 3, 4, 6
+│   ├── backend/              # Phase 3, 6, 7
 │   │   ├── src/
 │   │   │   ├── server.ts
 │   │   │   ├── api/
@@ -472,7 +474,7 @@ code/
 │   │   │   └── config/
 │   │   └── package.json
 │   │
-│   └── web/                  # Phase 7-12
+│   └── web/                  # Phase 4-5, 9-12
 │       ├── app/
 │       ├── components/
 │       ├── lib/
@@ -516,13 +518,13 @@ Phase 2 (Database) ──┐
     ↓                │
 Phase 3 (Backend Core) ──┐
     ↓                    │
-Phase 4 (AI)             │
-    ↓                    │
 Phase 13 (API Client) ───┤
     ↓                    │
-Phase 5 (Web Setup) ─────┤
+Phase 4 (Web Setup) ─────┤
     ↓                    │
-Phase 7 (Dashboard) ─────┤
+Phase 5 (Dashboard) ─────┤
+    ↓                    │
+Phase 7 (AI)             │
     ↓                    │
 Phase 8 (Editor Logic)    │
     ↓                    │
