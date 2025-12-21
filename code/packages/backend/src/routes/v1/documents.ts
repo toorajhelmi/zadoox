@@ -17,6 +17,7 @@ import {
   documentIdSchema,
   projectIdParamSchema,
 } from '../../validation/schemas.js';
+import { schemas, security } from '../../config/schemas.js';
 
 export async function documentRoutes(fastify: FastifyInstance) {
   // All routes require authentication
@@ -28,6 +29,35 @@ export async function documentRoutes(fastify: FastifyInstance) {
    */
   fastify.get(
     '/projects/:projectId/documents',
+    {
+      schema: {
+        description: 'List all documents for a project',
+        tags: ['Documents'],
+        security,
+        params: {
+          type: 'object',
+          properties: {
+            projectId: { type: 'string', format: 'uuid' },
+          },
+          required: ['projectId'],
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              data: {
+                type: 'array',
+                items: schemas.Document,
+              },
+            },
+            required: ['success'],
+          },
+          400: schemas.ApiResponse,
+          500: schemas.ApiResponse,
+        },
+      },
+    },
     async (request: AuthenticatedRequest, reply) => {
       try {
         // Validate route parameters
@@ -75,6 +105,33 @@ export async function documentRoutes(fastify: FastifyInstance) {
    */
   fastify.get(
     '/documents/:id',
+    {
+      schema: {
+        description: 'Get a single document by ID',
+        tags: ['Documents'],
+        security,
+        params: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+          },
+          required: ['id'],
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              data: schemas.Document,
+            },
+            required: ['success'],
+          },
+          400: schemas.ApiResponse,
+          404: schemas.ApiResponse,
+          500: schemas.ApiResponse,
+        },
+      },
+    },
     async (request: AuthenticatedRequest, reply) => {
       try {
         // Validate route parameters
@@ -119,7 +176,30 @@ export async function documentRoutes(fastify: FastifyInstance) {
    * POST /api/v1/documents
    * Create a new document
    */
-  fastify.post('/documents', async (request: AuthenticatedRequest, reply) => {
+  fastify.post(
+    '/documents',
+    {
+      schema: {
+        description: 'Create a new document',
+        tags: ['Documents'],
+        security,
+        body: schemas.CreateDocumentInput,
+        response: {
+          201: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              data: schemas.Document,
+            },
+            required: ['success'],
+          },
+          400: schemas.ApiResponse,
+          404: schemas.ApiResponse,
+          500: schemas.ApiResponse,
+        },
+      },
+    },
+    async (request: AuthenticatedRequest, reply) => {
     try {
       // Validate request body
       const validationResult = createDocumentSchema.safeParse(request.body);
@@ -175,6 +255,34 @@ export async function documentRoutes(fastify: FastifyInstance) {
    */
   fastify.put(
     '/documents/:id',
+    {
+      schema: {
+        description: 'Update a document',
+        tags: ['Documents'],
+        security,
+        params: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+          },
+          required: ['id'],
+        },
+        body: schemas.UpdateDocumentInput,
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              data: schemas.Document,
+            },
+            required: ['success'],
+          },
+          400: schemas.ApiResponse,
+          404: schemas.ApiResponse,
+          500: schemas.ApiResponse,
+        },
+      },
+    },
     async (request: AuthenticatedRequest, reply) => {
       try {
         // Validate route parameters
@@ -244,6 +352,32 @@ export async function documentRoutes(fastify: FastifyInstance) {
    */
   fastify.delete(
     '/documents/:id',
+    {
+      schema: {
+        description: 'Delete a document',
+        tags: ['Documents'],
+        security,
+        params: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+          },
+          required: ['id'],
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+            },
+            required: ['success'],
+          },
+          400: schemas.ApiResponse,
+          404: schemas.ApiResponse,
+          500: schemas.ApiResponse,
+        },
+      },
+    },
     async (request: AuthenticatedRequest, reply) => {
       try {
         // Validate route parameters
