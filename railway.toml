@@ -1,17 +1,11 @@
 # Railway configuration for Zadoox backend service
-# Railway will build from repo root and run these commands
-
-[build]
-builder = "nixpacks"
-watchPatterns = ["code/packages/backend/**", "code/packages/shared/**"]
+# Railway will use Dockerfile for builds (automatically detected)
 
 [deploy]
-startCommand = "cd code/packages/backend && node dist/server.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 10
 
-# Note: Railway may need to be configured in dashboard to use this file
-# If build still fails, check Railway dashboard → Service → Settings → Build
+watchPatterns = ["code/packages/backend/**", "code/packages/shared/**", "Dockerfile"]
 
