@@ -268,24 +268,22 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 ### Phase 7: Backend API - AI Service ✅
 **Status**: Not Started
 
-- [ ] Extended Markdown parser
-- [ ] LaTeX converter:
-  - [ ] Markdown → LaTeX conversion
-  - [ ] Placeholder replacement ({REF}, {CH})
-  - [ ] Math support
-  - [ ] Image handling
-- [ ] PDF generation:
-  - [ ] LaTeX compilation integration
-  - [ ] Template support (basic)
-  - [ ] Error handling
-- [ ] Export API endpoint
-- [ ] File storage integration (Supabase Storage)
+- [ ] OpenAI integration
+- [ ] AI Service structure:
+  - [ ] Prompt management
+  - [ ] Context building
+  - [ ] Response caching (basic)
+- [ ] AI endpoints:
+  - [ ] Suggest text completion
+  - [ ] Expand text
+  - [ ] Improve text
+- [ ] Rate limiting
+- [ ] Error handling
 
 **Deliverables**:
-- Export API working
-- Can convert Extended Markdown to LaTeX
-- Can generate PDF from LaTeX
-- Downloads working
+- AI service working
+- OpenAI integration functional
+- AI endpoints tested
 
 ---
 
