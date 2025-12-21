@@ -150,14 +150,14 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 - ✅ RLS policies configured for all tables
 - ✅ Supabase client setup in backend (`src/db/client.ts`)
 - ✅ Database connection test script (`pnpm db:test`)
-- ✅ Setup documentation created (`SETUP.md`, `src/db/README.md`)
+- ✅ Setup documentation created (`BACKEND_SETUP.md`, `src/db/README.md`)
 
 **Completed**: Created complete database schema with user_profiles, projects, and documents tables. Set up comprehensive RLS policies to enforce access control. Created migration files for easy deployment. Set up Supabase client with both admin and user client options. Added database connection testing script. Created setup documentation and migration guide.
 
 **Next Steps**: 
 1. ✅ Add GitHub secret `DATABASE_URL` with PostgreSQL connection string (see `code/DEPLOYMENT.md`)
 2. ✅ Migrations will run automatically via GitHub Actions on push to `main`
-3. Create `.env` file with Supabase credentials (see `packages/backend/SETUP.md`)
+3. Create `.env` file with Supabase credentials (see `BACKEND_SETUP.md`)
 4. Test database connection: `pnpm db:test`
 5. Test migrations locally: `pnpm --filter backend db:migrate`
 6. Once GitHub secret is configured and migrations run, Phase 2 is complete
@@ -194,9 +194,9 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 - ✅ Authentication working
 - ✅ Unit tests for Document and Project services (19 tests passing)
 - ✅ Request validation with Zod
-- ✅ API testing guide (API_TESTING.md)
+- ✅ API testing guide (`API_TESTING.md`)
 - ✅ OpenAPI/Swagger documentation (Swagger UI at /docs, OpenAPI JSON at /openapi.json)
-- ✅ Backend deployment configuration (Railway workflow + railway.toml ready) - Requires Railway account setup (see RAILWAY_SETUP.md)
+- ✅ Backend deployment configuration (Railway workflow + railway.toml ready) - Requires Railway account setup (see `RAILWAY_SETUP.md`)
 
 ---
 
