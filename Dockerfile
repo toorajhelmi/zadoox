@@ -22,21 +22,28 @@ COPY code/packages/backend ./packages/backend
 RUN pnpm --filter @zadoox/shared build
 RUN pnpm --filter backend build
 
+# Verify build output
+RUN ls -la /app/packages/backend/dist/ || (echo "ERROR: Backend dist not found" && exit 1)
+
 # Production stage
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy built backend
+# Copy built backend dist and package.json
 COPY --from=builder /app/packages/backend/dist ./dist
 COPY --from=builder /app/packages/backend/package.json ./package.json
 
-# Copy built shared package (needed at runtime)
+# Copy built shared package (needed at runtime for @zadoox/shared imports)
 COPY --from=builder /app/packages/shared/dist ./node_modules/@zadoox/shared/dist
 COPY --from=builder /app/packages/shared/package.json ./node_modules/@zadoox/shared/package.json
 
-# Copy production node_modules
+# Copy production dependencies only
 COPY --from=builder /app/node_modules ./node_modules
+
+# Verify files were copied correctly
+RUN ls -la /app/dist/ || (echo "ERROR: dist directory not found in production image" && exit 1)
+RUN test -f /app/dist/server.js || (echo "ERROR: server.js not found" && exit 1)
 
 EXPOSE 3001
 
