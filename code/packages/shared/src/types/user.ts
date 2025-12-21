@@ -22,3 +22,4 @@ export interface UserProfile {
   updatedAt: Date;
 }
 
+

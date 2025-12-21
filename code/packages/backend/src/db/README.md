@@ -43,12 +43,13 @@ This will:
 
 ### Admin Client (Service Role)
 
-Use `supabaseAdmin` for backend operations that need to bypass RLS or perform admin tasks:
+Use `getSupabaseAdmin()` for backend operations that need to bypass RLS or perform admin tasks:
 
 ```typescript
-import { supabaseAdmin } from './db/client';
+import { getSupabaseAdmin } from './db/client';
 
 // This bypasses RLS - use carefully
+const supabaseAdmin = getSupabaseAdmin();
 const { data, error } = await supabaseAdmin
   .from('projects')
   .select('*');
@@ -85,4 +86,5 @@ const { data, error } = await userClient
 - `documents` - Documents within projects
 
 See migration files for full schema details.
+
 

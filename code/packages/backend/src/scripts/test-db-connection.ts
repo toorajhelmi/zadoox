@@ -4,15 +4,17 @@
  */
 
 import 'dotenv/config';
-import { supabaseAdmin } from '../db/client.js';
+import { getSupabaseAdmin } from '../db/client.js';
 
 async function testConnection() {
   console.log('Testing Supabase database connection...\n');
 
   try {
+    const db = getSupabaseAdmin();
+    
     // Test 1: Check if we can connect
     console.log('1. Testing basic connection...');
-    const { data, error } = await supabaseAdmin.from('projects').select('count').limit(0);
+    const { data, error } = await db.from('projects').select('count').limit(0);
     
     if (error) {
       console.error('❌ Connection failed:', error.message);
@@ -26,7 +28,7 @@ async function testConnection() {
     const tables = ['user_profiles', 'projects', 'documents'];
     
     for (const table of tables) {
-      const { error: tableError } = await supabaseAdmin
+      const { error: tableError } = await db
         .from(table)
         .select('*')
         .limit(0);
@@ -63,4 +65,5 @@ testConnection()
     console.error('Fatal error:', error);
     process.exit(1);
   });
+
 

@@ -35,3 +35,4 @@ export interface UpdateProjectInput {
   settings?: Partial<ProjectSettings>;
 }
 
+

@@ -59,3 +59,4 @@ After running migrations, verify in Supabase dashboard:
 - Policies should be visible in Authentication → Policies
 - Triggers should be visible in Database → Functions
 
+
