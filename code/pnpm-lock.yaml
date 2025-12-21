@@ -44,6 +44,9 @@ importers:
       '@zadoox/shared':
         specifier: workspace:*
         version: link:../shared
+      dotenv:
+        specifier: ^16.3.1
+        version: 16.6.1
       fastify:
         specifier: ^4.25.2
         version: 4.29.1
@@ -63,9 +66,6 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^1.1.0
         version: 1.6.1(vitest@1.6.1)
-      dotenv:
-        specifier: ^16.3.1
-        version: 16.6.1
       tsx:
         specifier: ^4.7.0
         version: 4.21.0
@@ -2254,7 +2254,7 @@ packages:
   /dotenv@16.6.1:
     resolution: {integrity: sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==}
     engines: {node: '>=12'}
-    dev: true
+    dev: false
 
   /dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
