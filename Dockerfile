@@ -7,9 +7,9 @@ RUN corepack enable && corepack prepare pnpm@8.12.0 --activate
 WORKDIR /app
 
 # Copy package files
-COPY code/package.json code/pnpm-lock.yaml code/pnpm-workspace.yaml ./
-COPY code/packages/shared/package.json ./packages/shared/
-COPY code/packages/backend/package.json ./packages/backend/
+COPY code/package.json code/pnpm-lock.yaml code/pnpm-workspace.yaml code/tsconfig.json ./
+COPY code/packages/shared/package.json code/packages/shared/tsconfig.json ./packages/shared/
+COPY code/packages/backend/package.json code/packages/backend/tsconfig.json ./packages/backend/
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
