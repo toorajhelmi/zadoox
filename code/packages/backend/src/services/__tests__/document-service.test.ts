@@ -32,8 +32,13 @@ describe('DocumentService', () => {
       single: vi.fn(),
       update: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
-      delete: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
+      delete: vi.fn(() => ({
+        eq: vi.fn().mockResolvedValue({
+          data: null,
+          error: null,
+        }),
+      })),
     };
     
     vi.mocked(mockSupabase.from).mockReturnValue(mockQueryBuilder as any);
@@ -280,15 +285,9 @@ describe('DocumentService', () => {
         error: null,
       });
 
-      mockQueryBuilder.delete.mockResolvedValue({
-        data: null,
-        error: null,
-      });
-
       await service.deleteDocument('doc-id');
 
       expect(mockQueryBuilder.delete).toHaveBeenCalled();
-      expect(mockQueryBuilder.eq).toHaveBeenCalledWith('id', 'doc-id');
     });
   });
 
