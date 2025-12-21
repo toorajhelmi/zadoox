@@ -200,7 +200,52 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 
 ---
 
-### Phase 4: Backend API - Export Service ✅
+### Phase 4: Backend API - AI Service ✅
+**Status**: Not Started
+
+- [ ] OpenAI integration
+- [ ] AI Service structure:
+  - [ ] Prompt management
+  - [ ] Context building
+  - [ ] Response caching (basic)
+- [ ] AI endpoints:
+  - [ ] Suggest text completion
+  - [ ] Expand text
+  - [ ] Improve text
+- [ ] Rate limiting
+- [ ] Error handling
+
+**Deliverables**:
+- AI service working
+- OpenAI integration functional
+- AI endpoints tested
+
+---
+
+### Phase 5: Web App - Setup & Authentication ✅
+**Status**: Not Started
+
+- [ ] Initialize Next.js app
+- [ ] Set up Tailwind CSS
+- [ ] Configure Supabase client (client-side)
+- [ ] Authentication pages:
+  - [ ] Login page
+  - [ ] Signup page
+  - [ ] Auth state management
+- [ ] Protected route middleware
+- [ ] User session handling
+- [ ] Set up web app deployment (Vercel GitHub integration)
+
+**Deliverables**:
+- Next.js app running
+- Authentication working
+- Users can sign up/login
+- Protected routes working
+- Web app deployment configured (Vercel)
+
+---
+
+### Phase 6: Backend API - Export Service ✅
 **Status**: Not Started
 
 - [ ] Extended Markdown parser
@@ -224,29 +269,25 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 
 ---
 
-### Phase 5: Backend API - AI Service ✅
+### Phase 7: Web App - Project Dashboard ✅
 **Status**: Not Started
 
-- [ ] OpenAI integration
-- [ ] AI Service structure:
-  - [ ] Prompt management
-  - [ ] Context building
-  - [ ] Response caching (basic)
-- [ ] AI endpoints:
-  - [ ] Suggest text completion
-  - [ ] Expand text
-  - [ ] Improve text
-- [ ] Rate limiting
-- [ ] Error handling
+- [ ] Dashboard layout
+- [ ] Project list view
+- [ ] Create project modal/form
+- [ ] Project card component
+- [ ] Project settings page
+- [ ] Navigation structure
+- [ ] API integration (fetch projects)
 
 **Deliverables**:
-- AI service working
-- OpenAI integration functional
-- AI endpoints tested
+- Dashboard page working
+- Can create/view projects
+- Navigation functional
 
 ---
 
-### Phase 6: Shared Package - Editor Logic ✅
+### Phase 8: Shared Package - Editor Logic ✅
 **Status**: Not Started
 
 - [ ] Markdown utilities:
@@ -269,47 +310,6 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 - Markdown/LaTeX conversion working
 - Placeholder system functional
 - Unit tests for all editor logic functions
-
----
-
-### Phase 7: Web App - Setup & Authentication ✅
-**Status**: Not Started
-
-- [ ] Initialize Next.js app
-- [ ] Set up Tailwind CSS
-- [ ] Configure Supabase client (client-side)
-- [ ] Authentication pages:
-  - [ ] Login page
-  - [ ] Signup page
-  - [ ] Auth state management
-- [ ] Protected route middleware
-- [ ] User session handling
-- [ ] Set up web app deployment (Vercel GitHub integration)
-
-**Deliverables**:
-- Next.js app running
-- Authentication working
-- Users can sign up/login
-- Protected routes working
-- Web app deployment configured (Vercel)
-
----
-
-### Phase 8: Web App - Project Dashboard ✅
-**Status**: Not Started
-
-- [ ] Dashboard layout
-- [ ] Project list view
-- [ ] Create project modal/form
-- [ ] Project card component
-- [ ] Project settings page
-- [ ] Navigation structure
-- [ ] API integration (fetch projects)
-
-**Deliverables**:
-- Dashboard page working
-- Can create/view projects
-- Navigation functional
 
 ---
 
@@ -454,7 +454,7 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 ```
 code/
 ├── packages/
-│   ├── shared/               # Phase 1, 6, 13
+│   ├── shared/               # Phase 1, 8, 13
 │   │   ├── src/
 │   │   │   ├── types/
 │   │   │   ├── utils/
@@ -463,7 +463,7 @@ code/
 │   │   │   └── constants/
 │   │   └── package.json
 │   │
-│   ├── backend/              # Phase 3, 4, 5
+│   ├── backend/              # Phase 3, 4, 6
 │   │   ├── src/
 │   │   │   ├── server.ts
 │   │   │   ├── api/
@@ -516,23 +516,23 @@ Phase 2 (Database) ──┐
     ↓                │
 Phase 3 (Backend Core) ──┐
     ↓                    │
-Phase 6 (Editor Logic)   │
-    ↓                    │
-Phase 4 (Export) ────────┤
-    ↓                    │
-Phase 5 (AI)             │
+Phase 4 (AI)             │
     ↓                    │
 Phase 13 (API Client) ───┤
     ↓                    │
-Phase 7 (Web Setup) ─────┤
+Phase 5 (Web Setup) ─────┤
     ↓                    │
-Phase 8 (Dashboard) ─────┤
+Phase 7 (Dashboard) ─────┤
+    ↓                    │
+Phase 8 (Editor Logic)    │
     ↓                    │
 Phase 9 (Basic Editor) ──┤
     ↓                    │
 Phase 10 (Editor Features)┤
     ↓                     │
 Phase 11 (AI UI) ─────────┤
+    ↓                     │
+Phase 6 (Export) ─────────┤
     ↓                     │
 Phase 12 (Export UI) ─────┤
     ↓                     │
