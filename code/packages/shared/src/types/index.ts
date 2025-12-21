@@ -2,7 +2,7 @@
  * Shared types - export all types from here
  */
 
-export * from './user';
-export * from './project';
-export * from './document';
-export * from './api';
+export * from './user.js';
+export * from './project.js';
+export * from './document.js';
+export * from './api.js';
