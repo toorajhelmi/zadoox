@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ProjectService } from '../project-service.js';
 import { SupabaseClient } from '@supabase/supabase-js';
-import type { Project, CreateProjectInput, UpdateProjectInput } from '@zadoox/shared';
+import type { CreateProjectInput, UpdateProjectInput } from '@zadoox/shared';
 
 // Mock Supabase client
 const createMockSupabaseClient = () => {

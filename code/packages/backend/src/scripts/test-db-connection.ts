@@ -14,7 +14,7 @@ async function testConnection() {
     
     // Test 1: Check if we can connect
     console.log('1. Testing basic connection...');
-    const { data, error } = await db.from('projects').select('count').limit(0);
+    const { error } = await db.from('projects').select('count').limit(0);
     
     if (error) {
       console.error('❌ Connection failed:', error.message);
