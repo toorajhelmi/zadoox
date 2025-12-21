@@ -185,15 +185,17 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 - [x] Error handling
 - [x] Request validation (Zod schemas)
 - [x] Unit tests for services (19 tests passing)
+- [x] OpenAPI/Swagger documentation
 - [ ] Set up backend deployment (Railway GitHub integration) - Deploy workflow ready, needs Railway setup
 
 **Deliverables**:
 - ✅ Working REST API
 - ✅ All CRUD operations functional
 - ✅ Authentication working
-- ✅ Unit tests for Document and Project services
+- ✅ Unit tests for Document and Project services (19 tests passing)
 - ✅ Request validation with Zod
 - ✅ API testing guide (API_TESTING.md)
+- ✅ OpenAPI/Swagger documentation (Swagger UI at /docs, OpenAPI JSON at /openapi.json)
 - ⏳ Backend deployment configured (Railway) - Workflow ready, needs Railway project setup
 
 ---
