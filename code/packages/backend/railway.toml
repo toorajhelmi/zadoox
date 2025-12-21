@@ -6,7 +6,7 @@ builder = "nixpacks"
 buildCommand = "cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @zadoox/shared build && pnpm --filter backend build"
 
 [deploy]
-startCommand = "pnpm --filter backend start"
+startCommand = "node dist/server.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
