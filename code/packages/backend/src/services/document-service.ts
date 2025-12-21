@@ -11,7 +11,7 @@ import {
   DocumentType,
 } from '@zadoox/shared';
 import { isValidDocumentType } from '@zadoox/shared';
-import { generateId } from '@zadoox/shared';
+import { generateId } from '@zadoox/shared/src/utils/id.js';
 
 export class DocumentService {
   constructor(private supabase: SupabaseClient) {}
