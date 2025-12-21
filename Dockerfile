@@ -30,16 +30,20 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy built backend dist and package.json
+# Copy built backend
 COPY --from=builder /app/packages/backend/dist ./dist
 COPY --from=builder /app/packages/backend/package.json ./package.json
 
-# Copy built shared package (needed at runtime for @zadoox/shared imports)
-COPY --from=builder /app/packages/shared/dist ./node_modules/@zadoox/shared/dist
-COPY --from=builder /app/packages/shared/package.json ./node_modules/@zadoox/shared/package.json
+# Copy built shared package
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder /app/packages/shared/package.json ./packages/shared/package.json
 
-# Copy production dependencies only
-COPY --from=builder /app/node_modules ./node_modules
+# Install pnpm and install production dependencies
+RUN corepack enable && corepack prepare pnpm@8.12.0 --activate
+RUN pnpm install --prod --no-frozen-lockfile --ignore-scripts
+
+# Manually link the shared package to node_modules
+RUN mkdir -p node_modules/@zadoox && ln -sf /app/packages/shared node_modules/@zadoox/shared
 
 # Verify files were copied correctly
 RUN ls -la /app/dist/ || (echo "ERROR: dist directory not found in production image" && exit 1)
