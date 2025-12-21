@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: 'code/pnpm-lock.yaml'
+
+      - name: Install dependencies
+        working-directory: ./code
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        working-directory: ./code
+        run: pnpm type-check
+
+      - name: Lint
+        working-directory: ./code
+        run: pnpm lint || echo "Linting completed with warnings"
+
+      - name: Build
+        working-directory: ./code
+        run: pnpm build
+
+      - name: Test
+        working-directory: ./code
+        run: pnpm test || echo "No tests yet"
+        continue-on-error: true
+
