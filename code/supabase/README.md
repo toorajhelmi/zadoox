@@ -1,13 +1,12 @@
 # Supabase Migrations
 
-This directory contains database migrations managed by Supabase CLI.
+This directory contains database migrations that are run using direct PostgreSQL connection via connection string.
 
 ## Structure
 
 ```
 supabase/
 ├── migrations/          # SQL migration files (timestamped)
-├── config.toml         # Supabase CLI configuration
 └── README.md           # This file
 ```
 
