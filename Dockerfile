@@ -30,20 +30,28 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy built backend
-COPY --from=builder /app/packages/backend/dist ./dist
-COPY --from=builder /app/packages/backend/package.json ./package.json
-
-# Copy built shared package
-COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
-COPY --from=builder /app/packages/shared/package.json ./packages/shared/package.json
-
-# Install pnpm and install production dependencies
+# Install pnpm
 RUN corepack enable && corepack prepare pnpm@8.12.0 --activate
-RUN pnpm install --prod --no-frozen-lockfile --ignore-scripts
 
-# Manually link the shared package to node_modules
-RUN mkdir -p node_modules/@zadoox && ln -sf /app/packages/shared node_modules/@zadoox/shared
+# Copy workspace files
+COPY --from=builder /app/pnpm-workspace.yaml ./
+COPY --from=builder /app/pnpm-lock.yaml ./
+
+# Copy shared package (for workspace resolution)
+COPY --from=builder /app/packages/shared/package.json ./packages/shared/package.json
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+
+# Copy backend package.json
+COPY --from=builder /app/packages/backend/package.json ./packages/backend/package.json
+
+# Install production dependencies (this will resolve workspace:*)
+RUN pnpm install --prod --frozen-lockfile --filter backend
+
+# Copy built backend dist
+COPY --from=builder /app/packages/backend/dist ./packages/backend/dist
+
+# Create symlink for easier access (backend will run from /app)
+RUN ln -sf /app/packages/backend/dist ./dist
 
 # Verify files were copied correctly
 RUN ls -la /app/dist/ || (echo "ERROR: dist directory not found in production image" && exit 1)
