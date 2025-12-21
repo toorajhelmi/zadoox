@@ -155,10 +155,11 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 **Completed**: Created complete database schema with user_profiles, projects, and documents tables. Set up comprehensive RLS policies to enforce access control. Created migration files for easy deployment. Set up Supabase client with both admin and user client options. Added database connection testing script. Created setup documentation and migration guide.
 
 **Next Steps**: 
-1. Run migrations in Supabase SQL Editor (see `packages/backend/src/db/migrations/README.md`)
-2. Create `.env` file with Supabase credentials (see `packages/backend/SETUP.md`)
-3. Test database connection: `pnpm db:test`
-4. Once migrations are applied, Phase 2 is complete
+1. ✅ Add GitHub secrets for Supabase (see `code/DEPLOYMENT.md`)
+2. ✅ Migrations will run automatically via GitHub Actions on push to `main`
+3. Create `.env` file with Supabase credentials (see `packages/backend/SETUP.md`)
+4. Test database connection: `pnpm db:test`
+5. Once GitHub secrets are configured and migrations run, Phase 2 is complete
 
 ---
 

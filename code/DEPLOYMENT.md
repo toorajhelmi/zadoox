@@ -97,7 +97,7 @@ Instead of using GitHub Actions, you can use Railway's GitHub integration:
 
 ## Database Setup (Supabase)
 
-**Status**: Setup needed in Phase 2
+**Status**: ✅ Automated migrations configured
 
 ### Setup Steps:
 
@@ -106,16 +106,25 @@ Instead of using GitHub Actions, you can use Railway's GitHub integration:
    - Create new project
    - Note down:
      - Project URL
+     - Project Reference ID (e.g., `lfyljalqovgibqpqzajd`)
      - Anon key (for client-side)
      - Service role key (for backend - keep secret!)
+     - Database password
 
-2. **Run Migrations**:
-   - Use Supabase SQL Editor or migration tool
-   - Create tables: users, projects, documents
-   - Set up Row Level Security (RLS) policies
-   - Create indexes
+2. **Configure GitHub Secrets**:
+   - Go to GitHub repo → Settings → Secrets and variables → Actions
+   - Add these secrets:
+     - `SUPABASE_ACCESS_TOKEN` - Get from Supabase Dashboard → Account → Access Tokens
+     - `SUPABASE_DB_PASSWORD` - Your database password
+     - `SUPABASE_PROJECT_ID` - Your project reference ID (e.g., `lfyljalqovgibqpqzajd`)
 
-3. **Configure Storage** (if needed):
+3. **Migrations**:
+   - ✅ Migrations are automated via GitHub Actions
+   - Workflow: `.github/workflows/deploy-migrations.yml`
+   - Runs automatically when migrations change and are pushed to `main`
+   - Migration files are in: `code/supabase/migrations/`
+
+4. **Configure Storage** (if needed):
    - Create storage buckets for document assets
    - Set up bucket policies
 

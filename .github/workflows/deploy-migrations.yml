@@ -1,0 +1,37 @@
+name: Deploy Database Migrations
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'code/supabase/migrations/**'
+      - '.github/workflows/deploy-migrations.yml'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  deploy-migrations:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' # Only deploy from main branch
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Run database migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+        working-directory: ./code
+        run: |
+          # Link to Supabase project using access token
+          echo "$SUPABASE_ACCESS_TOKEN" | supabase link --project-ref $SUPABASE_PROJECT_ID --password $SUPABASE_DB_PASSWORD
+          
+          # Push migrations to remote database
+          supabase db push --db-url "postgresql://postgres.$SUPABASE_PROJECT_ID:$SUPABASE_DB_PASSWORD@aws-0-us-west-2.pooler.supabase.com:6543/postgres"
+
