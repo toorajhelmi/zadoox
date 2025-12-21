@@ -1,0 +1,14 @@
+# Railway configuration for backend deployment
+# This file helps Railway understand how to build and run the backend service
+
+[build]
+builder = "nixpacks"
+buildCommand = "cd ../.. && pnpm install --frozen-lockfile && pnpm --filter backend build"
+
+[deploy]
+startCommand = "pnpm --filter backend start"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
+
