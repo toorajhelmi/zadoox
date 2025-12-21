@@ -8,7 +8,6 @@ import {
   Document,
   CreateDocumentInput,
   UpdateDocumentInput,
-  DocumentType,
 } from '@zadoox/shared';
 import { isValidDocumentType } from '@zadoox/shared';
 import { generateId } from '@zadoox/shared';

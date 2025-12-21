@@ -81,15 +81,9 @@ jobs:
         working-directory: ./code
         run: pnpm --filter backend build
 
-      - name: Deploy to Railway
-        # NOTE: Railway deployment will be enabled in Phase 3
-        # For now, this step is skipped until Railway is configured
-        if: false  # Disable until Railway project is set up
-        run: echo "Backend deployment to Railway - will be enabled in Phase 3"
-        # When enabled, uncomment below and remove the 'if: false' condition:
-        # uses: bervProject/railway-deploy@v0.2.5
-        # with:
-        #   railway_token: ${{ secrets.RAILWAY_TOKEN }}
-        #   service: backend
-        #   detach: true
+      - name: Railway deployment info
+        run: |
+          echo "ℹ️ Backend deployment is handled by Railway's GitHub integration"
+          echo "Railway will automatically deploy on push to main branch"
+          echo "Migrations are run via this workflow before Railway deployment"
 

@@ -18,21 +18,22 @@
     "db:migrate": "tsx src/scripts/run-migrations.ts"
   },
   "dependencies": {
-    "@zadoox/shared": "workspace:*",
-    "@supabase/supabase-js": "^2.39.0",
-    "fastify": "^4.25.2",
     "@fastify/cors": "^8.5.0",
-    "zod": "^3.22.4",
-    "pg": "^8.11.3"
+    "@fastify/swagger": "^8.0.0",
+    "@fastify/swagger-ui": "^4.0.0",
+    "@supabase/supabase-js": "^2.39.0",
+    "@zadoox/shared": "workspace:*",
+    "fastify": "^4.25.2",
+    "pg": "^8.11.3",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
     "@types/pg": "^8.10.9",
-    "typescript": "^5.3.3",
-    "tsx": "^4.7.0",
+    "@vitest/coverage-v8": "^1.1.0",
     "dotenv": "^16.3.1",
-    "vitest": "^1.1.0",
-    "@vitest/coverage-v8": "^1.1.0"
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.1.0"
   }
 }
-

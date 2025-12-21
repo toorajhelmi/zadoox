@@ -1,7 +1,10 @@
 import 'dotenv/config';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import swagger from '@fastify/swagger';
+import swaggerUi from '@fastify/swagger-ui';
 import { v1Routes } from './routes/v1/index.js';
+import { swaggerConfig, swaggerUiConfig } from './config/swagger.js';
 
 const server = Fastify({
   logger: true,
@@ -15,9 +18,36 @@ const start = async () => {
       credentials: true,
     });
 
+    // Register Swagger
+    await server.register(swagger, swaggerConfig);
+    await server.register(swaggerUi, swaggerUiConfig);
+
     // Health check endpoint (no auth required)
-    server.get('/health', async () => {
-      return { status: 'ok', service: 'zadoox-backend' };
+    server.get(
+      '/health',
+      {
+        schema: {
+          description: 'Health check endpoint',
+          tags: ['Health'],
+          response: {
+            200: {
+              type: 'object',
+              properties: {
+                status: { type: 'string' },
+                service: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+      async () => {
+        return { status: 'ok', service: 'zadoox-backend' };
+      }
+    );
+
+    // OpenAPI JSON endpoint (no auth required)
+    server.get('/openapi.json', async () => {
+      return server.swagger();
     });
 
     // Register API routes

@@ -11,6 +11,12 @@ import {
   ApiResponse,
   Project,
 } from '@zadoox/shared';
+import {
+  createProjectSchema,
+  updateProjectSchema,
+  projectIdSchema,
+} from '../../validation/schemas.js';
+import { schemas, security } from '../../config/schemas.js';
 
 export async function projectRoutes(fastify: FastifyInstance) {
   // All routes require authentication
@@ -20,7 +26,30 @@ export async function projectRoutes(fastify: FastifyInstance) {
    * GET /api/v1/projects
    * List all projects for the authenticated user
    */
-  fastify.get('/projects', async (request: AuthenticatedRequest, reply) => {
+  fastify.get(
+    '/projects',
+    {
+      schema: {
+        description: 'List all projects for the authenticated user',
+        tags: ['Projects'],
+        security,
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              data: {
+                type: 'array',
+                items: schemas.Project,
+              },
+            },
+            required: ['success'],
+          },
+          500: schemas.ApiResponse,
+        },
+      },
+    },
+    async (request: AuthenticatedRequest, reply) => {
     try {
       const projectService = new ProjectService(request.supabase!);
       const projects = await projectService.listUserProjects(request.userId!);
@@ -49,9 +78,50 @@ export async function projectRoutes(fastify: FastifyInstance) {
    */
   fastify.get(
     '/projects/:id',
+    {
+      schema: {
+        description: 'Get a single project by ID',
+        tags: ['Projects'],
+        security,
+        params: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+          },
+          required: ['id'],
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              data: schemas.Project,
+            },
+            required: ['success'],
+          },
+          400: schemas.ApiResponse,
+          404: schemas.ApiResponse,
+          500: schemas.ApiResponse,
+        },
+      },
+    },
     async (request: AuthenticatedRequest, reply) => {
       try {
-        const { id } = request.params as { id: string };
+        // Validate route parameters
+        const paramValidation = projectIdSchema.safeParse(request.params);
+        if (!paramValidation.success) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid project ID',
+              details: paramValidation.error.errors,
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        const { id } = paramValidation.data;
         const projectService = new ProjectService(request.supabase!);
         const project = await projectService.getProjectById(
           id,
@@ -82,9 +152,45 @@ export async function projectRoutes(fastify: FastifyInstance) {
    * POST /api/v1/projects
    * Create a new project
    */
-  fastify.post('/projects', async (request: AuthenticatedRequest, reply) => {
+  fastify.post(
+    '/projects',
+    {
+      schema: {
+        description: 'Create a new project',
+        tags: ['Projects'],
+        security,
+        body: schemas.CreateProjectInput,
+        response: {
+          201: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              data: schemas.Project,
+            },
+            required: ['success'],
+          },
+          400: schemas.ApiResponse,
+          500: schemas.ApiResponse,
+        },
+      },
+    },
+    async (request: AuthenticatedRequest, reply) => {
     try {
-      const body = request.body as CreateProjectInput;
+      // Validate request body
+      const validationResult = createProjectSchema.safeParse(request.body);
+      if (!validationResult.success) {
+        const response: ApiResponse<null> = {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid request data',
+            details: validationResult.error.errors,
+          },
+        };
+        return reply.status(400).send(response);
+      }
+
+      const body = validationResult.data as CreateProjectInput;
       const projectService = new ProjectService(request.supabase!);
       const project = await projectService.createProject(
         body,
@@ -116,10 +222,66 @@ export async function projectRoutes(fastify: FastifyInstance) {
    */
   fastify.put(
     '/projects/:id',
+    {
+      schema: {
+        description: 'Update a project',
+        tags: ['Projects'],
+        security,
+        params: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+          },
+          required: ['id'],
+        },
+        body: schemas.UpdateProjectInput,
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              data: schemas.Project,
+            },
+            required: ['success'],
+          },
+          400: schemas.ApiResponse,
+          404: schemas.ApiResponse,
+          500: schemas.ApiResponse,
+        },
+      },
+    },
     async (request: AuthenticatedRequest, reply) => {
       try {
-        const { id } = request.params as { id: string };
-        const body = request.body as UpdateProjectInput;
+        // Validate route parameters
+        const paramValidation = projectIdSchema.safeParse(request.params);
+        if (!paramValidation.success) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid project ID',
+              details: paramValidation.error.errors,
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        // Validate request body
+        const bodyValidation = updateProjectSchema.safeParse(request.body);
+        if (!bodyValidation.success) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid request data',
+              details: bodyValidation.error.errors,
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        const { id } = paramValidation.data;
+        const body = bodyValidation.data as UpdateProjectInput;
         const projectService = new ProjectService(request.supabase!);
         const project = await projectService.updateProject(
           id,
@@ -161,9 +323,49 @@ export async function projectRoutes(fastify: FastifyInstance) {
    */
   fastify.delete(
     '/projects/:id',
+    {
+      schema: {
+        description: 'Delete a project',
+        tags: ['Projects'],
+        security,
+        params: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+          },
+          required: ['id'],
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+            },
+            required: ['success'],
+          },
+          400: schemas.ApiResponse,
+          404: schemas.ApiResponse,
+          500: schemas.ApiResponse,
+        },
+      },
+    },
     async (request: AuthenticatedRequest, reply) => {
       try {
-        const { id } = request.params as { id: string };
+        // Validate route parameters
+        const paramValidation = projectIdSchema.safeParse(request.params);
+        if (!paramValidation.success) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid project ID',
+              details: paramValidation.error.errors,
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        const { id } = paramValidation.data;
         const projectService = new ProjectService(request.supabase!);
         await projectService.deleteProject(id, request.userId!);
 

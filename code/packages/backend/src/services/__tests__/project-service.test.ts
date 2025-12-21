@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ProjectService } from '../project-service.js';
 import { SupabaseClient } from '@supabase/supabase-js';
-import type { Project, CreateProjectInput, UpdateProjectInput } from '@zadoox/shared';
+import type { CreateProjectInput, UpdateProjectInput } from '@zadoox/shared';
 
 // Mock Supabase client
 const createMockSupabaseClient = () => {
@@ -34,7 +34,7 @@ describe('ProjectService', () => {
       eq: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
       delete: vi.fn(() => ({
-        eq: vi.fn(function (this: any, column: string, value: string) {
+        eq: vi.fn(function (this: any, column: string, _value: string) {
           if (column === 'id') {
             return {
               eq: vi.fn().mockResolvedValue({

@@ -12,10 +12,6 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
     "incremental": true,
-    "paths": {
-      "@zadoox/shared": ["./packages/shared/src"],
-      "@zadoox/shared/*": ["./packages/shared/src/*"]
-    }
   },
   "exclude": ["node_modules", "dist", "build", ".next"]
 }
