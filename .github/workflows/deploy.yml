@@ -73,14 +73,14 @@ jobs:
         run: pnpm build --filter backend
 
       - name: Deploy to Railway
-        if: ${{ secrets.RAILWAY_TOKEN != '' }}
-        # NOTE: Railway deployment action will be configured when backend is ready
-        run: echo "Backend deployment to Railway - will be configured in Phase 3"
+        # NOTE: Railway deployment will be enabled in Phase 3
+        # For now, this step is skipped until Railway is configured
+        if: false  # Disable until Railway project is set up
+        run: echo "Backend deployment to Railway - will be enabled in Phase 3"
+        # When enabled, uncomment below and remove the 'if: false' condition:
         # uses: bervProject/railway-deploy@v0.2.5
-        with:
-          railway_token: ${{ secrets.RAILWAY_TOKEN }}
-          service: backend
-          detach: true
-        env:
-          NODE_ENV: production
+        # with:
+        #   railway_token: ${{ secrets.RAILWAY_TOKEN }}
+        #   service: backend
+        #   detach: true
 
