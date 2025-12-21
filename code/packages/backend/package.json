@@ -10,9 +10,9 @@
     "start": "node dist/server.js",
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
-    "test": "echo \"No tests yet\"",
-    "test:watch": "echo \"No tests yet\"",
-    "test:coverage": "echo \"No tests yet\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist",
     "db:test": "tsx src/scripts/test-db-connection.ts",
     "db:migrate": "tsx src/scripts/run-migrations.ts"
@@ -30,7 +30,9 @@
     "@types/pg": "^8.10.9",
     "typescript": "^5.3.3",
     "tsx": "^4.7.0",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "vitest": "^1.1.0",
+    "@vitest/coverage-v8": "^1.1.0"
   }
 }
 
