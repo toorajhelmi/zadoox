@@ -21,8 +21,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref }}
-          sha: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
@@ -62,8 +61,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref }}
-          sha: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
@@ -81,7 +79,7 @@ jobs:
 
       - name: Build backend
         working-directory: ./code
-        run: pnpm build --filter backend
+        run: pnpm --filter backend build
 
       - name: Deploy to Railway
         # NOTE: Railway deployment will be enabled in Phase 3
