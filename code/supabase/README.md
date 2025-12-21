@@ -28,36 +28,32 @@ Migrations are automatically applied when:
 To run migrations locally:
 
 ```bash
-# Install Supabase CLI
-npm install -g supabase
+# Set DATABASE_URL environment variable
+export DATABASE_URL="postgresql://postgres.lfyljalqovgibqpqzajd:[PASSWORD]@aws-0-us-west-2.pooler.supabase.com:6543/postgres?pgbouncer=true"
 
-# Login to Supabase
-supabase login
+# Or create .env file in packages/backend/ with:
+# DATABASE_URL=postgresql://postgres.lfyljalqovgibqpqzajd:[PASSWORD]@aws-0-us-west-2.pooler.supabase.com:6543/postgres?pgbouncer=true
 
-# Link to your project (get project ref from Supabase dashboard)
-supabase link --project-ref your-project-ref --password your-db-password
-
-# Push migrations
-supabase db push
+# Run migrations
+cd code
+pnpm --filter backend db:migrate
 ```
 
 ## Creating New Migrations
 
-1. Create a new migration file with timestamp:
+1. Create a new migration file with timestamp in `supabase/migrations/`:
+   - Format: `YYYYMMDDHHMMSS_description.sql`
+   - Example: `20241220120000_add_user_settings.sql`
+
+2. Write your SQL in the file
+
+3. Test locally:
    ```bash
-   supabase migration new migration_name
+   export DATABASE_URL="your-connection-string"
+   pnpm --filter backend db:migrate
    ```
 
-2. This creates a file like: `supabase/migrations/20241220120000_migration_name.sql`
-
-3. Write your SQL in the file
-
-4. Test locally:
-   ```bash
-   supabase db push
-   ```
-
-5. Commit and push - migrations will run automatically via GitHub Actions
+4. Commit and push - migrations will run automatically via GitHub Actions
 
 ## Migration Naming Convention
 
@@ -67,11 +63,12 @@ Example: `20241220120000_add_user_settings.sql`
 
 ## GitHub Secrets Required
 
-For automated deployments, set these secrets in GitHub:
+For automated deployments, set this secret in GitHub:
 
-- `SUPABASE_ACCESS_TOKEN` - Get from Supabase Dashboard → Account → Access Tokens
-- `SUPABASE_DB_PASSWORD` - Your database password
-- `SUPABASE_PROJECT_ID` - Your project reference ID (e.g., `lfyljalqovgibqpqzajd`)
+- `DATABASE_URL` - Full PostgreSQL connection string
+  - Format: `postgresql://postgres.[PROJECT_ID]:[PASSWORD]@aws-0-us-west-2.pooler.supabase.com:6543/postgres?pgbouncer=true`
+  - Get from Supabase Dashboard → Settings → Database → Connection string (Pooler)
+  - Replace `[PASSWORD]` with your actual database password
 
 ## Verifying Migrations
 

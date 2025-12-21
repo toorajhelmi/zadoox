@@ -6,6 +6,7 @@ on:
     paths:
       - 'code/supabase/migrations/**'
       - '.github/workflows/deploy-migrations.yml'
+      - 'code/packages/backend/src/scripts/run-migrations.ts'
   workflow_dispatch: # Allow manual trigger
 
 jobs:
@@ -17,21 +18,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
         with:
-          version: latest
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: ./code
+        run: pnpm install --frozen-lockfile
 
       - name: Run database migrations
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         working-directory: ./code
-        run: |
-          # Link to Supabase project using access token
-          echo "$SUPABASE_ACCESS_TOKEN" | supabase link --project-ref $SUPABASE_PROJECT_ID --password $SUPABASE_DB_PASSWORD
-          
-          # Push migrations to remote database
-          supabase db push --db-url "postgresql://postgres.$SUPABASE_PROJECT_ID:$SUPABASE_DB_PASSWORD@aws-0-us-west-2.pooler.supabase.com:6543/postgres"
+        run: pnpm --filter backend db:migrate
 

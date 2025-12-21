@@ -113,10 +113,11 @@ Instead of using GitHub Actions, you can use Railway's GitHub integration:
 
 2. **Configure GitHub Secrets**:
    - Go to GitHub repo → Settings → Secrets and variables → Actions
-   - Add these secrets:
-     - `SUPABASE_ACCESS_TOKEN` - Get from Supabase Dashboard → Account → Access Tokens
-     - `SUPABASE_DB_PASSWORD` - Your database password
-     - `SUPABASE_PROJECT_ID` - Your project reference ID (e.g., `lfyljalqovgibqpqzajd`)
+   - Add this secret:
+     - `DATABASE_URL` - Full PostgreSQL connection string
+       - Get from Supabase Dashboard → Settings → Database → Connection string (Pooler)
+       - Format: `postgresql://postgres.[PROJECT_ID]:[PASSWORD]@aws-0-us-west-2.pooler.supabase.com:6543/postgres?pgbouncer=true`
+       - Replace `[PASSWORD]` with your actual database password
 
 3. **Migrations**:
    - ✅ Migrations are automated via GitHub Actions
