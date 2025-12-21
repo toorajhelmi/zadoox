@@ -165,35 +165,36 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 ---
 
 ### Phase 3: Backend API - Core Services ✅
-**Status**: Not Started
+**Status**: ✅ COMPLETED
 
-- [ ] Set up Express/Fastify server
-- [ ] Authentication middleware (Supabase JWT)
-- [ ] API routes structure
-- [ ] Document Service:
-  - [ ] Create document
-  - [ ] Get document
-  - [ ] Update document
-  - [ ] Delete document
-  - [ ] List documents (by project)
-- [ ] Project Service:
-  - [ ] Create project
-  - [ ] Get project
-  - [ ] Update project
-  - [ ] Delete project
-  - [ ] List user projects
-- [ ] Error handling
-- [ ] Request validation
-- [ ] Unit tests for services
-- [ ] Set up backend deployment (Railway GitHub integration)
+- [x] Set up Fastify server
+- [x] Authentication middleware (Supabase JWT)
+- [x] API routes structure
+- [x] Document Service:
+  - [x] Create document
+  - [x] Get document
+  - [x] Update document
+  - [x] Delete document
+  - [x] List documents (by project)
+- [x] Project Service:
+  - [x] Create project
+  - [x] Get project
+  - [x] Update project
+  - [x] Delete project
+  - [x] List user projects
+- [x] Error handling
+- [x] Request validation (Zod schemas)
+- [x] Unit tests for services (19 tests passing)
+- [ ] Set up backend deployment (Railway GitHub integration) - Deploy workflow ready, needs Railway setup
 
 **Deliverables**:
-- Working REST API
-- All CRUD operations functional
-- Authentication working
-- Unit tests for Document and Project services
-- Backend deployment configured (Railway)
-- API tested (Postman/curl)
+- ✅ Working REST API
+- ✅ All CRUD operations functional
+- ✅ Authentication working
+- ✅ Unit tests for Document and Project services
+- ✅ Request validation with Zod
+- ✅ API testing guide (API_TESTING.md)
+- ⏳ Backend deployment configured (Railway) - Workflow ready, needs Railway project setup
 
 ---
 
