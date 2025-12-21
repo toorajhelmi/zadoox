@@ -23,7 +23,7 @@ This guide explains how to set up Railway deployment for the Zadoox backend API.
 Railway will auto-detect settings from `railway.toml`, but verify:
 
 - **Root Directory**: `code/packages/backend`
-- **Build Command**: `cd ../.. && pnpm install --frozen-lockfile && pnpm --filter backend build`
+- **Build Command**: `cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @zadoox/shared build && pnpm --filter backend build`
 - **Start Command**: `pnpm --filter backend start`
 - **Healthcheck**: `/health` (automatic from railway.toml)
 
