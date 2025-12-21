@@ -106,10 +106,10 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
   - [x] ID generation (UUID v4, works in Node.js and browser)
   - [x] Validation utilities (email, strings, numbers, types)
   - [x] Constants (placeholders, markdown extensions)
-- [ ] Set up testing framework (Vitest)
-- [ ] Unit tests for utilities:
-  - [ ] ID generation tests
-  - [ ] Validation tests
+- [x] Set up testing framework (Vitest)
+- [x] Unit tests for utilities:
+  - [x] ID generation tests (9 tests passing)
+  - [x] Validation tests (18 tests passing)
 
 **Deliverables**:
 - ✅ Shared package with all core types
@@ -117,10 +117,10 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 - ✅ Basic utilities working (ID generation, validation)
 - ✅ Constants defined (placeholders: {CH}, {REF}, file extensions)
 - ✅ Package builds successfully
-- ⏳ Testing framework set up
-- ⏳ Unit tests for utilities
+- ✅ Testing framework set up (Vitest with coverage support)
+- ✅ Unit tests for utilities (27 tests, all passing)
 
-**Completed**: Created TypeScript types for User, Project, Document, and API request/response types. Added utility functions for ID generation and validation. Added constants for placeholders and file extensions. All code compiles and exports correctly.
+**Completed**: Created TypeScript types for User, Project, Document, and API request/response types. Added utility functions for ID generation and validation. Added constants for placeholders and file extensions. Set up Vitest testing framework with configuration. Created comprehensive unit tests for ID generation and validation utilities (27 tests, all passing). All code compiles and exports correctly.
 
 ---
 
