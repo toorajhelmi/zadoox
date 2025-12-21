@@ -25,7 +25,10 @@ interface MigrationFile {
  * Get all migration files sorted by timestamp
  */
 async function getMigrationFiles(): Promise<MigrationFile[]> {
-  const migrationsDir = join(__dirname, '../../../supabase/migrations');
+  // From: code/packages/backend/src/scripts
+  // Go up 4 levels to code root: scripts -> src -> backend -> packages -> code
+  // Then to supabase/migrations
+  const migrationsDir = join(__dirname, '../../../../supabase/migrations');
   const files = await readdir(migrationsDir);
   
   const migrations: MigrationFile[] = files
