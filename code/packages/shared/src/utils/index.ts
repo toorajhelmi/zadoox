@@ -2,5 +2,5 @@
  * Shared utilities
  */
 
-export * from './id';
-export * from './validation';
+export * from './id.js';
+export * from './validation.js';
