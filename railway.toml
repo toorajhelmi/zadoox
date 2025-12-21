@@ -1,0 +1,17 @@
+# Railway configuration for Zadoox backend service
+# Railway will build from repo root and run these commands
+
+[build]
+builder = "nixpacks"
+buildCommand = "cd code && pnpm install --frozen-lockfile && pnpm --filter @zadoox/shared build && pnpm --filter backend build"
+
+[deploy]
+startCommand = "cd code/packages/backend && node dist/server.js"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
+
+# Note: Railway may need to be configured in dashboard to use this file
+# If build still fails, check Railway dashboard → Service → Settings → Build
+

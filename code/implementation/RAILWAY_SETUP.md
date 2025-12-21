@@ -7,6 +7,12 @@ This guide explains how to set up Railway deployment for the Zadoox backend API.
 1. Railway account (sign up at https://railway.app)
 2. GitHub repository connected to Railway
 3. Backend code ready (Phase 3 ✅)
+4. Railway CLI installed (optional, for local management)
+   ```bash
+   curl -fsSL https://railway.app/install.sh | sh
+   railway login  # Authenticate via browser
+   ```
+   See `code/scripts/RAILWAY_CLI_SETUP.md` for CLI usage guide
 
 ## Setup Steps
 
@@ -20,12 +26,29 @@ This guide explains how to set up Railway deployment for the Zadoox backend API.
 
 ### 2. Configure Build Settings
 
-Railway will auto-detect settings from `railway.toml`, but verify:
+**⚠️ IMPORTANT**: Railway's automatic buildpack detection fails for monorepos. You **must manually configure** these settings in the Railway dashboard.
 
-- **Root Directory**: `code/packages/backend`
-- **Build Command**: `cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @zadoox/shared build && pnpm --filter backend build`
-- **Start Command**: `pnpm --filter backend start`
-- **Healthcheck**: `/health` (automatic from railway.toml)
+1. Go to **Railway Dashboard** → Your Project → Backend Service → **Settings** tab
+2. Under **Build & Deploy** section, set:
+   
+   - **Root Directory**: `code/packages/backend`
+     - This tells Railway where your backend's `package.json` is located
+   
+   - **Build Command**: 
+     ```bash
+     cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @zadoox/shared build && pnpm --filter backend build
+     ```
+     - Navigates to monorepo root, installs dependencies, builds shared package first (required!), then builds backend
+   
+   - **Start Command**: `node dist/server.js`
+     - Runs the compiled JavaScript entry point from the backend's `dist` folder
+   
+   - **Healthcheck Path**: `/health` (optional but recommended)
+     - Helps Railway detect if your service is healthy
+
+3. **Save** the settings
+
+**Note**: The `railway.toml` file exists but Railway's Nixpacks builder may not automatically use it for monorepos. Manual configuration in the dashboard is required.
 
 ### 3. Add Environment Variables
 
