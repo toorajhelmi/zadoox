@@ -4,13 +4,14 @@
 
 // Common API response wrapper
 export interface ApiResponse<T> {
-  data: T;
+  success: boolean;
+  data?: T;
   error?: ApiError;
 }
 
 export interface ApiError {
+  code: string;
   message: string;
-  code?: string;
   details?: unknown;
 }
 
