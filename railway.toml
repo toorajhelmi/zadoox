@@ -1,0 +1,6 @@
+# Railway configuration for Zadoox backend service
+# This file at the repo root helps Railway find the service configuration
+
+[service]
+root = "code/packages/backend"
+
