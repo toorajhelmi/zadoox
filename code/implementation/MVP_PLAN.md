@@ -201,7 +201,7 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 ---
 
 ### Phase 4: Web App - Setup & Authentication ✅
-**Status**: Not Started
+**Status**: In Progress
 
 - [ ] Initialize Next.js app
 - [ ] Set up Tailwind CSS
