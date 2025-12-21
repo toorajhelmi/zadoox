@@ -53,7 +53,7 @@ export const swaggerUiConfig = {
   },
   staticCSP: true,
   transformStaticCSP: (header: string) => header,
-  transformSpecification: (swaggerObject: any, request: any, reply: any) => {
+  transformSpecification: (swaggerObject: any, _request: any, _reply: any) => {
     return swaggerObject;
   },
   transformSpecificationClone: true,

@@ -3,7 +3,6 @@
  */
 
 import { z } from 'zod';
-import type { ProjectType, DocumentType } from '@zadoox/shared';
 
 /**
  * Project validation schemas

@@ -136,7 +136,7 @@ export const schemas = {
     type: 'object',
     properties: {
       success: { type: 'boolean' },
-      data: {},
+      data: { type: 'object' }, // Placeholder - actual data type varies by endpoint
       error: {
         type: 'object',
         properties: {

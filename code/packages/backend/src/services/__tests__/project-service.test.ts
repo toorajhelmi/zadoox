@@ -34,7 +34,7 @@ describe('ProjectService', () => {
       eq: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
       delete: vi.fn(() => ({
-        eq: vi.fn(function (this: any, column: string, value: string) {
+        eq: vi.fn(function (this: any, column: string, _value: string) {
           if (column === 'id') {
             return {
               eq: vi.fn().mockResolvedValue({
