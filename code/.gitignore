@@ -42,3 +42,6 @@ pnpm-debug.log*
 .env.test.local
 .env.production.local
 
+# Supabase connection info (contains sensitive data)
+**/SUPABASE_CONNECTION.md
+
