@@ -87,18 +87,27 @@ After deployment, Railway provides a URL:
 - This is your backend API URL
 - Use this in web app environment variables: `NEXT_PUBLIC_API_URL`
 
-## Alternative: Railway GitHub Integration (Simpler)
+## Railway GitHub Integration (Recommended - Currently Used)
 
-Instead of using GitHub Actions, you can use Railway's built-in GitHub integration:
+✅ **You're using Railway's GitHub integration** (recommended approach)
 
 1. Railway will auto-deploy on every push to `main`
-2. No GitHub Actions workflow needed
-3. Simpler setup, less control
+2. No GitHub Actions deployment step needed
+3. Simpler setup, Railway handles builds and deployments automatically
+4. GitHub Actions workflow still runs migrations before Railway deployment
 
-**To use this:**
-- Just connect Railway to GitHub (step 1 above)
-- Railway handles the rest automatically
-- Skip steps 4 and 5
+**How it works:**
+- Railway watches your GitHub repository
+- On push to `main`, Railway automatically:
+  - Pulls the latest code
+  - Runs the build (as configured in Railway dashboard)
+  - Deploys the service
+- The GitHub Actions workflow (`deploy.yml`) runs database migrations first, then Railway deploys
+
+**Note:** If you want to use GitHub Actions for deployment instead:
+- You would need to add `RAILWAY_TOKEN` secret to GitHub
+- Uncomment the Railway deployment step in `.github/workflows/deploy.yml`
+- This would result in Railway deploying twice (once via integration, once via GitHub Actions)
 
 ## Troubleshooting
 

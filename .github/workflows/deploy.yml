@@ -81,22 +81,9 @@ jobs:
         working-directory: ./code
         run: pnpm --filter backend build
 
-      - name: Deploy to Railway
-        # NOTE: Requires Railway project setup and RAILWAY_TOKEN secret
-        # See code/packages/backend/RAILWAY_SETUP.md for setup instructions
-        # This step will be skipped if RAILWAY_TOKEN is not configured
-        continue-on-error: true
-        id: railway-deploy
-        uses: bervProject/railway-deploy@v0.2.5
-        with:
-          railway_token: ${{ secrets.RAILWAY_TOKEN || '' }}
-          service: backend
-          detach: true
-      
-      - name: Railway deployment status
-        if: steps.railway-deploy.outcome == 'failure' || steps.railway-deploy.outcome == 'skipped'
+      - name: Railway deployment info
         run: |
-          echo "ℹ️ Railway deployment skipped - RAILWAY_TOKEN secret may not be configured"
-          echo "See code/packages/backend/RAILWAY_SETUP.md for setup instructions"
-          echo "This is expected if Railway is not yet set up."
+          echo "ℹ️ Backend deployment is handled by Railway's GitHub integration"
+          echo "Railway will automatically deploy on push to main branch"
+          echo "Migrations are run via this workflow before Railway deployment"
 
