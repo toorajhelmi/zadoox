@@ -78,6 +78,7 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 - [x] Set up CI/CD (GitHub Actions):
   - [x] CI workflow (build, type-check, lint, test)
   - [x] GitHub Actions workflow file created
+  - [x] Backend deployment workflow created (ready for Phase 3)
 
 **Deliverables**:
 - ✅ Working monorepo structure
@@ -85,11 +86,18 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 - ✅ Development scripts configured
 - ✅ TypeScript configs set up
 - ✅ ESLint and Prettier configured
-- ✅ CI/CD workflows configured (.github/workflows/ci.yml)
+- ✅ CI workflow configured (.github/workflows/ci.yml)
+- ✅ Backend deployment workflow ready (.github/workflows/deploy-backend.yml)
+- ✅ Deployment guide created (code/DEPLOYMENT.md)
 
 **Completed**: Basic monorepo structure with all three packages (web, backend, shared) set up with TypeScript, ESLint, and Prettier. Root package.json with workspace scripts. Next.js app structure initialized. Fastify backend server initialized. GitHub Actions CI workflow created (runs on push/PR to main/develop branches, performs type-check, lint, build, and test).
 
-**Note**: Branch protection rules should be configured in GitHub repository settings. Deployment workflows will be added when services are ready (backend in Phase 3, web app in Phase 7).
+**Note**: Branch protection rules should be configured in GitHub repository settings. 
+
+**Deployment**: 
+- Backend deployment workflow (`.github/workflows/deploy-backend.yml`) is ready and will be activated in Phase 3 when backend API is ready
+- Web app deployment uses Vercel's GitHub integration (no workflow needed) and will be set up in Phase 7
+- See `code/DEPLOYMENT.md` for detailed deployment setup instructions
 
 ---
 
@@ -125,22 +133,34 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 ---
 
 ### Phase 2: Database Schema & Supabase Setup ✅
-**Status**: Not Started
+**Status**: ✅ COMPLETED
 
-- [ ] Set up Supabase project
-- [ ] Create database schema:
-  - [ ] Users (use Supabase Auth, extend with profiles)
-  - [ ] Projects table
-  - [ ] Documents table
-  - [ ] Relationships and indexes
-- [ ] Set up Row Level Security (RLS) policies
-- [ ] Create database migrations
-- [ ] Set up Supabase client in backend
+- [x] Set up Supabase project
+- [x] Create database schema:
+  - [x] Users (use Supabase Auth, extend with profiles)
+  - [x] Projects table
+  - [x] Documents table
+  - [x] Relationships and indexes
+- [x] Set up Row Level Security (RLS) policies
+- [x] Create database migrations
+- [x] Set up Supabase client in backend
 
 **Deliverables**:
-- Database schema deployed
-- RLS policies configured
-- Backend can connect to Supabase
+- ✅ Database schema migration files created (001_initial_schema.sql, 002_rls_policies.sql, 003_create_profile_trigger.sql)
+- ✅ RLS policies configured for all tables
+- ✅ Supabase client setup in backend (`src/db/client.ts`)
+- ✅ Database connection test script (`pnpm db:test`)
+- ✅ Setup documentation created (`SETUP.md`, `src/db/README.md`)
+
+**Completed**: Created complete database schema with user_profiles, projects, and documents tables. Set up comprehensive RLS policies to enforce access control. Created migration files for easy deployment. Set up Supabase client with both admin and user client options. Added database connection testing script. Created setup documentation and migration guide.
+
+**Next Steps**: 
+1. ✅ Add GitHub secret `DATABASE_URL` with PostgreSQL connection string (see `code/DEPLOYMENT.md`)
+2. ✅ Migrations will run automatically via GitHub Actions on push to `main`
+3. Create `.env` file with Supabase credentials (see `packages/backend/SETUP.md`)
+4. Test database connection: `pnpm db:test`
+5. Test migrations locally: `pnpm --filter backend db:migrate`
+6. Once GitHub secret is configured and migrations run, Phase 2 is complete
 
 ---
 

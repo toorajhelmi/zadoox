@@ -32,6 +32,9 @@ pnpm-debug.log*
 *.swo
 *~
 
+# Supabase
+.supabase/
+
 # TypeScript
 *.tsbuildinfo
 
@@ -41,4 +44,7 @@ pnpm-debug.log*
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Supabase connection info (contains sensitive data)
+**/SUPABASE_CONNECTION.md
 
