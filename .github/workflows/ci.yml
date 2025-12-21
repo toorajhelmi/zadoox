@@ -3,8 +3,14 @@ name: CI
 on:
   push:
     branches: [main, develop]
+    paths:
+      - 'code/**'  # Only run CI when code changes
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main, develop]
+    paths:
+      - 'code/**'  # Only run CI when code changes
+      - '.github/workflows/ci.yml'
 
 jobs:
   build-and-test:
