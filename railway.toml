@@ -3,6 +3,7 @@
 
 [build]
 builder = "nixpacks"
+buildCommand = "cd code && pnpm install --frozen-lockfile && pnpm --filter @zadoox/shared build && pnpm --filter backend build"
 watchPatterns = ["code/packages/backend/**", "code/packages/shared/**"]
 
 [deploy]
