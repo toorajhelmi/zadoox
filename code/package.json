@@ -10,6 +10,7 @@
     "test:watch": "pnpm --recursive test:watch",
     "test:coverage": "pnpm --recursive test:coverage",
     "lint": "pnpm --recursive lint",
+    "lint:strict": "pnpm --recursive lint:strict",
     "type-check": "pnpm --recursive type-check",
     "clean": "pnpm --recursive clean && rm -rf node_modules"
   },
