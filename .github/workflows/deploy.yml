@@ -137,6 +137,15 @@ jobs:
         run: |
           echo "Pulling environment variables..."
           vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+          
+          echo "Verifying environment variables were pulled..."
+          if [ -f ".vercel/.env.production.local" ]; then
+            echo "✅ Environment file created"
+            echo "Environment variables in file:"
+            grep -E "^[A-Z]" .vercel/.env.production.local | sed 's/=.*/=***/' || echo "No vars found"
+          else
+            echo "⚠️  Warning: .vercel/.env.production.local not found"
+          fi
 
       - name: Build with Vercel
         working-directory: ./code/packages/web
@@ -145,8 +154,20 @@ jobs:
         run: |
           echo "Building with Vercel CLI..."
           echo "Current directory: $(pwd)"
-          echo "Running vercel build --prod..."
           
+          # vercel build automatically loads .vercel/.env.production.local
+          # But we need to ensure they're available to the build process
+          # We'll source the file to make vars available in the current shell
+          if [ -f ".vercel/.env.production.local" ]; then
+            echo "Sourcing environment variables from .vercel/.env.production.local..."
+            set -a
+            . .vercel/.env.production.local
+            set +a
+            echo "Environment variables loaded into shell"
+          fi
+          
+          echo "Running vercel build --prod..."
+          echo "Note: vercel build should automatically inject env vars, but we've also loaded them into the shell"
           # Run vercel build and capture output
           set -e
           vercel build --prod --token=$VERCEL_TOKEN --yes
