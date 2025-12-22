@@ -268,53 +268,7 @@ Instead of adding error handling, defensive checks, or workarounds for things th
 
 ---
 
-### Phase 6: Backend API - Export Service ✅
-**Status**: Not Started
-
-- [ ] Extended Markdown parser
-- [ ] LaTeX converter:
-  - [ ] Markdown → LaTeX conversion
-  - [ ] Placeholder replacement ({REF}, {CH})
-  - [ ] Math support
-  - [ ] Image handling
-- [ ] PDF generation:
-  - [ ] LaTeX compilation integration
-  - [ ] Template support (basic)
-  - [ ] Error handling
-- [ ] Export API endpoint
-- [ ] File storage integration (Supabase Storage)
-
-**Deliverables**:
-- Export API working
-- Can convert Extended Markdown to LaTeX
-- Can generate PDF from LaTeX
-- Downloads working
-
----
-
-### Phase 7: Backend API - AI Service ✅
-**Status**: Not Started
-
-- [ ] OpenAI integration
-- [ ] AI Service structure:
-  - [ ] Prompt management
-  - [ ] Context building
-  - [ ] Response caching (basic)
-- [ ] AI endpoints:
-  - [ ] Suggest text completion
-  - [ ] Expand text
-  - [ ] Improve text
-- [ ] Rate limiting
-- [ ] Error handling
-
-**Deliverables**:
-- AI service working
-- OpenAI integration functional
-- AI endpoints tested
-
----
-
-### Phase 8: Shared Package - Editor Logic ✅
+### Phase 6: Shared Package - Editor Logic ✅
 **Status**: Not Started
 
 - [ ] Markdown utilities:
@@ -340,7 +294,7 @@ Instead of adding error handling, defensive checks, or workarounds for things th
 
 ---
 
-### Phase 9: Web App - Document Editor (Basic) ✅
+### Phase 7: Web App - Document Editor (Basic) ✅
 **Status**: Not Started
 
 - [ ] Editor layout (sidebar, main, toolbar)
@@ -357,6 +311,50 @@ Instead of adding error handling, defensive checks, or workarounds for things th
 - Can edit documents
 - Markdown highlighting working
 - Auto-save functional
+
+### Phase 8: Backend API - Export Service ✅
+**Status**: Not Started
+
+- [ ] Extended Markdown parser
+- [ ] LaTeX converter:
+  - [ ] Markdown → LaTeX conversion
+  - [ ] Placeholder replacement ({REF}, {CH})
+  - [ ] Math support
+  - [ ] Image handling
+- [ ] PDF generation:
+  - [ ] LaTeX compilation integration
+  - [ ] Template support (basic)
+  - [ ] Error handling
+- [ ] Export API endpoint
+- [ ] File storage integration (Supabase Storage)
+
+**Deliverables**:
+- Export API working
+- Can convert Extended Markdown to LaTeX
+- Can generate PDF from LaTeX
+- Downloads working
+
+---
+
+### Phase 9: Backend API - AI Service ✅
+**Status**: Not Started
+
+- [ ] OpenAI integration
+- [ ] AI Service structure:
+  - [ ] Prompt management
+  - [ ] Context building
+  - [ ] Response caching (basic)
+- [ ] AI endpoints:
+  - [ ] Suggest text completion
+  - [ ] Expand text
+  - [ ] Improve text
+- [ ] Rate limiting
+- [ ] Error handling
+
+**Deliverables**:
+- AI service working
+- OpenAI integration functional
+- AI endpoints tested
 
 ---
 
