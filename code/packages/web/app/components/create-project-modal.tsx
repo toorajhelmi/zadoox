@@ -2,7 +2,7 @@
 
 import { useState, FormEvent } from 'react';
 import type { CreateProjectInput, ProjectType } from '@zadoox/shared';
-import { ProjectTypeIcon, SparkleIcon, PlusIcon, LoaderIcon } from './icons';
+import { ProjectTypeIcon, SparkleIcon, LoaderIcon } from './icons';
 
 interface CreateProjectModalProps {
   isOpen: boolean;
