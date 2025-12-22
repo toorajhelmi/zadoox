@@ -105,11 +105,9 @@ describe('API Client - Projects', () => {
     it('should throw ApiError on network failure', async () => {
       (global.fetch as any).mockRejectedValueOnce(new Error('Network error'));
 
-      await expect(api.projects.list()).rejects.toThrow(ApiError);
-      
-      // Reset for second assertion
-      (global.fetch as any).mockRejectedValueOnce(new Error('Network error'));
-      await expect(api.projects.list()).rejects.toThrow('Failed to connect to API');
+      const error = await api.projects.list().catch(e => e);
+      expect(error).toBeInstanceOf(ApiError);
+      expect(error.message).toContain('Failed to connect to API');
     });
 
     it('should throw ApiError on API error response', async () => {
@@ -126,22 +124,9 @@ describe('API Client - Projects', () => {
         }),
       });
 
-      await expect(api.projects.list()).rejects.toThrow(ApiError);
-      
-      // Reset for second assertion
-      (global.fetch as any).mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        statusText: 'Internal Server Error',
-        json: async () => ({
-          success: false,
-          error: {
-            code: 'INTERNAL_ERROR',
-            message: 'Server error',
-          },
-        }),
-      });
-      await expect(api.projects.list()).rejects.toThrow('Server error');
+      const error = await api.projects.list().catch(e => e);
+      expect(error).toBeInstanceOf(ApiError);
+      expect(error.message).toContain('Server error');
     });
   });
 
@@ -192,8 +177,9 @@ describe('API Client - Projects', () => {
         }),
       });
 
-      await expect(api.projects.get('999')).rejects.toThrow(ApiError);
-      await expect(api.projects.get('999')).rejects.toThrow('Project not found');
+      const error = await api.projects.get('999').catch(e => e);
+      expect(error).toBeInstanceOf(ApiError);
+      expect(error.message).toContain('Project not found');
     });
   });
 
@@ -258,8 +244,9 @@ describe('API Client - Projects', () => {
         }),
       });
 
-      await expect(api.projects.create(input)).rejects.toThrow(ApiError);
-      await expect(api.projects.create(input)).rejects.toThrow('Failed to create project');
+      const error = await api.projects.create(input).catch(e => e);
+      expect(error).toBeInstanceOf(ApiError);
+      expect(error.message).toContain('Failed to create project');
     });
   });
 
@@ -322,8 +309,9 @@ describe('API Client - Projects', () => {
         }),
       });
 
-      await expect(api.projects.update('1', input)).rejects.toThrow(ApiError);
-      await expect(api.projects.update('1', input)).rejects.toThrow('Failed to update project');
+      const error = await api.projects.update('1', input).catch(e => e);
+      expect(error).toBeInstanceOf(ApiError);
+      expect(error.message).toContain('Failed to update project');
     });
   });
 
@@ -363,8 +351,9 @@ describe('API Client - Projects', () => {
         }),
       });
 
-      await expect(api.projects.delete('999')).rejects.toThrow(ApiError);
-      await expect(api.projects.delete('999')).rejects.toThrow('Project not found');
+      const error = await api.projects.delete('999').catch(e => e);
+      expect(error).toBeInstanceOf(ApiError);
+      expect(error.message).toContain('Project not found');
     });
   });
 
@@ -402,18 +391,9 @@ describe('API Client - Projects', () => {
         },
       });
 
-      await expect(api.projects.list()).rejects.toThrow(ApiError);
-      
-      // Reset for second assertion
-      (global.fetch as any).mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        statusText: 'Internal Server Error',
-        json: async () => {
-          throw new Error('Not JSON');
-        },
-      });
-      await expect(api.projects.list()).rejects.toThrow('Invalid response from server');
+      const error = await api.projects.list().catch(e => e);
+      expect(error).toBeInstanceOf(ApiError);
+      expect(error.message).toContain('Invalid response from server');
     });
 
     it('should handle missing authentication token gracefully', async () => {
