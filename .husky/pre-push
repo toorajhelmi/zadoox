@@ -26,13 +26,29 @@ if [ -z "$PNPM_CMD" ]; then
   exit 1
 fi
 
-# Check if node is available (required for pnpm)
-if ! command -v node &> /dev/null; then
+# Try to find node in common locations
+NODE_CMD=""
+if command -v node &> /dev/null; then
+  NODE_CMD="node"
+elif [ -f "/usr/local/bin/node" ]; then
+  NODE_CMD="/usr/local/bin/node"
+elif [ -f "$HOME/.nvm/versions/node/$(ls -t $HOME/.nvm/versions/node 2>/dev/null | head -1)/bin/node" ]; then
+  NODE_CMD="$HOME/.nvm/versions/node/$(ls -t $HOME/.nvm/versions/node 2>/dev/null | head -1)/bin/node"
+elif [ -f "/opt/homebrew/bin/node" ]; then
+  NODE_CMD="/opt/homebrew/bin/node"
+fi
+
+if [ -z "$NODE_CMD" ]; then
   echo "❌ Error: node is not installed or not in PATH"
   echo "   Node.js is required for type-checking"
-  echo "   Configure PATH to include node location"
+  echo "   Install Node.js or configure PATH to include node location"
   echo "   Push aborted - type-check cannot run without node"
   exit 1
+fi
+
+# Add node to PATH if found in non-standard location
+if [ "$NODE_CMD" != "node" ]; then
+  export PATH="$(dirname "$NODE_CMD"):$PATH"
 fi
 
 # Build shared package first (required for type-check to resolve @zadoox/shared)
