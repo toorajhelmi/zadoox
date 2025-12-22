@@ -101,7 +101,8 @@ jobs:
 
       - name: Deploy to Vercel
         uses: amondnet/vercel-action@v25
-        if: ${{ secrets.VERCEL_TOKEN != '' }}
+        if: ${{ secrets.VERCEL_TOKEN != '' && secrets.VERCEL_ORG_ID != '' && secrets.VERCEL_PROJECT_ID != '' }}
+        continue-on-error: true
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
@@ -110,8 +111,8 @@ jobs:
           working-directory: ./code/packages/web
       
       - name: Vercel deployment info
-        if: ${{ secrets.VERCEL_TOKEN == '' }}
+        if: ${{ secrets.VERCEL_TOKEN == '' || secrets.VERCEL_ORG_ID == '' || secrets.VERCEL_PROJECT_ID == '' }}
         run: |
-          echo "⚠️ VERCEL_TOKEN not set - skipping Vercel deployment via GitHub Actions"
+          echo "ℹ️ Vercel deployment via GitHub Actions skipped (missing secrets)"
           echo "Vercel should deploy automatically via GitHub integration if connected"
-          echo "Connect at: https://vercel.com/tooraj-helmis-projects/zadoox.com/settings/git"
+          echo "Or add VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID secrets to enable GitHub Actions deployment"
