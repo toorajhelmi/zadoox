@@ -10,6 +10,25 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 
 ---
 
+## Development Philosophy: Strict Implementation Mentality
+
+**IMPORTANT**: This project follows a **strict implementation mentality**. 
+
+Instead of adding error handling, defensive checks, or workarounds for things that "should exist", we **fix and implement things properly**:
+
+- ❌ **Don't do**: Add error handling for missing environment variables, add checks for "if this doesn't exist", add fallbacks for incomplete implementations
+- ✅ **Do**: Implement the missing environment variables, create the missing components, fix the root cause
+
+**Examples**:
+- If environment variables are missing → Set them up properly
+- If a dependency is missing → Install and configure it
+- If a feature is incomplete → Complete the implementation
+- If something doesn't exist → Build it properly
+
+**Principle**: Fix the problem, don't work around it.
+
+---
+
 ## MVP Scope: What's IN
 
 ### ✅ Included Features
