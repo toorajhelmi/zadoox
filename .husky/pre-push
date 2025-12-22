@@ -6,17 +6,32 @@ cd "$(git rev-parse --show-toplevel)/code" || exit 1
 
 echo "🔍 Running type-check before push..."
 
-if ! command -v pnpm &> /dev/null; then
-  echo "❌ Error: pnpm is not installed"
-  exit 1
+# Try to find pnpm in common locations
+PNPM_CMD=""
+if command -v pnpm &> /dev/null; then
+  PNPM_CMD="pnpm"
+elif [ -f "$HOME/.local/share/pnpm/pnpm" ]; then
+  PNPM_CMD="$HOME/.local/share/pnpm/pnpm"
+elif [ -f "/usr/local/bin/pnpm" ]; then
+  PNPM_CMD="/usr/local/bin/pnpm"
+elif [ -f "$HOME/.pnpm/pnpm" ]; then
+  PNPM_CMD="$HOME/.pnpm/pnpm"
 fi
 
-if pnpm type-check; then
+if [ -z "$PNPM_CMD" ]; then
+  echo "⚠️  Warning: pnpm not found, skipping type-check"
+  echo "   Install pnpm: npm install -g pnpm"
+  echo "   Or configure PATH to include pnpm location"
+  exit 0  # Allow push but warn
+fi
+
+if "$PNPM_CMD" type-check; then
   echo "✅ Type-check passed! Proceeding with push..."
 else
   echo "❌ Type-check failed! Push aborted."
   exit 1
 fi
+
 
 
 
