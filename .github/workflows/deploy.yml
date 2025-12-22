@@ -143,8 +143,15 @@ jobs:
             echo "✅ Environment file created"
             echo "Environment variables in file:"
             grep -E "^[A-Z]" .vercel/.env.production.local | sed 's/=.*/=***/' || echo "No vars found"
+            
+            # Copy to .env.production.local so Next.js can load it during build
+            echo "Copying .vercel/.env.production.local to .env.production.local for Next.js..."
+            cp .vercel/.env.production.local .env.production.local
+            echo "✅ Environment file copied for Next.js build"
           else
-            echo "⚠️  Warning: .vercel/.env.production.local not found"
+            echo "❌ ERROR: .vercel/.env.production.local not found!"
+            echo "Make sure environment variables are set in Vercel project settings"
+            exit 1
           fi
 
       - name: Build with Vercel
@@ -155,19 +162,15 @@ jobs:
           echo "Building with Vercel CLI..."
           echo "Current directory: $(pwd)"
           
-          # vercel build automatically loads .vercel/.env.production.local
-          # But we need to ensure they're available to the build process
-          # We'll source the file to make vars available in the current shell
-          if [ -f ".vercel/.env.production.local" ]; then
-            echo "Sourcing environment variables from .vercel/.env.production.local..."
-            set -a
-            . .vercel/.env.production.local
-            set +a
-            echo "Environment variables loaded into shell"
+          # Verify .env.production.local exists
+          if [ -f ".env.production.local" ]; then
+            echo "✅ .env.production.local exists - Next.js will load it automatically"
+          else
+            echo "❌ ERROR: .env.production.local not found!"
+            exit 1
           fi
           
           echo "Running vercel build --prod..."
-          echo "Note: vercel build should automatically inject env vars, but we've also loaded them into the shell"
           # Run vercel build and capture output
           set -e
           vercel build --prod --token=$VERCEL_TOKEN --yes
