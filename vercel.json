@@ -1,7 +1,7 @@
 {
-  "buildCommand": "cd code && pnpm install --frozen-lockfile --include=dev && pnpm --filter @zadoox/web build",
+  "buildCommand": "cd code && pnpm install --frozen-lockfile && pnpm --filter @zadoox/web build",
   "outputDirectory": "code/packages/web/.next",
-  "installCommand": "cd code && pnpm install --frozen-lockfile --include=dev",
+  "installCommand": "cd code && pnpm install --frozen-lockfile",
   "framework": "nextjs"
 }
 
