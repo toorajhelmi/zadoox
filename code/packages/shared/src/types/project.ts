@@ -2,7 +2,7 @@
  * Project types
  */
 
-export type ProjectType = 'academic' | 'industry' | 'code-docs';
+export type ProjectType = 'academic' | 'industry' | 'code-docs' | 'other';
 
 export interface Project {
   id: string;
@@ -34,6 +34,7 @@ export interface UpdateProjectInput {
   type?: ProjectType;
   settings?: Partial<ProjectSettings>;
 }
+
 
 
 

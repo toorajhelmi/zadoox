@@ -10,7 +10,7 @@ import { z } from 'zod';
 export const createProjectSchema = z.object({
   name: z.string().min(1, 'Project name is required').max(255, 'Project name too long'),
   description: z.string().max(1000, 'Description too long').optional(),
-  type: z.enum(['academic', 'industry', 'code-docs'], {
+  type: z.enum(['academic', 'industry', 'code-docs', 'other'], {
     errorMap: () => ({ message: 'Invalid project type' }),
   }),
   settings: z
@@ -25,7 +25,7 @@ export const createProjectSchema = z.object({
 export const updateProjectSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   description: z.string().max(1000).optional(),
-  type: z.enum(['academic', 'industry', 'code-docs']).optional(),
+  type: z.enum(['academic', 'industry', 'code-docs', 'other']).optional(),
   settings: z
     .object({
       defaultFormat: z.enum(['latex', 'markdown']).optional(),

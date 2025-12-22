@@ -19,6 +19,7 @@ const createMockSupabaseClient = () => {
 describe('ProjectService', () => {
   let service: ProjectService;
   let mockSupabase: SupabaseClient;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let mockQueryBuilder: any;
 
   beforeEach(() => {
@@ -34,6 +35,7 @@ describe('ProjectService', () => {
       eq: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
       delete: vi.fn(() => ({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         eq: vi.fn(function (this: any, column: string, _value: string) {
           if (column === 'id') {
             return {
@@ -48,7 +50,7 @@ describe('ProjectService', () => {
       })),
     };
     
-    vi.mocked(mockSupabase.from).mockReturnValue(mockQueryBuilder as any);
+    vi.mocked(mockSupabase.from).mockReturnValue(mockQueryBuilder);
   });
 
   describe('createProject', () => {

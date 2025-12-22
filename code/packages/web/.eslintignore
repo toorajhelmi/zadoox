@@ -1,0 +1,15 @@
+# Ignore test files - they're handled by vitest
+**/__tests__/**
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+vitest.config.ts
+vitest.setup.ts
+
+# Ignore build outputs
+.next/
+out/
+dist/
+node_modules/
+

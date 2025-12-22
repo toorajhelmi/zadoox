@@ -85,13 +85,14 @@ export async function documentRoutes(fastify: FastifyInstance) {
           data: documents,
         };
         return reply.send(response);
-      } catch (error: any) {
+      } catch (error: unknown) {
         fastify.log.error(error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to list documents';
         const response: ApiResponse<null> = {
           success: false,
           error: {
             code: 'INTERNAL_ERROR',
-            message: error.message || 'Failed to list documents',
+            message: errorMessage,
           },
         };
         return reply.status(500).send(response);
@@ -157,14 +158,15 @@ export async function documentRoutes(fastify: FastifyInstance) {
           data: document,
         };
         return reply.send(response);
-      } catch (error: any) {
+      } catch (error: unknown) {
         fastify.log.error(error);
-        const statusCode = error.message.includes('not found') ? 404 : 500;
+        const errorMessage = error instanceof Error ? error.message : 'Failed to get document';
+        const statusCode = errorMessage.includes('not found') ? 404 : 500;
         const response: ApiResponse<null> = {
           success: false,
           error: {
             code: statusCode === 404 ? 'NOT_FOUND' : 'INTERNAL_ERROR',
-            message: error.message || 'Failed to get document',
+            message: errorMessage,
           },
         };
         return reply.status(statusCode).send(response);
@@ -227,11 +229,12 @@ export async function documentRoutes(fastify: FastifyInstance) {
         data: document,
       };
       return reply.status(201).send(response);
-    } catch (error: any) {
+    } catch (error: unknown) {
       fastify.log.error(error);
       let statusCode = 500;
-      if (error.message.includes('not found')) statusCode = 404;
-      else if (error.message.includes('Invalid')) statusCode = 400;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('not found')) statusCode = 404;
+      else if (errorMessage.includes('Invalid')) statusCode = 400;
 
       const response: ApiResponse<null> = {
         success: false,
@@ -242,7 +245,7 @@ export async function documentRoutes(fastify: FastifyInstance) {
               : statusCode === 400
               ? 'VALIDATION_ERROR'
               : 'INTERNAL_ERROR',
-          message: error.message || 'Failed to create document',
+          message: error instanceof Error ? error.message : 'Failed to create document',
         },
       };
       return reply.status(statusCode).send(response);
@@ -323,11 +326,12 @@ export async function documentRoutes(fastify: FastifyInstance) {
           data: document,
         };
         return reply.send(response);
-      } catch (error: any) {
+      } catch (error: unknown) {
         fastify.log.error(error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to update document';
         let statusCode = 500;
-        if (error.message.includes('not found')) statusCode = 404;
-        else if (error.message.includes('Invalid')) statusCode = 400;
+        if (errorMessage.includes('not found')) statusCode = 404;
+        else if (errorMessage.includes('Invalid')) statusCode = 400;
 
         const response: ApiResponse<null> = {
           success: false,
@@ -338,7 +342,7 @@ export async function documentRoutes(fastify: FastifyInstance) {
                 : statusCode === 400
                 ? 'VALIDATION_ERROR'
                 : 'INTERNAL_ERROR',
-            message: error.message || 'Failed to update document',
+            message: errorMessage,
           },
         };
         return reply.status(statusCode).send(response);
@@ -402,14 +406,15 @@ export async function documentRoutes(fastify: FastifyInstance) {
           success: true,
         };
         return reply.send(response);
-      } catch (error: any) {
+      } catch (error: unknown) {
         fastify.log.error(error);
-        const statusCode = error.message.includes('not found') ? 404 : 500;
+        const errorMessage = error instanceof Error ? error.message : 'Failed to delete document';
+        const statusCode = errorMessage.includes('not found') ? 404 : 500;
         const response: ApiResponse<null> = {
           success: false,
           error: {
             code: statusCode === 404 ? 'NOT_FOUND' : 'INTERNAL_ERROR',
-            message: error.message || 'Failed to delete document',
+            message: errorMessage,
           },
         };
         return reply.status(statusCode).send(response);

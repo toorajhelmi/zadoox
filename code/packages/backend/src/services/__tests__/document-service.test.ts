@@ -19,6 +19,7 @@ const createMockSupabaseClient = () => {
 describe('DocumentService', () => {
   let service: DocumentService;
   let mockSupabase: SupabaseClient;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let mockQueryBuilder: any;
 
   beforeEach(() => {
@@ -41,7 +42,7 @@ describe('DocumentService', () => {
       })),
     };
     
-    vi.mocked(mockSupabase.from).mockReturnValue(mockQueryBuilder as any);
+    vi.mocked(mockSupabase.from).mockReturnValue(mockQueryBuilder);
   });
 
   describe('createDocument', () => {

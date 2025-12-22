@@ -93,7 +93,7 @@ export class DocumentService {
     // Get existing document to check access (via RLS) and get current version
     const existing = await this.getDocumentById(documentId);
 
-    const updateData: any = {};
+    const updateData: Partial<Record<string, unknown>> = {};
     if (input.title !== undefined) updateData.title = input.title;
     if (input.content !== undefined) {
       updateData.content = input.content;
@@ -158,17 +158,17 @@ export class DocumentService {
   /**
    * Map database document to Document type
    */
-  private mapDbDocumentToDocument(dbDocument: any): Document {
+  private mapDbDocumentToDocument(dbDocument: Record<string, unknown>): Document {
     return {
-      id: dbDocument.id,
-      projectId: dbDocument.project_id,
-      title: dbDocument.title,
-      content: dbDocument.content,
-      metadata: dbDocument.metadata,
-      version: dbDocument.version,
-      createdAt: new Date(dbDocument.created_at),
-      updatedAt: new Date(dbDocument.updated_at),
-      authorId: dbDocument.author_id,
+      id: dbDocument.id as string,
+      projectId: dbDocument.project_id as string,
+      title: dbDocument.title as string,
+      content: dbDocument.content as string,
+      metadata: dbDocument.metadata as Document['metadata'],
+      version: dbDocument.version as number,
+      createdAt: new Date(dbDocument.created_at as string),
+      updatedAt: new Date(dbDocument.updated_at as string),
+      authorId: dbDocument.author_id as string,
     };
   }
 }

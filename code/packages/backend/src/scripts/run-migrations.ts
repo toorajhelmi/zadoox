@@ -55,17 +55,18 @@ async function runMigration(client: pg.Client, filePath: string, fileName: strin
     await client.query(sql);
     
     console.log(`✅ Migration executed: ${fileName}`);
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Check if it's a "already exists" error (idempotent operations)
-    if (error.message && (
-      error.message.includes('already exists') ||
-      error.message.includes('duplicate') ||
-      error.message.includes('IF NOT EXISTS')
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (errorMessage && (
+      errorMessage.includes('already exists') ||
+      errorMessage.includes('duplicate') ||
+      errorMessage.includes('IF NOT EXISTS')
     )) {
       console.log(`⚠️  Migration skipped (already applied): ${fileName}`);
       return;
     }
-    throw new Error(`Migration failed: ${fileName}\n${error.message}`);
+    throw new Error(`Migration failed: ${fileName}\n${errorMessage}`);
   }
 }
 

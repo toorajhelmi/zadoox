@@ -2,10 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  * {
+    font-family: theme('fontFamily.sans');
+  }
+}
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+/* VS Code font stack - exact match */
+:root {
+  --font-vscode: 'Consolas', 'Monaco', 'Courier New', monospace;
+  --font-ai: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace;
 }
 
 body {
@@ -13,15 +25,19 @@ body {
   padding: 0;
   background-color: #1e1e1e;
   color: #cccccc;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: var(--font-vscode);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'liga' 1, 'calt' 1; /* Enable ligatures if available */
 }
 
 code {
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-family: var(--font-vscode);
+}
+
+/* Optional: Use AI-themed font variant */
+.font-ai {
+  font-family: var(--font-ai);
 }
 
 

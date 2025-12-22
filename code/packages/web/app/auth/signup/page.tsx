@@ -61,8 +61,8 @@ export default function SignupPage() {
         setPassword('');
         setConfirmPassword('');
       }
-    } catch (err: any) {
-      const errorMessage = err?.message || 'An unexpected error occurred';
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
       if (errorMessage.includes('fetch') || errorMessage.includes('network')) {
         setError('Network error: Unable to connect to authentication service.');
       } else {
