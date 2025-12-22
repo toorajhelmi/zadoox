@@ -25,7 +25,11 @@ module.exports = {
         'vscode-sidebarBorder': '#3e3e42',
       },
       fontFamily: {
+        // VS Code exact font stack
+        sans: ['"Consolas"', '"Monaco"', '"Courier New"', 'monospace'],
         mono: ['"Consolas"', '"Monaco"', '"Courier New"', 'monospace'],
+        // AI vibe alternatives (if user has them installed)
+        'ai': ['"JetBrains Mono"', '"Fira Code"', '"Consolas"', '"Monaco"', '"Courier New"', 'monospace'],
       },
     },
   },

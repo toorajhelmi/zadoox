@@ -30,7 +30,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           >
             <span className="text-xs">☰</span>
           </button>
-          <span className="text-xs font-semibold text-[#cccccc] font-mono">Zadoox</span>
+          <span className="text-xs font-semibold text-[#cccccc]">Zadoox</span>
           <span className="text-[10px] text-[#858585] hidden sm:inline">AI-powered documentation</span>
         </div>
         <div className="flex items-center gap-2">
