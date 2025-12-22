@@ -52,6 +52,5 @@ jobs:
 
       - name: Test
         working-directory: ./code
-        run: pnpm test || echo "No tests yet"
-        continue-on-error: true
+        run: pnpm test
 
