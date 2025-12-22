@@ -2,6 +2,7 @@
  * Unit tests for API Client (Phase 5)
  */
 
+/// <reference types="vitest" />
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { api, ApiError } from '../client';
 import type { Project, CreateProjectInput, UpdateProjectInput } from '@zadoox/shared';

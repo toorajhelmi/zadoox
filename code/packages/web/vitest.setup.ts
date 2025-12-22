@@ -2,6 +2,7 @@
  * Vitest setup file for web package
  */
 
+/// <reference types="vitest" />
 import { vi } from 'vitest';
 
 // Mock Next.js router
