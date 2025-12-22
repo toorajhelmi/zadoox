@@ -53,11 +53,11 @@ describe('Validation utilities', () => {
     });
 
     it('should return false for non-string values', () => {
-      expect(isNonEmptyString(null as any)).toBe(false);
-      expect(isNonEmptyString(undefined as any)).toBe(false);
-      expect(isNonEmptyString(123 as any)).toBe(false);
-      expect(isNonEmptyString({} as any)).toBe(false);
-      expect(isNonEmptyString([] as any)).toBe(false);
+      expect(isNonEmptyString(null as unknown)).toBe(false);
+      expect(isNonEmptyString(undefined as unknown)).toBe(false);
+      expect(isNonEmptyString(123 as unknown)).toBe(false);
+      expect(isNonEmptyString({} as unknown)).toBe(false);
+      expect(isNonEmptyString([] as unknown)).toBe(false);
     });
   });
 
@@ -76,9 +76,9 @@ describe('Validation utilities', () => {
     });
 
     it('should return false for non-number values', () => {
-      expect(isValidNumber('123' as any)).toBe(false);
-      expect(isValidNumber(null as any)).toBe(false);
-      expect(isValidNumber(undefined as any)).toBe(false);
+      expect(isValidNumber('123' as unknown)).toBe(false);
+      expect(isValidNumber(null as unknown)).toBe(false);
+      expect(isValidNumber(undefined as unknown)).toBe(false);
     });
   });
 
@@ -148,6 +148,7 @@ describe('Validation utilities', () => {
     });
   });
 });
+
 
 
 
