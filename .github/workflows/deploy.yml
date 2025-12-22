@@ -120,10 +120,6 @@ jobs:
         working-directory: ./code
         run: pnpm --filter @zadoox/shared build
 
-      - name: Build web package
-        working-directory: ./code
-        run: pnpm --filter @zadoox/web build
-
       - name: Link Vercel project
         working-directory: ./code/packages/web
         env:
@@ -147,27 +143,27 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
+          echo "Building with Vercel CLI..."
           echo "Current directory: $(pwd)"
-          echo "Checking for .next directory..."
-          ls -la .next 2>&1 || echo ".next directory not found (this is OK, vercel build will create it)"
+          echo "Running vercel build --prod..."
           
-          echo "Building project with Vercel..."
-          vercel build --prod --token=$VERCEL_TOKEN --yes 2>&1
+          # Run vercel build and capture output
+          set -e
+          vercel build --prod --token=$VERCEL_TOKEN --yes
           
-          echo "Build completed. Checking output..."
+          echo "Build command completed. Checking for output..."
+          echo "Contents of current directory:"
+          ls -la
           echo "Contents of .vercel directory:"
-          ls -la .vercel/ 2>&1 || echo "No .vercel directory found"
+          ls -la .vercel/ 2>&1 || echo "No .vercel directory"
           
           if [ -d ".vercel/output" ]; then
-            echo "✅ .vercel/output directory found!"
-            echo "Contents of .vercel/output:"
-            ls -la .vercel/output/ 2>&1 | head -20
+            echo "✅ .vercel/output found!"
+            ls -la .vercel/output/ | head -10
           else
-            echo "❌ ERROR: .vercel/output directory not found!"
-            echo "Contents of current directory:"
-            ls -la
-            echo "Checking for alternative output locations..."
-            find . -name "output" -type d 2>&1 | head -10
+            echo "❌ ERROR: .vercel/output not found after build!"
+            echo "Checking for .next directory:"
+            ls -la .next 2>&1 || echo "No .next directory"
             exit 1
           fi
 
