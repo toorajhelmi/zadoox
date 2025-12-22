@@ -49,7 +49,7 @@ async function fetchApi<T>(
   try {
     response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
-      headers,
+      headers: headers as HeadersInit,
     });
   } catch (error: any) {
     // Network error (backend not running, CORS, etc.)

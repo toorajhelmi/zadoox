@@ -32,6 +32,16 @@ vi.mock('@/lib/supabase/client', () => {
 describe('API Client - Projects', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset fetch mock
+    (global.fetch as any).mockClear();
+    // Reset getSession mock to default
+    mockGetSession.mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'test-token',
+        },
+      },
+    });
   });
 
   afterEach(() => {
@@ -96,6 +106,9 @@ describe('API Client - Projects', () => {
       (global.fetch as any).mockRejectedValueOnce(new Error('Network error'));
 
       await expect(api.projects.list()).rejects.toThrow(ApiError);
+      
+      // Reset for second assertion
+      (global.fetch as any).mockRejectedValueOnce(new Error('Network error'));
       await expect(api.projects.list()).rejects.toThrow('Failed to connect to API');
     });
 
@@ -114,6 +127,20 @@ describe('API Client - Projects', () => {
       });
 
       await expect(api.projects.list()).rejects.toThrow(ApiError);
+      
+      // Reset for second assertion
+      (global.fetch as any).mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        json: async () => ({
+          success: false,
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Server error',
+          },
+        }),
+      });
       await expect(api.projects.list()).rejects.toThrow('Server error');
     });
   });
@@ -376,6 +403,16 @@ describe('API Client - Projects', () => {
       });
 
       await expect(api.projects.list()).rejects.toThrow(ApiError);
+      
+      // Reset for second assertion
+      (global.fetch as any).mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        json: async () => {
+          throw new Error('Not JSON');
+        },
+      });
       await expect(api.projects.list()).rejects.toThrow('Invalid response from server');
     });
 
