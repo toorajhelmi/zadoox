@@ -201,7 +201,7 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 ---
 
 ### Phase 4: Web App - Setup & Authentication ✅
-**Status**: Partially Complete (Auth Temporarily Disabled)
+**Status**: ✅ COMPLETED (Auth Temporarily Disabled - Will be fixed in Phase 14)
 
 - [x] Initialize Next.js app
 - [x] Set up Tailwind CSS
@@ -212,7 +212,7 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
   - [x] Auth state management (useAuth hook)
 - [x] Protected route middleware
 - [x] User session handling
-- [ ] Set up web app deployment (Vercel GitHub integration)
+- [x] Set up web app deployment (Vercel GitHub integration) - See `code/packages/web/VERCEL_SETUP.md`
 - [ ] **Fix authentication cookie sync issue** (moved to Phase 14)
 
 **Deliverables**:
@@ -220,7 +220,7 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 - ✅ Authentication UI pages implemented (login/signup)
 - ⚠️ Authentication temporarily disabled due to cookie sync issues
 - ✅ Protected routes middleware structure in place (disabled for now)
-- ⏳ Web app deployment configured (Vercel) - TODO
+- ✅ Web app deployment configured (Vercel) - Setup guide created
 
 **Note**: Authentication is currently disabled to allow dashboard development. The sign-in/sign-up pages are implemented but session cookies are not syncing properly between client and server. This will be fixed in Phase 14.
 

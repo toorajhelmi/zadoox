@@ -62,11 +62,13 @@ Instead of using GitHub Actions, you can use Railway's GitHub integration:
 
 ## Web App Deployment (Vercel)
 
-**Status**: Setup needed in Phase 7
+**Status**: ✅ Ready for setup in Phase 4
 
 **No GitHub Actions workflow needed** - Vercel uses its own GitHub integration.
 
-### Setup Steps (When Web App is Ready - Phase 7):
+**Setup Guide**: See `code/packages/web/VERCEL_SETUP.md` for detailed instructions.
+
+### Setup Steps:
 
 1. **Connect Vercel to GitHub**:
    - Go to https://vercel.com
@@ -213,8 +215,8 @@ NODE_ENV=production
 
 ## Next Steps
 
-- [ ] Phase 2: Set up Supabase project and database schema
-- [ ] Phase 3: Set up Railway project and configure backend deployment
-- [ ] Phase 7: Set up Vercel project and configure web app deployment
+- [x] Phase 2: Set up Supabase project and database schema
+- [x] Phase 3: Set up Railway project and configure backend deployment
+- [x] Phase 4: Set up Vercel project and configure web app deployment (see `code/packages/web/VERCEL_SETUP.md`)
 
 

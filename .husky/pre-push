@@ -6,17 +6,62 @@ cd "$(git rev-parse --show-toplevel)/code" || exit 1
 
 echo "🔍 Running type-check before push..."
 
-if ! command -v pnpm &> /dev/null; then
-  echo "❌ Error: pnpm is not installed"
+# Try to find pnpm in common locations
+PNPM_CMD=""
+if command -v pnpm &> /dev/null; then
+  PNPM_CMD="pnpm"
+elif [ -f "$HOME/.local/share/pnpm/pnpm" ]; then
+  PNPM_CMD="$HOME/.local/share/pnpm/pnpm"
+elif [ -f "/usr/local/bin/pnpm" ]; then
+  PNPM_CMD="/usr/local/bin/pnpm"
+elif [ -f "$HOME/.pnpm/pnpm" ]; then
+  PNPM_CMD="$HOME/.pnpm/pnpm"
+fi
+
+if [ -z "$PNPM_CMD" ]; then
+  echo "❌ Error: pnpm is not installed or not in PATH"
+  echo "   Install pnpm: npm install -g pnpm"
+  echo "   Or configure PATH to include pnpm location"
+  echo "   Push aborted - type-check cannot run without pnpm"
   exit 1
 fi
 
-if pnpm type-check; then
+# Try to find node in common locations
+NODE_CMD=""
+if command -v node &> /dev/null; then
+  NODE_CMD="node"
+elif [ -f "/usr/local/bin/node" ]; then
+  NODE_CMD="/usr/local/bin/node"
+elif [ -f "$HOME/.nvm/versions/node/$(ls -t $HOME/.nvm/versions/node 2>/dev/null | head -1)/bin/node" ]; then
+  NODE_CMD="$HOME/.nvm/versions/node/$(ls -t $HOME/.nvm/versions/node 2>/dev/null | head -1)/bin/node"
+elif [ -f "/opt/homebrew/bin/node" ]; then
+  NODE_CMD="/opt/homebrew/bin/node"
+fi
+
+if [ -z "$NODE_CMD" ]; then
+  echo "❌ Error: node is not installed or not in PATH"
+  echo "   Node.js is required for type-checking"
+  echo "   Install Node.js or configure PATH to include node location"
+  echo "   Push aborted - type-check cannot run without node"
+  exit 1
+fi
+
+# Add node to PATH if found in non-standard location
+if [ "$NODE_CMD" != "node" ]; then
+  export PATH="$(dirname "$NODE_CMD"):$PATH"
+fi
+
+# Build shared package first (required for type-check to resolve @zadoox/shared)
+echo "📦 Building shared package..."
+if ! "$PNPM_CMD" --filter @zadoox/shared build; then
+  echo "❌ Error: Failed to build shared package"
+  exit 1
+fi
+
+# Run type-check
+if "$PNPM_CMD" type-check; then
   echo "✅ Type-check passed! Proceeding with push..."
 else
   echo "❌ Type-check failed! Push aborted."
   exit 1
 fi
-
-
-
