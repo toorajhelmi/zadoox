@@ -3,6 +3,7 @@
 import { ReactNode, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { DashboardIcon, ProjectsIcon, SettingsIcon, MenuIcon } from './icons';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -13,9 +14,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const navItems = [
-    { href: '/dashboard', label: 'Dashboard', icon: '📊' },
-    { href: '/dashboard/projects', label: 'Projects', icon: '📁' },
-    { href: '/dashboard/settings', label: 'Settings', icon: '⚙️' },
+    { href: '/dashboard', label: 'Dashboard', icon: DashboardIcon },
+    { href: '/dashboard/projects', label: 'Projects', icon: ProjectsIcon },
+    { href: '/dashboard/settings', label: 'Settings', icon: SettingsIcon },
   ];
 
   return (
@@ -28,7 +29,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             className="p-1 hover:bg-[#3e3e42] rounded transition-colors"
             title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            <span className="text-xs">☰</span>
+            <MenuIcon className="w-4 h-4" />
           </button>
           <span className="text-xs font-semibold text-[#cccccc]">Zadoox</span>
           <span className="text-[10px] text-[#858585] hidden sm:inline">AI-powered documentation</span>
@@ -62,7 +63,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                       : 'text-[#cccccc] hover:bg-[#2a2d2e] hover:text-white'
                   }`}
                 >
-                  <span className="text-base">{item.icon}</span>
+                  <item.icon />
                   {!sidebarCollapsed && <span>{item.label}</span>}
                 </Link>
               );

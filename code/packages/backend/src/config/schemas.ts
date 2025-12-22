@@ -10,7 +10,7 @@ export const schemas = {
       id: { type: 'string', format: 'uuid' },
       name: { type: 'string' },
       description: { type: 'string', nullable: true },
-      type: { type: 'string', enum: ['academic', 'industry', 'code-docs'] },
+      type: { type: 'string', enum: ['academic', 'industry', 'code-docs', 'other'] },
       settings: {
         type: 'object',
         properties: {
@@ -32,7 +32,7 @@ export const schemas = {
     properties: {
       name: { type: 'string', minLength: 1, maxLength: 255 },
       description: { type: 'string', maxLength: 1000 },
-      type: { type: 'string', enum: ['academic', 'industry', 'code-docs'] },
+      type: { type: 'string', enum: ['academic', 'industry', 'code-docs', 'other'] },
       settings: {
         type: 'object',
         properties: {
@@ -50,7 +50,7 @@ export const schemas = {
     properties: {
       name: { type: 'string', minLength: 1, maxLength: 255 },
       description: { type: 'string', maxLength: 1000 },
-      type: { type: 'string', enum: ['academic', 'industry', 'code-docs'] },
+      type: { type: 'string', enum: ['academic', 'industry', 'code-docs', 'other'] },
       settings: {
         type: 'object',
         properties: {

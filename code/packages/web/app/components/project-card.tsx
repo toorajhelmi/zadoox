@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import type { Project } from '@zadoox/shared';
+import { ProjectTypeIcon, ChevronRightIcon } from './icons';
 
 interface ProjectCardProps {
   project: Project;
@@ -11,12 +12,7 @@ const projectTypeLabels: Record<string, string> = {
   academic: 'Academic',
   industry: 'Industry',
   'code-docs': 'Code Docs',
-};
-
-const projectTypeIcons: Record<string, string> = {
-  academic: '📚',
-  industry: '📄',
-  'code-docs': '💻',
+  other: 'Other',
 };
 
 export function ProjectCard({ project }: ProjectCardProps) {
@@ -32,7 +28,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
     >
       <div className="flex items-start justify-between mb-2">
         <div className="flex items-center gap-2">
-          <span className="text-2xl">{projectTypeIcons[project.type] || '📁'}</span>
+          <ProjectTypeIcon type={project.type} />
           <h3 className="font-semibold text-white group-hover:text-[#007acc] transition-colors">
             {project.name}
           </h3>
@@ -52,7 +48,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
         </div>
         <div className="flex items-center gap-1 text-[#007acc] opacity-0 group-hover:opacity-100 transition-opacity">
           <span>Open</span>
-          <span>→</span>
+          <ChevronRightIcon className="w-3 h-3" />
         </div>
       </div>
     </Link>

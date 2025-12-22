@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { DashboardLayout } from '@/app/components/dashboard-layout';
+import { LoaderIcon } from '@/app/components/icons';
 import { api } from '@/lib/api/client';
 import type { Project } from '@zadoox/shared';
 
@@ -40,7 +41,9 @@ export default function ProjectDetailPage() {
       <DashboardLayout>
         <div className="h-full flex items-center justify-center">
           <div className="text-center">
-            <div className="text-4xl mb-4 animate-spin">⏳</div>
+            <div className="mb-4 flex justify-center">
+              <LoaderIcon className="w-8 h-8 text-[#969696] animate-spin" />
+            </div>
             <p className="text-[#969696]">Loading project...</p>
           </div>
         </div>

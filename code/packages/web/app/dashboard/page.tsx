@@ -3,27 +3,35 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { DashboardLayout } from '@/app/components/dashboard-layout';
+import { CreateProjectModal } from '@/app/components/create-project-modal';
+import { ProjectTypeIcon, PlusIcon, ChevronRightIcon } from '@/app/components/icons';
 import { api } from '@/lib/api/client';
-import type { Project } from '@zadoox/shared';
+import type { Project, CreateProjectInput } from '@zadoox/shared';
 
 export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+
+  const loadProjects = async () => {
+    try {
+      const data = await api.projects.list();
+      setProjects(data.slice(0, 6)); // Show only recent 6 projects
+    } catch (err) {
+      console.error('Failed to load projects:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const loadProjects = async () => {
-      try {
-        const data = await api.projects.list();
-        setProjects(data.slice(0, 6)); // Show only recent 6 projects
-      } catch (err) {
-        console.error('Failed to load projects:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadProjects();
   }, []);
+
+  const handleCreateProject = async (input: CreateProjectInput) => {
+    await api.projects.create(input);
+    await loadProjects(); // Reload projects after creation
+  };
 
   return (
     <DashboardLayout>
@@ -51,13 +59,13 @@ export default function DashboardPage() {
                 Create, write, and refine your documentation with AI-powered assistance built into every editor.
                 Start a new project or continue working on an existing one.
               </p>
-              <Link
-                href="/dashboard/projects"
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-[#007acc] hover:bg-[#1a8cd8] text-white rounded text-sm font-medium transition-colors"
               >
-                <span>+</span>
+                <PlusIcon className="w-4 h-4" />
                 <span>Create Project</span>
-              </Link>
+              </button>
             </div>
           </div>
 
@@ -67,9 +75,9 @@ export default function DashboardPage() {
               <h2 className="text-lg font-semibold text-white">Recent Projects</h2>
               <Link
                 href="/dashboard/projects"
-                className="text-sm text-[#007acc] hover:text-[#1a8cd8] transition-colors"
+                className="text-sm text-[#007acc] hover:text-[#1a8cd8] transition-colors flex items-center gap-1"
               >
-                View all →
+                View all <ChevronRightIcon className="w-3 h-3" />
               </Link>
             </div>
 
@@ -78,12 +86,12 @@ export default function DashboardPage() {
             ) : projects.length === 0 ? (
               <div className="text-center py-8">
                 <p className="text-[#969696] mb-4">No projects yet</p>
-                <Link
-                  href="/dashboard/projects"
-                  className="text-[#007acc] hover:text-[#1a8cd8] transition-colors"
+                <button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="text-[#007acc] hover:text-[#1a8cd8] transition-colors flex items-center gap-1"
                 >
-                  Create your first project →
-                </Link>
+                  Create your first project <ChevronRightIcon className="w-3 h-3" />
+                </button>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -94,13 +102,7 @@ export default function DashboardPage() {
                     className="block p-4 bg-[#252526] border border-[#3e3e42] rounded hover:border-[#007acc] hover:bg-[#2a2d2e] transition-all group"
                   >
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xl">
-                        {project.type === 'academic'
-                          ? '📚'
-                          : project.type === 'industry'
-                          ? '📄'
-                          : '💻'}
-                      </span>
+                      <ProjectTypeIcon type={project.type} />
                       <h3 className="font-semibold text-white group-hover:text-[#007acc] transition-colors">
                         {project.name}
                       </h3>
@@ -118,6 +120,12 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      <CreateProjectModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onCreate={handleCreateProject}
+      />
     </DashboardLayout>
   );
 }

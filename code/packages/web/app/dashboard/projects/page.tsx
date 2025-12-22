@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/app/components/dashboard-layout';
 import { ProjectCard } from '@/app/components/project-card';
 import { CreateProjectModal } from '@/app/components/create-project-modal';
+import { ProjectsIcon, PlusIcon, SparkleIcon, LoaderIcon } from '@/app/components/icons';
 import { api } from '@/lib/api/client';
 import type { Project, CreateProjectInput } from '@zadoox/shared';
 
@@ -49,7 +50,7 @@ export default function ProjectsPage() {
             onClick={() => setIsCreateModalOpen(true)}
             className="px-4 py-2 bg-[#007acc] hover:bg-[#1a8cd8] text-white rounded text-sm font-medium transition-colors flex items-center gap-2"
           >
-            <span>+</span>
+            <PlusIcon className="w-4 h-4" />
             <span>New Project</span>
           </button>
         </div>
@@ -59,7 +60,9 @@ export default function ProjectsPage() {
           {loading && (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
-                <div className="text-4xl mb-4 animate-spin">⏳</div>
+                <div className="mb-4 flex justify-center">
+                  <LoaderIcon className="w-8 h-8 text-[#969696] animate-spin" />
+                </div>
                 <p className="text-[#969696]">Loading projects...</p>
               </div>
             </div>
@@ -87,7 +90,9 @@ export default function ProjectsPage() {
 
           {!loading && !error && projects.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center">
-              <div className="text-6xl mb-4">📁</div>
+              <div className="mb-4">
+                <ProjectsIcon className="w-16 h-16 text-[#969696]" />
+              </div>
               <h2 className="text-xl font-semibold text-white mb-2">No projects yet</h2>
               <p className="text-[#969696] mb-6 max-w-md">
                 Create your first project to start writing with AI-powered documentation tools
@@ -96,7 +101,7 @@ export default function ProjectsPage() {
                 onClick={() => setIsCreateModalOpen(true)}
                 className="px-6 py-3 bg-[#007acc] hover:bg-[#1a8cd8] text-white rounded font-medium transition-colors flex items-center gap-2"
               >
-                <span>🤖</span>
+                <SparkleIcon className="w-4 h-4" />
                 <span>Create Your First Project</span>
               </button>
             </div>

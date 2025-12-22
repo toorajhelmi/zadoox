@@ -1,6 +1,7 @@
 'use client';
 
 import { DashboardLayout } from '@/app/components/dashboard-layout';
+import { SettingsIcon } from '@/app/components/icons';
 
 export default function SettingsPage() {
   return (
@@ -14,7 +15,9 @@ export default function SettingsPage() {
         <div className="flex-1 overflow-auto p-6">
           <div className="max-w-4xl mx-auto">
             <div className="text-center py-12">
-              <div className="text-6xl mb-4">⚙️</div>
+              <div className="mb-4 flex justify-center">
+                <SettingsIcon className="w-16 h-16 text-[#969696]" />
+              </div>
               <h2 className="text-2xl font-semibold text-white mb-4">Settings</h2>
               <p className="text-[#969696] mb-8">
                 Settings will be available in a future phase

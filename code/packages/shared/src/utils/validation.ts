@@ -41,8 +41,8 @@ export function isValidDocumentType(value: string): value is 'chapter' | 'sectio
 /**
  * Validate project type
  */
-export function isValidProjectType(value: string): value is 'academic' | 'industry' | 'code-docs' {
-  return ['academic', 'industry', 'code-docs'].includes(value);
+export function isValidProjectType(value: string): value is 'academic' | 'industry' | 'code-docs' | 'other' {
+  return ['academic', 'industry', 'code-docs', 'other'].includes(value);
 }
 
 /**
@@ -51,6 +51,7 @@ export function isValidProjectType(value: string): value is 'academic' | 'indust
 export function isValidExportFormat(value: string): value is 'latex' | 'pdf' | 'markdown' {
   return ['latex', 'pdf', 'markdown'].includes(value);
 }
+
 
 
 

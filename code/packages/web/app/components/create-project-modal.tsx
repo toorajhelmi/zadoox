@@ -2,6 +2,7 @@
 
 import { useState, FormEvent } from 'react';
 import type { CreateProjectInput, ProjectType } from '@zadoox/shared';
+import { ProjectTypeIcon, SparkleIcon, PlusIcon, LoaderIcon } from './icons';
 
 interface CreateProjectModalProps {
   isOpen: boolean;
@@ -9,10 +10,11 @@ interface CreateProjectModalProps {
   onCreate: (input: CreateProjectInput) => Promise<void>;
 }
 
-const projectTypes: { value: ProjectType; label: string; icon: string; description: string }[] = [
-  { value: 'academic', label: 'Academic', icon: '📚', description: 'Research papers, theses, dissertations' },
-  { value: 'industry', label: 'Industry', icon: '📄', description: 'Whitepapers, reports, documentation' },
-  { value: 'code-docs', label: 'Code Docs', icon: '💻', description: 'API docs, technical documentation' },
+const projectTypes: { value: ProjectType; label: string; description: string }[] = [
+  { value: 'academic', label: 'Academic', description: 'Research papers, theses, dissertations' },
+  { value: 'industry', label: 'Industry', description: 'Whitepapers, reports, documentation' },
+  { value: 'code-docs', label: 'Code Docs', description: 'API docs, technical documentation' },
+  { value: 'other', label: 'Other', description: 'Other types of documentation' },
 ];
 
 export function CreateProjectModal({ isOpen, onClose, onCreate }: CreateProjectModalProps) {
@@ -106,7 +108,7 @@ export function CreateProjectModal({ isOpen, onClose, onCreate }: CreateProjectM
             <label className="block text-sm font-medium text-[#cccccc] mb-3">
               Project Type *
             </label>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {projectTypes.map((pt) => (
                 <button
                   key={pt.value}
@@ -119,7 +121,9 @@ export function CreateProjectModal({ isOpen, onClose, onCreate }: CreateProjectM
                   }`}
                   disabled={loading}
                 >
-                  <div className="text-2xl mb-2">{pt.icon}</div>
+                  <div className="mb-2">
+                    <ProjectTypeIcon type={pt.value} className="w-6 h-6" />
+                  </div>
                   <div className="font-semibold text-white text-sm mb-1">{pt.label}</div>
                   <div className="text-[10px] text-[#969696]">{pt.description}</div>
                 </button>
@@ -130,7 +134,7 @@ export function CreateProjectModal({ isOpen, onClose, onCreate }: CreateProjectM
           {/* AI Assistant Note */}
           <div className="mb-6 p-3 bg-[#007acc]/10 border border-[#007acc]/30 rounded">
             <div className="flex items-center gap-2 text-sm">
-              <span>🤖</span>
+              <SparkleIcon className="w-4 h-4 text-[#cccccc]" />
               <span className="text-[#cccccc]">
                 AI Assistant will help you write and refine your documentation
               </span>
@@ -154,12 +158,12 @@ export function CreateProjectModal({ isOpen, onClose, onCreate }: CreateProjectM
             >
               {loading ? (
                 <>
-                  <span className="animate-spin">⏳</span>
+                  <LoaderIcon className="w-4 h-4 animate-spin" />
                   <span>Creating...</span>
                 </>
               ) : (
                 <>
-                  <span>🤖</span>
+                  <SparkleIcon className="w-4 h-4" />
                   <span>Create with AI</span>
                 </>
               )}
