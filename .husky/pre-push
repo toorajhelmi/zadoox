@@ -25,13 +25,17 @@ if [ -z "$PNPM_CMD" ]; then
   exit 0  # Allow push but warn
 fi
 
+# Build shared package first (required for type-check to resolve @zadoox/shared)
+echo "📦 Building shared package..."
+if ! "$PNPM_CMD" --filter @zadoox/shared build; then
+  echo "❌ Error: Failed to build shared package"
+  exit 1
+fi
+
+# Run type-check
 if "$PNPM_CMD" type-check; then
   echo "✅ Type-check passed! Proceeding with push..."
 else
   echo "❌ Type-check failed! Push aborted."
   exit 1
 fi
-
-
-
-
