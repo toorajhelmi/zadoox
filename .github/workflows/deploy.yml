@@ -99,12 +99,31 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
-      - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v25
-        continue-on-error: true
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
         with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: '--prod'
-          working-directory: ./code/packages/web
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Install dependencies
+        working-directory: ./code
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        working-directory: ./code
+        run: pnpm --filter @zadoox/shared build
+
+      - name: Deploy to Vercel
+        working-directory: ./code/packages/web
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel --prod --yes --token=$VERCEL_TOKEN
