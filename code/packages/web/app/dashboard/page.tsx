@@ -36,69 +36,27 @@ export default function DashboardPage() {
 
         {/* Content */}
         <div className="flex-1 overflow-auto p-6">
-          {/* AI Assistant Section */}
-          <div className="mb-8 p-6 bg-gradient-to-r from-[#007acc]/20 to-[#1a8cd8]/20 border border-[#007acc]/30 rounded-lg">
-            <div className="flex items-start gap-4">
-              <div className="text-4xl">🤖</div>
-              <div className="flex-1">
-                <h2 className="text-lg font-semibold text-white mb-2">AI Assistant Ready</h2>
-                <p className="text-sm text-[#cccccc] mb-4">
-                  Your AI writing assistant is ready to help you create, refine, and enhance your documentation.
-                  Use AI suggestions to improve clarity, expand ideas, and maintain consistency.
-                </p>
-                <div className="flex gap-3">
-                  <Link
-                    href="/dashboard/ai-assistant"
-                    className="px-4 py-2 bg-[#007acc] hover:bg-[#1a8cd8] text-white rounded text-sm font-medium transition-colors"
-                  >
-                    Open AI Assistant
-                  </Link>
-                  <Link
-                    href="/dashboard/projects"
-                    className="px-4 py-2 bg-[#3c3c3c] hover:bg-[#454545] text-white rounded text-sm font-medium transition-colors border border-[#454545]"
-                  >
-                    View All Projects
-                  </Link>
+          {/* Welcome Section with AI Vibe */}
+          <div className="mb-8 p-6 bg-gradient-to-br from-[#1e1e1e] via-[#252526] to-[#1e1e1e] border border-[#3e3e42] rounded-lg relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-[#007acc]/5 rounded-full blur-3xl -mr-32 -mt-32" />
+            <div className="relative">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="flex items-center gap-2 px-3 py-1 bg-[#007acc]/20 border border-[#007acc]/30 rounded text-xs text-[#007acc]">
+                  <span className="w-2 h-2 bg-[#007acc] rounded-full animate-pulse" />
+                  <span className="font-mono">AI Ready</span>
                 </div>
               </div>
-            </div>
-          </div>
-
-          {/* Quick Actions */}
-          <div className="mb-8">
-            <h2 className="text-lg font-semibold text-white mb-4">Quick Actions</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <h2 className="text-xl font-semibold text-white mb-2">Welcome to Zadoox</h2>
+              <p className="text-sm text-[#cccccc] mb-4 max-w-2xl">
+                Create, write, and refine your documentation with AI-powered assistance built into every editor.
+                Start a new project or continue working on an existing one.
+              </p>
               <Link
                 href="/dashboard/projects"
-                className="p-6 bg-[#252526] border border-[#3e3e42] rounded hover:border-[#007acc] transition-all group"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-[#007acc] hover:bg-[#1a8cd8] text-white rounded text-sm font-medium transition-colors"
               >
-                <div className="text-3xl mb-3">📁</div>
-                <h3 className="font-semibold text-white mb-2 group-hover:text-[#007acc] transition-colors">
-                  New Project
-                </h3>
-                <p className="text-sm text-[#969696]">Create a new documentation project</p>
-              </Link>
-
-              <Link
-                href="/dashboard/ai-assistant"
-                className="p-6 bg-[#252526] border border-[#3e3e42] rounded hover:border-[#007acc] transition-all group"
-              >
-                <div className="text-3xl mb-3">🤖</div>
-                <h3 className="font-semibold text-white mb-2 group-hover:text-[#007acc] transition-colors">
-                  AI Assistant
-                </h3>
-                <p className="text-sm text-[#969696]">Get AI-powered writing help</p>
-              </Link>
-
-              <Link
-                href="/dashboard/settings"
-                className="p-6 bg-[#252526] border border-[#3e3e42] rounded hover:border-[#007acc] transition-all group"
-              >
-                <div className="text-3xl mb-3">⚙️</div>
-                <h3 className="font-semibold text-white mb-2 group-hover:text-[#007acc] transition-colors">
-                  Settings
-                </h3>
-                <p className="text-sm text-[#969696]">Configure your workspace</p>
+                <span>+</span>
+                <span>Create Project</span>
               </Link>
             </div>
           </div>

@@ -15,7 +15,6 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const navItems = [
     { href: '/dashboard', label: 'Dashboard', icon: '📊' },
     { href: '/dashboard/projects', label: 'Projects', icon: '📁' },
-    { href: '/dashboard/ai-assistant', label: 'AI Assistant', icon: '🤖' },
     { href: '/dashboard/settings', label: 'Settings', icon: '⚙️' },
   ];
 
@@ -26,18 +25,18 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         <div className="flex items-center gap-2 flex-1">
           <button
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="p-1 hover:bg-[#3e3e42] rounded"
+            className="p-1 hover:bg-[#3e3e42] rounded transition-colors"
             title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
             <span className="text-xs">☰</span>
           </button>
-          <span className="text-xs font-semibold text-[#cccccc]">Zadoox</span>
-          <span className="text-[10px] text-[#858585]">AI-powered documentation</span>
+          <span className="text-xs font-semibold text-[#cccccc] font-mono">Zadoox</span>
+          <span className="text-[10px] text-[#858585] hidden sm:inline">AI-powered documentation</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 px-2 py-0.5 bg-[#007acc] text-white text-[10px] rounded">
-            <span>🤖</span>
-            <span>AI Active</span>
+          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#007acc]/20 border border-[#007acc]/30 text-[#007acc] text-[10px] rounded font-mono">
+            <span className="w-1.5 h-1.5 bg-[#007acc] rounded-full animate-pulse" />
+            <span>AI</span>
           </div>
         </div>
       </header>
@@ -70,14 +69,12 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             })}
           </nav>
 
-          {/* Bottom section */}
+          {/* Bottom section - AI Status */}
           <div className="border-t border-[#3e3e42] p-2">
             {!sidebarCollapsed && (
-              <div className="text-[10px] text-[#858585] px-2 py-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span>⚡</span>
-                  <span>AI Ready</span>
-                </div>
+              <div className="flex items-center gap-2 px-2 py-1.5 bg-[#007acc]/10 border border-[#007acc]/20 rounded">
+                <span className="w-1.5 h-1.5 bg-[#007acc] rounded-full animate-pulse" />
+                <span className="text-[10px] text-[#007acc] font-mono">AI Active</span>
               </div>
             )}
           </div>
