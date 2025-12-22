@@ -57,7 +57,7 @@ async function fetchApi<T>(
       `Failed to connect to API at ${API_BASE_URL}. Make sure the backend server is running.`,
       'NETWORK_ERROR',
       undefined,
-      { originalError: error.message }
+      { originalError: error instanceof Error ? error.message : String(error) }
     );
   }
 
