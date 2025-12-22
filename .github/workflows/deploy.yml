@@ -6,21 +6,15 @@ on:
     types:
       - completed
     branches: [main]
-  push:
-    branches: [main]
-    paths:
-      - 'code/**'
-      - '.github/workflows/deploy.yml'
   workflow_dispatch: # Allow manual trigger
 
 jobs:
   deploy-migrations:
     name: Deploy Database Migrations
     runs-on: ubuntu-latest
-    # Only deploy if CI workflow succeeded on main, or if manually triggered, or on direct push
+    # Only deploy if CI workflow succeeded on main, or if manually triggered
     if: |
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'push' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     
     steps:
@@ -52,10 +46,9 @@ jobs:
   deploy-backend:
     name: Deploy Backend API
     runs-on: ubuntu-latest
-    # Only deploy if CI workflow succeeded on main, or if manually triggered, or on direct push
+    # Only deploy if CI workflow succeeded on main, or if manually triggered
     if: |
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'push' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     needs: deploy-migrations # Run migrations first
     
@@ -98,7 +91,6 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'push' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     
     steps:
