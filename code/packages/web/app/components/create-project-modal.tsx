@@ -42,8 +42,8 @@ export function CreateProjectModal({ isOpen, onClose, onCreate }: CreateProjectM
       setDescription('');
       setType('academic');
       onClose();
-    } catch (err: any) {
-      setError(err.message || 'Failed to create project');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create project');
     } finally {
       setLoading(false);
     }

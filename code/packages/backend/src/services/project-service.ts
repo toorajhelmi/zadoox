@@ -83,7 +83,7 @@ export class ProjectService {
     // Verify project exists and user owns it
     await this.getProjectById(projectId, userId);
 
-    const updateData: any = {};
+    const updateData: Partial<Record<string, unknown>> = {};
     if (input.name !== undefined) updateData.name = input.name;
     if (input.description !== undefined)
       updateData.description = input.description || null;
@@ -155,16 +155,16 @@ export class ProjectService {
   /**
    * Map database project to Project type
    */
-  private mapDbProjectToProject(dbProject: any): Project {
+  private mapDbProjectToProject(dbProject: Record<string, unknown>): Project {
     return {
-      id: dbProject.id,
-      name: dbProject.name,
-      description: dbProject.description || undefined,
+      id: dbProject.id as string,
+      name: dbProject.name as string,
+      description: (dbProject.description as string | null) || undefined,
       type: dbProject.type as ProjectType,
-      settings: dbProject.settings,
-      ownerId: dbProject.owner_id,
-      createdAt: new Date(dbProject.created_at),
-      updatedAt: new Date(dbProject.updated_at),
+      settings: dbProject.settings as Project['settings'],
+      ownerId: dbProject.owner_id as string,
+      createdAt: new Date(dbProject.created_at as string),
+      updatedAt: new Date(dbProject.updated_at as string),
     };
   }
 }

@@ -44,16 +44,16 @@ export const swaggerUiConfig = {
     deepLinking: true,
   },
   uiHooks: {
-    onRequest: function (request: any, reply: any, next: any) {
+    onRequest: function (_request: unknown, _reply: unknown, next: () => void) {
       next();
     },
-    preHandler: function (request: any, reply: any, next: any) {
+    preHandler: function (_request: unknown, _reply: unknown, next: () => void) {
       next();
     },
   },
   staticCSP: true,
   transformStaticCSP: (header: string) => header,
-  transformSpecification: (swaggerObject: any, _request: any, _reply: any) => {
+  transformSpecification: (swaggerObject: Record<string, unknown>, _request: unknown, _reply: unknown) => {
     return swaggerObject;
   },
   transformSpecificationClone: true,

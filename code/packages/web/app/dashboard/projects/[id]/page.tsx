@@ -23,8 +23,8 @@ export default function ProjectDetailPage() {
         setError(null);
         const data = await api.projects.get(projectId);
         setProject(data);
-      } catch (err: any) {
-        setError(err.message || 'Failed to load project');
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to load project');
         console.error('Failed to load project:', err);
       } finally {
         setLoading(false);

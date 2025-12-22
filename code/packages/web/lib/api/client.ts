@@ -51,7 +51,7 @@ async function fetchApi<T>(
       ...options,
       headers: headers as HeadersInit,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Network error (backend not running, CORS, etc.)
     throw new ApiError(
       `Failed to connect to API at ${API_BASE_URL}. Make sure the backend server is running.`,

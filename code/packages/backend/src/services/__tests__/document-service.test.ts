@@ -19,7 +19,7 @@ const createMockSupabaseClient = () => {
 describe('DocumentService', () => {
   let service: DocumentService;
   let mockSupabase: SupabaseClient;
-  let mockQueryBuilder: any;
+  let mockQueryBuilder: Record<string, unknown>;
 
   beforeEach(() => {
     mockSupabase = createMockSupabaseClient();
@@ -41,7 +41,7 @@ describe('DocumentService', () => {
       })),
     };
     
-    vi.mocked(mockSupabase.from).mockReturnValue(mockQueryBuilder as any);
+    vi.mocked(mockSupabase.from).mockReturnValue(mockQueryBuilder as unknown as ReturnType<typeof mockSupabase.from>);
   });
 
   describe('createDocument', () => {

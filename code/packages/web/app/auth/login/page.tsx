@@ -37,8 +37,8 @@ export default function LoginPage() {
       // Wait for cookies to sync before redirecting
       await new Promise(resolve => setTimeout(resolve, 1000));
       window.location.href = '/dashboard';
-    } catch (err: any) {
-      setError(err?.message || 'An unexpected error occurred');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
       setLoading(false);
     }
   };

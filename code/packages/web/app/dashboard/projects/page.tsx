@@ -20,8 +20,8 @@ export default function ProjectsPage() {
       setError(null);
       const data = await api.projects.list();
       setProjects(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load projects');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load projects');
       console.error('Failed to load projects:', err);
     } finally {
       setLoading(false);
