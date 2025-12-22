@@ -39,9 +39,8 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  // Refresh session if expired
+  // Refresh session if expired - this ensures cookies are properly set
   await supabase.auth.getUser();
 
   return response;
 }
-

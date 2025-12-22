@@ -2,23 +2,20 @@
  * Next.js middleware for protecting routes and handling authentication
  */
 
-import { updateSession } from './lib/supabase/middleware.js';
-import { NextResponse } from 'next/server';
+import { updateSession } from './lib/supabase/middleware';
 import type { NextRequest } from 'next/server';
 
 export async function middleware(request: NextRequest) {
   // Update Supabase session
   const response = await updateSession(request);
 
+  // TODO: Re-enable protected routes once sign-in is fixed
   // Protected routes - require authentication
-  const protectedPaths = ['/dashboard', '/projects', '/documents'];
-  const isProtectedPath = protectedPaths.some(path => request.nextUrl.pathname.startsWith(path));
-
-  if (isProtectedPath) {
-    // Check if user is authenticated
-    // We'll get the session from cookies in the route handlers/components
-    // For now, just pass through - we'll handle auth checks in the pages
-  }
+  // const protectedPaths = ['/dashboard', '/projects', '/documents'];
+  // const isProtectedPath = protectedPaths.some(path => request.nextUrl.pathname.startsWith(path));
+  // if (isProtectedPath) {
+  //   // Check if user is authenticated
+  // }
 
   return response;
 }
@@ -35,4 +32,3 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };
-

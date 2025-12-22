@@ -201,7 +201,7 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 ---
 
 ### Phase 4: Web App - Setup & Authentication ✅
-**Status**: In Progress
+**Status**: Partially Complete (Auth Temporarily Disabled)
 
 - [x] Initialize Next.js app
 - [x] Set up Tailwind CSS
@@ -213,13 +213,16 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 - [x] Protected route middleware
 - [x] User session handling
 - [ ] Set up web app deployment (Vercel GitHub integration)
+- [ ] **Fix authentication cookie sync issue** (moved to Phase 14)
 
 **Deliverables**:
 - ✅ Next.js app running (already initialized)
-- ✅ Authentication working (login/signup pages, auth state management)
-- ✅ Users can sign up/login (auth pages implemented)
-- ✅ Protected routes working (middleware + server-side checks)
+- ✅ Authentication UI pages implemented (login/signup)
+- ⚠️ Authentication temporarily disabled due to cookie sync issues
+- ✅ Protected routes middleware structure in place (disabled for now)
 - ⏳ Web app deployment configured (Vercel) - TODO
+
+**Note**: Authentication is currently disabled to allow dashboard development. The sign-in/sign-up pages are implemented but session cookies are not syncing properly between client and server. This will be fixed in Phase 14.
 
 ---
 
@@ -413,6 +416,12 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 ### Phase 14: Integration & Testing ✅
 **Status**: Not Started
 
+- [ ] **Fix and re-enable authentication**:
+  - [ ] Fix Supabase session cookie sync between client and server
+  - [ ] Re-enable protected route checks in dashboard
+  - [ ] Re-enable authentication middleware
+  - [ ] Test sign-in/sign-up flow end-to-end
+  - [ ] Verify session persistence across page refreshes
 - [ ] Integration tests for API endpoints
 - [ ] End-to-end testing (optional for MVP)
 - [ ] Fix integration issues
@@ -422,6 +431,7 @@ This document outlines the MVP development plan for Zadoox. It will be updated a
 - [ ] Documentation
 
 **Deliverables**:
+- ✅ Authentication fully working (sign-in, sign-up, session management)
 - All features working together
 - MVP functional and tested
 - Integration tests passing
@@ -579,14 +589,13 @@ Phase 14 (Integration) ←──┘
 
 **Last Updated**: December 20, 2024
 
-**Current Phase**: Phase 2 - Database Schema & Supabase Setup
+**Current Phase**: Phase 4 - Web App Setup (Auth Temporarily Disabled)
 
 **Next Steps**: 
-1. Set up Supabase project
-2. Create database schema (users, projects, documents tables)
-3. Set up Row Level Security (RLS) policies
-4. Create database migrations
-5. Set up Supabase client in backend
+1. Continue with Phase 5 - Project Dashboard (auth disabled for now)
+2. Build out remaining web app features (Phases 5-12)
+3. Fix authentication in Phase 14 - Integration & Testing
+4. Complete integration testing and polish
 
 ---
 

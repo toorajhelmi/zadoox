@@ -43,4 +43,14 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Environment variables
+.env
+.env.local
+.env*.local
 
+
+
+# Environment variables
+.env
+.env.local
+.env*.local

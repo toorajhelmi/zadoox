@@ -11,42 +11,63 @@ export default function SignupPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
+    setLoading(true);
 
+    // Client-side validation
     if (password !== confirmPassword) {
       setError('Passwords do not match');
+      setLoading(false);
       return;
     }
 
     if (password.length < 6) {
       setError('Password must be at least 6 characters');
+      setLoading(false);
       return;
     }
 
-    setLoading(true);
-
     try {
       const supabase = createClient();
-      const { error: signUpError } = await supabase.auth.signUp({
-        email,
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: email.trim(),
         password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/login`,
+        },
       });
 
       if (signUpError) {
-        setError(signUpError.message);
+        setError(signUpError.message || 'Failed to create account. Please try again.');
         setLoading(false);
         return;
       }
 
-      // Redirect to dashboard on success
-      router.push('/dashboard');
-      router.refresh();
-    } catch (err) {
-      setError('An unexpected error occurred');
+      if (data?.user) {
+        setSuccess('Account created successfully! Redirecting...');
+        setLoading(false);
+        setTimeout(() => {
+          router.push('/dashboard');
+        }, 1000);
+      } else {
+        setSuccess('Please check your email to confirm your account.');
+        setLoading(false);
+        setPassword('');
+        setConfirmPassword('');
+      }
+    } catch (err: any) {
+      const errorMessage = err?.message || 'An unexpected error occurred';
+      if (errorMessage.includes('fetch') || errorMessage.includes('network')) {
+        setError('Network error: Unable to connect to authentication service.');
+      } else {
+        setError(errorMessage);
+      }
       setLoading(false);
     }
   };
@@ -67,11 +88,16 @@ export default function SignupPage() {
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           {error && (
-            <div className="rounded p-4 bg-red-900/30 border border-red-700">
-              <div className="text-sm text-red-400">{error}</div>
+            <div className="rounded-md p-4 bg-red-900/30 border border-red-700">
+              <div className="text-sm text-red-400 font-medium">{error}</div>
             </div>
           )}
-          <div className="rounded-md space-y-4">
+          {success && (
+            <div className="rounded-md p-4 bg-green-900/30 border border-green-700">
+              <div className="text-sm text-green-400 font-medium">{success}</div>
+            </div>
+          )}
+          <div className="rounded-md -space-y-px">
             <div>
               <label htmlFor="email" className="sr-only">
                 Email address
@@ -82,10 +108,11 @@ export default function SignupPage() {
                 type="email"
                 autoComplete="email"
                 required
-                className="appearance-none relative block w-full px-3 py-2 bg-vscode-input border border-vscode-input-border placeholder-vscode-text-secondary text-vscode-text rounded-md focus:outline-none focus:ring-1 focus:ring-vscode-blue focus:border-vscode-blue focus:z-10 sm:text-sm"
+                className="appearance-none rounded-none relative block w-full px-3 py-2 bg-vscode-input border border-vscode-input-border placeholder-vscode-text-secondary text-vscode-text rounded-t-md focus:outline-none focus:ring-1 focus:ring-vscode-blue focus:border-vscode-blue focus:z-10 sm:text-sm"
                 placeholder="Email address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                disabled={loading}
               />
             </div>
             <div>
@@ -98,10 +125,11 @@ export default function SignupPage() {
                 type="password"
                 autoComplete="new-password"
                 required
-                className="appearance-none relative block w-full px-3 py-2 bg-vscode-input border border-vscode-input-border placeholder-vscode-text-secondary text-vscode-text rounded-md focus:outline-none focus:ring-1 focus:ring-vscode-blue focus:border-vscode-blue focus:z-10 sm:text-sm"
+                className="appearance-none rounded-none relative block w-full px-3 py-2 bg-vscode-input border border-vscode-input-border placeholder-vscode-text-secondary text-vscode-text focus:outline-none focus:ring-1 focus:ring-vscode-blue focus:border-vscode-blue focus:z-10 sm:text-sm"
                 placeholder="Password (min 6 characters)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                disabled={loading}
               />
             </div>
             <div>
@@ -114,19 +142,19 @@ export default function SignupPage() {
                 type="password"
                 autoComplete="new-password"
                 required
-                className="appearance-none relative block w-full px-3 py-2 bg-vscode-input border border-vscode-input-border placeholder-vscode-text-secondary text-vscode-text rounded-md focus:outline-none focus:ring-1 focus:ring-vscode-blue focus:border-vscode-blue focus:z-10 sm:text-sm"
+                className="appearance-none rounded-none relative block w-full px-3 py-2 bg-vscode-input border border-vscode-input-border placeholder-vscode-text-secondary text-vscode-text rounded-b-md focus:outline-none focus:ring-1 focus:ring-vscode-blue focus:border-vscode-blue focus:z-10 sm:text-sm"
                 placeholder="Confirm password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
+                disabled={loading}
               />
             </div>
           </div>
-
           <div>
             <button
               type="submit"
               disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded text-white bg-vscode-blue hover:bg-vscode-blue-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-vscode-bg focus:ring-vscode-blue disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-vscode-blue hover:bg-vscode-blue-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-vscode-bg focus:ring-vscode-blue disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {loading ? 'Creating account...' : 'Sign up'}
             </button>
@@ -136,4 +164,3 @@ export default function SignupPage() {
     </div>
   );
 }
-

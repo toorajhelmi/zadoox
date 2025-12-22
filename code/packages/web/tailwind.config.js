@@ -21,6 +21,8 @@ module.exports = {
         'vscode-editor': '#1e1e1e',
         'vscode-input': '#3c3c3c',
         'vscode-input-border': '#454545',
+        'vscode-sidebarBg': '#252526',
+        'vscode-sidebarBorder': '#3e3e42',
       },
       fontFamily: {
         mono: ['"Consolas"', '"Monaco"', '"Courier New"', 'monospace'],

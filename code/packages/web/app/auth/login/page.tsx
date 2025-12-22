@@ -1,25 +1,23 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
     try {
       const supabase = createClient();
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
@@ -30,11 +28,17 @@ export default function LoginPage() {
         return;
       }
 
-      // Redirect to dashboard on success
-      router.push('/dashboard');
-      router.refresh();
-    } catch (err) {
-      setError('An unexpected error occurred');
+      if (!data?.user || !data?.session) {
+        setError('Sign in failed. Please try again.');
+        setLoading(false);
+        return;
+      }
+
+      // Wait for cookies to sync before redirecting
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      window.location.href = '/dashboard';
+    } catch (err: any) {
+      setError(err?.message || 'An unexpected error occurred');
       setLoading(false);
     }
   };
@@ -74,6 +78,7 @@ export default function LoginPage() {
                 placeholder="Email address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                disabled={loading}
               />
             </div>
             <div>
@@ -90,10 +95,10 @@ export default function LoginPage() {
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                disabled={loading}
               />
             </div>
           </div>
-
           <div>
             <button
               type="submit"
@@ -108,4 +113,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

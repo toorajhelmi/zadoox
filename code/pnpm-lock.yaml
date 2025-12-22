@@ -93,6 +93,9 @@ importers:
 
   packages/web:
     dependencies:
+      '@next/swc-darwin-x64':
+        specifier: ^16.1.0
+        version: 16.1.0
       '@supabase/ssr':
         specifier: ^0.1.0
         version: 0.1.0(@supabase/supabase-js@2.89.0)
@@ -877,6 +880,13 @@ packages:
     requiresBuild: true
     dev: false
     optional: true
+
+  /@next/swc-darwin-x64@16.1.0:
+    resolution: {integrity: sha512-Am6VJTp8KhLuAH13tPrAoVIXzuComlZlMwGr++o2KDjWiKPe3VwpxYhgV6I4gKls2EnsIMggL4y7GdXyDdJcFA==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [darwin]
+    dev: false
 
   /@next/swc-linux-arm64-gnu@14.2.33:
     resolution: {integrity: sha512-JXMBka6lNNmqbkvcTtaX8Gu5by9547bukHQvPoLe9VRBx1gHwzf5tdt4AaezW85HAB3pikcvyqBToRTDA4DeLw==}
