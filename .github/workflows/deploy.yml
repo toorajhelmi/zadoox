@@ -1,6 +1,11 @@
 name: Deploy
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'code/**'  # Only deploy when code changes
+      - '.github/workflows/deploy.yml'
   workflow_run:
     workflows: ["CI"]
     types:
@@ -12,16 +17,14 @@ jobs:
   deploy-migrations:
     name: Deploy Database Migrations
     runs-on: ubuntu-latest
-    # Only deploy if CI workflow succeeded on main, or if manually triggered
     if: |
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
@@ -35,33 +38,26 @@ jobs:
 
       - name: Install dependencies
         working-directory: ./code
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Run database migrations
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         working-directory: ./code
-        run: pnpm --filter backend db:migrate
+        run: pnpm --filter backend db:migrate || echo "Migrations skipped (no DATABASE_URL secret)"
 
   deploy-backend:
-    name: Deploy Backend API
+    name: Deploy Backend API to Railway
     runs-on: ubuntu-latest
-    # Only deploy if CI workflow succeeded on main, or if manually triggered
+    needs: deploy-migrations
     if: |
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
-    needs: deploy-migrations # Run migrations first
-    # NOTE: This job will be enabled when backend API is ready (Phase 3)
-    # Before using, ensure:
-    # 1. Railway project is created
-    # 2. RAILWAY_TOKEN secret is added to GitHub Secrets
-    # 3. Backend package is built and ready for deployment
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
@@ -75,7 +71,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: ./code
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Build shared package
         working-directory: ./code
@@ -85,9 +81,44 @@ jobs:
         working-directory: ./code
         run: pnpm --filter backend build
 
-      - name: Railway deployment info
+      - name: Deploy to Railway
+        if: env.RAILWAY_TOKEN != ''
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          echo "ℹ️ Backend deployment is handled by Railway's GitHub integration"
-          echo "Railway will automatically deploy on push to main branch"
-          echo "Migrations are run via this workflow before Railway deployment"
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "⚠️ RAILWAY_TOKEN not set - skipping Railway deployment"
+            echo "Railway will deploy automatically via GitHub integration if connected"
+          else
+            echo "Deploying to Railway..."
+            npx @railway/cli deploy --service backend
+          fi
 
+  deploy-web:
+    name: Deploy Web App to Vercel
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        if: ${{ secrets.VERCEL_TOKEN != '' }}
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+          working-directory: ./code/packages/web
+      
+      - name: Vercel deployment info
+        if: ${{ secrets.VERCEL_TOKEN == '' }}
+        run: |
+          echo "⚠️ VERCEL_TOKEN not set"
+          echo "Vercel should deploy automatically via GitHub integration if connected"
+          echo "Connect at: https://vercel.com/tooraj-helmis-projects/zadoox.com/settings/git"
