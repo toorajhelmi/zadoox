@@ -19,18 +19,20 @@ elif [ -f "$HOME/.pnpm/pnpm" ]; then
 fi
 
 if [ -z "$PNPM_CMD" ]; then
-  echo "⚠️  Warning: pnpm not found, skipping type-check"
+  echo "❌ Error: pnpm is not installed or not in PATH"
   echo "   Install pnpm: npm install -g pnpm"
   echo "   Or configure PATH to include pnpm location"
-  exit 0  # Allow push but warn
+  echo "   Push aborted - type-check cannot run without pnpm"
+  exit 1
 fi
 
 # Check if node is available (required for pnpm)
 if ! command -v node &> /dev/null; then
-  echo "⚠️  Warning: node not found in PATH, skipping type-check"
+  echo "❌ Error: node is not installed or not in PATH"
   echo "   Node.js is required for type-checking"
   echo "   Configure PATH to include node location"
-  exit 0  # Allow push but warn
+  echo "   Push aborted - type-check cannot run without node"
+  exit 1
 fi
 
 # Build shared package first (required for type-check to resolve @zadoox/shared)
