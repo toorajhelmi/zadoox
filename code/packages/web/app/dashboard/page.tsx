@@ -13,16 +13,16 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
-  const loadProjects = async () => {
-    try {
-      const data = await api.projects.list();
-      setProjects(data.slice(0, 6)); // Show only recent 6 projects
-    } catch (err) {
-      console.error('Failed to load projects:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const loadProjects = async () => {
+      try {
+        const data = await api.projects.list();
+        setProjects(data.slice(0, 6)); // Show only recent 6 projects
+      } catch (err) {
+        console.error('Failed to load projects:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
 
   useEffect(() => {
     loadProjects();
