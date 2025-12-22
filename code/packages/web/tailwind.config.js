@@ -24,13 +24,14 @@ module.exports = {
         'vscode-sidebarBg': '#252526',
         'vscode-sidebarBorder': '#3e3e42',
       },
-      fontFamily: {
-        // VS Code exact font stack
-        sans: ['"Consolas"', '"Monaco"', '"Courier New"', 'monospace'],
-        mono: ['"Consolas"', '"Monaco"', '"Courier New"', 'monospace'],
-        // AI vibe alternatives (if user has them installed)
-        'ai': ['"JetBrains Mono"', '"Fira Code"', '"Consolas"', '"Monaco"', '"Courier New"', 'monospace'],
-      },
+    },
+    fontFamily: {
+      // Override default fonts - VS Code exact font stack
+      sans: ['Consolas', 'Monaco', 'Courier New', 'monospace'],
+      mono: ['Consolas', 'Monaco', 'Courier New', 'monospace'],
+      serif: ['Consolas', 'Monaco', 'Courier New', 'monospace'],
+      // AI vibe alternatives (if user has them installed)
+      ai: ['JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', 'Courier New', 'monospace'],
     },
   },
   plugins: [],

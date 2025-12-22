@@ -19,7 +19,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   ];
 
   return (
-    <div className="h-screen flex flex-col bg-[#1e1e1e] text-[#cccccc] font-mono">
+    <div className="h-screen flex flex-col bg-[#1e1e1e] text-[#cccccc]">
       {/* Top Bar - VS Code style */}
       <header className="h-8 bg-[#2d2d30] border-b border-[#3e3e42] flex items-center px-3 flex-shrink-0">
         <div className="flex items-center gap-2 flex-1">
@@ -34,7 +34,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           <span className="text-[10px] text-[#858585] hidden sm:inline">AI-powered documentation</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#007acc]/20 border border-[#007acc]/30 text-[#007acc] text-[10px] rounded font-mono">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#007acc]/20 border border-[#007acc]/30 text-[#007acc] text-[10px] rounded">
             <span className="w-1.5 h-1.5 bg-[#007acc] rounded-full animate-pulse" />
             <span>AI</span>
           </div>
@@ -74,7 +74,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             {!sidebarCollapsed && (
               <div className="flex items-center gap-2 px-2 py-1.5 bg-[#007acc]/10 border border-[#007acc]/20 rounded">
                 <span className="w-1.5 h-1.5 bg-[#007acc] rounded-full animate-pulse" />
-                <span className="text-[10px] text-[#007acc] font-mono">AI Active</span>
+                <span className="text-[10px] text-[#007acc]">AI Active</span>
               </div>
             )}
           </div>
