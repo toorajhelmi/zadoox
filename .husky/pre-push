@@ -25,6 +25,14 @@ if [ -z "$PNPM_CMD" ]; then
   exit 0  # Allow push but warn
 fi
 
+# Check if node is available (required for pnpm)
+if ! command -v node &> /dev/null; then
+  echo "⚠️  Warning: node not found in PATH, skipping type-check"
+  echo "   Node.js is required for type-checking"
+  echo "   Configure PATH to include node location"
+  exit 0  # Allow push but warn
+fi
+
 # Build shared package first (required for type-check to resolve @zadoox/shared)
 echo "📦 Building shared package..."
 if ! "$PNPM_CMD" --filter @zadoox/shared build; then
