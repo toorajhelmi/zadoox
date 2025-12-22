@@ -45,12 +45,34 @@ async function fetchApi<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers,
+    });
+  } catch (error: any) {
+    // Network error (backend not running, CORS, etc.)
+    throw new ApiError(
+      `Failed to connect to API at ${API_BASE_URL}. Make sure the backend server is running.`,
+      'NETWORK_ERROR',
+      undefined,
+      { originalError: error.message }
+    );
+  }
 
-  const data: ApiResponse<T> = await response.json();
+  // Try to parse JSON response
+  let data: ApiResponse<T>;
+  try {
+    data = await response.json();
+  } catch (error) {
+    // Response is not JSON (likely an error page or server error)
+    throw new ApiError(
+      `Invalid response from server (${response.status} ${response.statusText}). Make sure the backend is running and accessible.`,
+      'INVALID_RESPONSE',
+      response.status
+    );
+  }
 
   if (!response.ok || !data.success) {
     throw new ApiError(

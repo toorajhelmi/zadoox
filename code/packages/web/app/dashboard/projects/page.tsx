@@ -68,7 +68,14 @@ export default function ProjectsPage() {
           {error && (
             <div className="mb-4 p-4 bg-red-900/20 border border-red-700 rounded text-red-400">
               <p className="font-semibold mb-1">Error</p>
-              <p className="text-sm">{error}</p>
+              <p className="text-sm mb-2">{error}</p>
+              {error.includes('Failed to connect') && (
+                <div className="text-xs text-red-300 mb-2 space-y-1">
+                  <p>• Make sure the backend server is running on port 3001</p>
+                  <p>• Check that NEXT_PUBLIC_API_URL is set correctly</p>
+                  <p>• Verify CORS is enabled on the backend</p>
+                </div>
+              )}
               <button
                 onClick={loadProjects}
                 className="mt-2 text-sm underline hover:text-red-300"
