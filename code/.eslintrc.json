@@ -23,7 +23,7 @@
       }
     }
   ],
-  "ignorePatterns": ["dist", "build", ".next", "node_modules"]
+  "ignorePatterns": ["dist", "build", ".next", "node_modules", "**/__tests__/**", "**/*.test.ts", "**/*.spec.ts"]
 }
 
 
