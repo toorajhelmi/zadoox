@@ -120,26 +120,31 @@ jobs:
         working-directory: ./code
         run: pnpm --filter @zadoox/shared build
 
-      - name: Pull Vercel environment information
+      - name: Link Vercel project
         working-directory: ./code/packages/web
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          echo "$VERCEL_ORG_ID" > .vercel/org-id
+          echo "$VERCEL_PROJECT_ID" > .vercel/project-id
+          mkdir -p .vercel
+
+      - name: Pull Vercel environment information
+        working-directory: ./code/packages/web
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
 
       - name: Build project
         working-directory: ./code/packages/web
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: vercel build --prod --token=$VERCEL_TOKEN
 
       - name: Deploy project
         working-directory: ./code/packages/web
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
