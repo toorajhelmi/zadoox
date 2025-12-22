@@ -162,9 +162,22 @@ jobs:
           echo "Building with Vercel CLI..."
           echo "Current directory: $(pwd)"
           
-          # Verify .env.production.local exists
+          # Export environment variables from .env.production.local
           if [ -f ".env.production.local" ]; then
-            echo "✅ .env.production.local exists - Next.js will load it automatically"
+            echo "✅ .env.production.local exists"
+            echo "Exporting environment variables..."
+            set -a
+            source .env.production.local
+            set +a
+            echo "Environment variables exported"
+            # Verify they're set
+            if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then
+              echo "❌ ERROR: Required environment variables not found in .env.production.local"
+              echo "NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:+SET}"
+              echo "NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:+SET}"
+              exit 1
+            fi
+            echo "✅ Required environment variables are set"
           else
             echo "❌ ERROR: .env.production.local not found!"
             exit 1
@@ -172,6 +185,7 @@ jobs:
           
           echo "Running vercel build --prod..."
           # Run vercel build and capture output
+          # The exported env vars will be available to the build process
           set -e
           vercel build --prod --token=$VERCEL_TOKEN --yes
           
