@@ -11,11 +11,6 @@ const nextConfig = {
     // Type checking is done in CI
     ignoreBuildErrors: false,
   },
-  // Ensure build fails on errors
-  onDemandEntries: {
-    maxInactiveAge: 25 * 1000,
-    pagesBufferLength: 2,
-  },
   webpack: (config) => {
     config.resolve.alias = {
       ...config.resolve.alias,

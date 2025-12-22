@@ -4,8 +4,5 @@
   "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
   "framework": "nextjs",
   "rootDirectory": "code/packages/web",
-  "env": {
-    "NODE_ENV": "production"
-  }
 }
 
