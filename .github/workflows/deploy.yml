@@ -130,85 +130,24 @@ jobs:
           echo "Linking Vercel project..."
           vercel link --yes --token=$VERCEL_TOKEN --project=$VERCEL_PROJECT_ID --scope=$VERCEL_ORG_ID
 
-      - name: Pull Vercel environment
+      - name: Link Vercel project
         working-directory: ./code/packages/web
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          echo "Pulling environment variables..."
-          vercel pull --yes --environment=production --token=$VERCEL_TOKEN
-          
-          echo "Verifying environment variables were pulled..."
-          if [ -f ".vercel/.env.production.local" ]; then
-            echo "✅ Environment file created"
-            echo "Environment variables in file:"
-            grep -E "^[A-Z]" .vercel/.env.production.local | sed 's/=.*/=***/' || echo "No vars found"
-            
-            # Copy to .env.production.local so Next.js can load it during build
-            echo "Copying .vercel/.env.production.local to .env.production.local for Next.js..."
-            cp .vercel/.env.production.local .env.production.local
-            echo "✅ Environment file copied for Next.js build"
-          else
-            echo "❌ ERROR: .vercel/.env.production.local not found!"
-            echo "Make sure environment variables are set in Vercel project settings"
-            exit 1
-          fi
+          echo "Linking Vercel project..."
+          vercel link --yes --token=$VERCEL_TOKEN --project=$VERCEL_PROJECT_ID --scope=$VERCEL_ORG_ID
 
-      - name: Build with Vercel
-        working-directory: ./code/packages/web
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          echo "Building with Vercel CLI..."
-          echo "Current directory: $(pwd)"
-          
-          # Export environment variables from .env.production.local
-          if [ -f ".env.production.local" ]; then
-            echo "✅ .env.production.local exists"
-            echo "Exporting environment variables..."
-            set -a
-            source .env.production.local
-            set +a
-            echo "Environment variables exported"
-            # Verify they're set
-            if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then
-              echo "❌ ERROR: Required environment variables not found in .env.production.local"
-              echo "NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:+SET}"
-              echo "NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:+SET}"
-              exit 1
-            fi
-            echo "✅ Required environment variables are set"
-          else
-            echo "❌ ERROR: .env.production.local not found!"
-            exit 1
-          fi
-          
-          echo "Running vercel build --prod..."
-          # Run vercel build and capture output
-          # The exported env vars will be available to the build process
-          set -e
-          vercel build --prod --token=$VERCEL_TOKEN --yes
-          
-          echo "Build command completed. Checking for output..."
-          echo "Contents of current directory:"
-          ls -la
-          echo "Contents of .vercel directory:"
-          ls -la .vercel/ 2>&1 || echo "No .vercel directory"
-          
-          if [ -d ".vercel/output" ]; then
-            echo "✅ .vercel/output found!"
-            ls -la .vercel/output/ | head -10
-          else
-            echo "❌ ERROR: .vercel/output not found after build!"
-            echo "Checking for .next directory:"
-            ls -la .next 2>&1 || echo "No .next directory"
-            exit 1
-          fi
+      - name: Build shared package
+        working-directory: ./code
+        run: pnpm --filter @zadoox/shared build
 
       - name: Deploy to Vercel
         working-directory: ./code/packages/web
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          echo "Deploying prebuilt output..."
-          vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN --yes
+          echo "Deploying to Vercel (Vercel will build on their servers with proper env vars)..."
+          vercel deploy --prod --token=$VERCEL_TOKEN --yes
