@@ -255,6 +255,7 @@ Instead of adding error handling, defensive checks, or workarounds for things th
 - [x] Project settings page
 - [x] Navigation structure
 - [x] API integration (fetch projects)
+- [ ] Add Vercel CLI deployment to GitHub Actions deploy workflow (revisit in Phase 5 later)
 
 **Deliverables**:
 - ✅ Dashboard page working
@@ -265,6 +266,8 @@ Instead of adding error handling, defensive checks, or workarounds for things th
 - ✅ Project detail pages
 
 **Completed**: Created a VS Code-inspired dashboard with collapsible sidebar, project list view with cards, create project modal with AI branding, project detail pages, and API integration. The UI features VS Code dark theme colors, monospace fonts, and subtle AI indicators throughout.
+
+**Note**: Vercel deployment is currently handled via GitHub integration (automatic deployments on push to main).
 
 ---
 
