@@ -161,6 +161,7 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange }: CodeMir
         const cmEditor = editorContainerRef.current.querySelector('.cm-editor');
         if (cmEditor) {
           // @uiw/react-codemirror stores view in a specific way
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const view = (cmEditor as any).__cm_view?.view || (cmEditor as any).cmView?.view;
           if (view) {
             editorViewRef.current = view;
