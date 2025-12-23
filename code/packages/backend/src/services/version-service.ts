@@ -19,7 +19,7 @@ export class VersionService {
   private dmp: DiffMatchPatch;
 
   constructor(private supabase: SupabaseClient) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any
     this.dmp = new (DiffMatchPatch as any)();
   }
 
