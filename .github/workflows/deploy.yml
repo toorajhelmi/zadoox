@@ -129,6 +129,24 @@ jobs:
         run: |
           echo "Linking Vercel project..."
           vercel link --yes --token=$VERCEL_TOKEN --project=$VERCEL_PROJECT_ID --scope=$VERCEL_ORG_ID
+          
+          echo "Pulling project settings to sync configuration..."
+          vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+          
+          echo "Verifying package.json is present..."
+          if [ ! -f "package.json" ]; then
+            echo "❌ ERROR: package.json not found in current directory"
+            echo "Current directory: $(pwd)"
+            ls -la
+            exit 1
+          fi
+          
+          echo "Verifying Next.js dependency..."
+          if ! grep -q '"next"' package.json; then
+            echo "❌ ERROR: Next.js not found in package.json dependencies"
+            exit 1
+          fi
+          echo "✅ Next.js found in package.json"
 
       - name: Deploy to Vercel
         working-directory: ./code/packages/web
@@ -136,5 +154,23 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           SKIP_ENV_VALIDATION: "1"
         run: |
-          echo "Deploying to Vercel (Vercel will build on their servers with proper env vars)..."
+          echo "Deploying to Vercel..."
+          echo "Current directory: $(pwd)"
+          echo "Verifying project structure..."
+          
+          if [ ! -f "package.json" ]; then
+            echo "❌ ERROR: package.json not found"
+            exit 1
+          fi
+          
+          if [ ! -f "vercel.json" ]; then
+            echo "❌ ERROR: vercel.json not found"
+            exit 1
+          fi
+          
+          echo "✅ Project files found"
+          echo "Package.json contents (first 20 lines):"
+          head -20 package.json
+          
+          echo "Deploying with vercel deploy --prod..."
           vercel deploy --prod --token=$VERCEL_TOKEN --yes
