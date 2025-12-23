@@ -299,6 +299,7 @@ export class VersionService {
   /**
    * Map database version to DocumentVersion type
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private mapDbVersionToVersion(data: any): DocumentVersion {
     return {
       id: data.id,
