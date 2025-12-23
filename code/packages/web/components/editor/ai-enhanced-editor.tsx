@@ -29,6 +29,7 @@ export function AIEnhancedEditor({
   sidebarOpen: _sidebarOpen = true,
 }: AIEnhancedEditorProps) {
   const [_hoveredParagraph, setHoveredParagraph] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_isProcessingAction, setIsProcessingAction] = useState(false);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
