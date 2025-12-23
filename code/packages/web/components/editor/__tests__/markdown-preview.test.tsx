@@ -95,7 +95,7 @@ describe('MarkdownPreview', () => {
       { level: 1, text: 'Test (with) [brackets]', id: 'test-with-brackets' },
     ];
 
-    // The actual HTML from renderMarkdownToHtml might have the heading text
+    // Mock renderMarkdownToHtml to return HTML with the heading
     const htmlBefore = '<h1>Test (with) [brackets]</h1>';
     vi.mocked(shared.extractHeadings).mockReturnValueOnce(mockHeadings);
     vi.mocked(shared.renderMarkdownToHtml).mockReturnValueOnce(htmlBefore);
@@ -104,9 +104,10 @@ describe('MarkdownPreview', () => {
 
     const markdownContent = container.querySelector('.markdown-content');
     expect(markdownContent).not.toBeNull();
-    // The component should add IDs to headings - check if heading exists
-    // Note: The regex replacement might not work perfectly with special chars, but heading should exist
+    // The component should add IDs to headings - check if heading exists with the text
     expect(markdownContent?.innerHTML).toContain('Test (with) [brackets]');
+    // The ID should be added if the regex replacement works
+    // Note: Special characters in regex might cause issues, so we just verify the heading text exists
   });
 
   it('should apply correct styling classes', () => {
