@@ -15,10 +15,8 @@ try {
 }
 
 export class OpenAIProvider implements AIProvider {
-  private client: OpenAI;
-  private model: string;
-
   private client: any;
+  private model: string;
 
   constructor(apiKey: string, model: string = 'gpt-4o-mini') {
     if (!apiKey) {

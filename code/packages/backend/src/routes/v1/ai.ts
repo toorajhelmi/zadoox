@@ -55,7 +55,8 @@ export async function aiRoutes(fastify: FastifyInstance) {
   try {
     getAIService();
   } catch (error) {
-    fastify.log.warn('AI service not available. AI endpoints will return errors:', error instanceof Error ? error.message : String(error));
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    fastify.log.warn(`AI service not available. AI endpoints will return errors: ${errorMsg}`);
   }
 
   /**
