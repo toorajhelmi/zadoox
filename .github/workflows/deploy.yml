@@ -96,5 +96,5 @@ jobs:
       - name: Vercel deployment info
         run: |
           echo "ℹ️ Web app deployment is handled by Vercel's GitHub integration"
-          echo "Vercel will automatically deploy on push to main branch"
-          echo "Make sure Vercel project is connected to this GitHub repository"
+          echo "Vercel will automatically deploy on push to main branch via GitHub integration"
+          echo "Make sure Vercel project is connected to this GitHub repository in Vercel dashboard"
