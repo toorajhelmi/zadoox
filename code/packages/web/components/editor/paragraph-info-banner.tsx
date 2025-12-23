@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+// Removed unused imports
 import type { AIAnalysisResponse, AIActionType } from '@zadoox/shared';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -19,12 +19,12 @@ interface ParagraphInfoBannerProps {
  * Shows metadata and quick actions when hovering over a paragraph
  */
 export function ParagraphInfoBanner({
-  paragraphId,
+  paragraphId: _paragraphId,
   analysis,
   lastEdited,
   onAction,
   onViewDetails,
-  position,
+  position: _position,
   visible,
 }: ParagraphInfoBannerProps) {
   // Removed auto-hide timer - menu should stay open while mouse is over it

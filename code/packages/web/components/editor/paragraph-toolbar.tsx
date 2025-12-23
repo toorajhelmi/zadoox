@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+// Removed unused imports
 import type { AIAnalysisResponse, AIActionType } from '@zadoox/shared';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -18,7 +18,7 @@ interface ParagraphToolbarProps {
  * Inline horizontal toolbar that appears over a paragraph, pushing content down
  */
 export function ParagraphToolbar({
-  paragraphId,
+  paragraphId: _paragraphId,
   analysis,
   lastEdited,
   onAction,
@@ -30,7 +30,6 @@ export function ParagraphToolbar({
   }
 
   const quality = analysis?.quality ?? 0;
-  const sentiment = analysis?.sentiment ?? 'neutral';
   const wordiness = analysis?.wordiness ?? 50;
   const clarity = analysis?.clarity ?? 50;
 

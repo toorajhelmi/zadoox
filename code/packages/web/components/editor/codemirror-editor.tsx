@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { EditorView, Decoration, DecorationSet, WidgetType } from '@codemirror/view';
-import { StateField, StateEffect } from '@codemirror/state';
+import { StateField } from '@codemirror/state';
 import { FloatingFormatMenu, type FormatType } from './floating-format-menu';
 
 // Dynamically import CodeMirror to avoid SSR issues
@@ -18,6 +18,7 @@ interface CodeMirrorEditorProps {
   value: string;
   onChange: (value: string) => void;
   onSelectionChange?: (selection: { from: number; to: number; text: string } | null) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   extensions?: any[];
   onEditorViewReady?: (view: EditorView | null) => void;
 }
@@ -164,6 +165,7 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange, extension
         const cmEditor = editorContainerRef.current.querySelector('.cm-editor');
         if (cmEditor) {
           // @uiw/react-codemirror stores view in a specific way
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const view = (cmEditor as any).__cm_view?.view || (cmEditor as any).cmView?.view;
           if (view) {
             editorViewRef.current = view;

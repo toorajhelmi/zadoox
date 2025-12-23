@@ -17,7 +17,6 @@ import type {
   AISuggestRequest,
   AISuggestResponse,
   AIModelInfo,
-  AIModel,
 } from '@zadoox/shared';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
