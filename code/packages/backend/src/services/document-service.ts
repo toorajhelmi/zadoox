@@ -126,18 +126,27 @@ export class DocumentService {
     let newVersion = existing.version;
     if (input.content !== undefined && input.content !== existing.content) {
       // Content changed - create version and increment version number
+      // Version service will check if content actually changed for manual-save/auto-save
       if (authorId) {
-        await this.versionService.createVersion(
+        const version = await this.versionService.createVersion(
           documentId,
           input.content,
           authorId,
           changeType,
           changeDescription
         );
+        // Only increment version if a new version was actually created
+        // (manual-save and auto-save return null if content hasn't changed)
+        if (version) {
+          newVersion = existing.version + 1;
+          updateData.version = newVersion;
+        }
+      } else {
+        // No authorId - just increment version number (backward compatibility)
+        newVersion = existing.version + 1;
+        updateData.version = newVersion;
       }
       updateData.content = input.content;
-      newVersion = existing.version + 1;
-      updateData.version = newVersion;
     }
     
     if (input.metadata !== undefined) {

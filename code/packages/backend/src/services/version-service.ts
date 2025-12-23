@@ -25,6 +25,7 @@ export class VersionService {
 
   /**
    * Create a new version for a document
+   * Only creates a version if content has actually changed (for manual-save and auto-save)
    */
   async createVersion(
     documentId: string,
@@ -33,11 +34,20 @@ export class VersionService {
     changeType: VersionChangeType = 'auto-save',
     changeDescription?: string,
     forceSnapshot = false
-  ): Promise<DocumentVersion> {
+  ): Promise<DocumentVersion | null> {
     // Get current version metadata
     const metadata = await this.getVersionMetadata(documentId);
     if (!metadata) {
       throw new Error(`Document ${documentId} not found`);
+    }
+
+    // For manual-save and auto-save, check if content actually changed
+    if (changeType === 'manual-save' || changeType === 'auto-save') {
+      const currentContent = await this.reconstructVersion(documentId, metadata.currentVersion);
+      if (currentContent === newContent) {
+        // No change - don't create a version
+        return null;
+      }
     }
 
     const newVersionNumber = metadata.currentVersion + 1;
