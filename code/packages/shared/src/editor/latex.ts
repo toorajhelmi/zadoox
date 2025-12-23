@@ -3,7 +3,7 @@
  * Converts between Extended Markdown and LaTeX
  */
 
-import { PLACEHOLDER_PATTERNS, PLACEHOLDERS } from '../constants/placeholders';
+// Placeholder imports removed - not currently used in latex.ts
 
 /**
  * Convert Extended Markdown to LaTeX
