@@ -121,7 +121,7 @@ describe('DocumentService - Versioning Integration', () => {
           id: documentId,
           project_id: 'project-1',
           title: 'Test Document',
-          content,
+          content: content + ' ', // Slightly different to trigger version check
           metadata: { type: 'standalone', order: 0 },
           version: 1,
           author_id: authorId,
@@ -131,7 +131,7 @@ describe('DocumentService - Versioning Integration', () => {
         error: null,
       });
 
-      // Mock version creation returns null (no change)
+      // Mock version creation returns null (no change detected by version service)
       mockVersionService.createVersion.mockResolvedValue(null);
 
       // Mock document update
