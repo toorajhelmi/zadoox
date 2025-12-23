@@ -26,7 +26,7 @@ export function AIEnhancedEditor({
   onChange,
   onSelectionChange,
   model = 'auto',
-  sidebarOpen = true,
+  sidebarOpen: _sidebarOpen = true,
 }: AIEnhancedEditorProps) {
   const [hoveredParagraph, setHoveredParagraph] = useState<string | null>(null);
   const [isProcessingAction, setIsProcessingAction] = useState(false);

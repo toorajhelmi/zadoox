@@ -29,7 +29,7 @@ export function AIIndicators({
   content,
   onParagraphHover,
   onIndicatorClick,
-  model = 'auto',
+  model: _model = 'auto',
 }: AIIndicatorsProps) {
   const [paragraphs, setParagraphs] = useState<ParagraphMetadata[]>([]);
   const [hoveredParagraph, setHoveredParagraph] = useState<string | null>(null);
