@@ -63,13 +63,12 @@ export function AIIndicators({
     });
 
     // Add final paragraph if exists
-    if (currentParagraph) {
-      const para = currentParagraph; // Type narrowing helper
+    if (currentParagraph !== null && currentParagraph !== undefined) {
       parsed.push({
-        id: `para-${para.startLine}`,
-        startLine: para.startLine,
+        id: `para-${currentParagraph.startLine}`,
+        startLine: currentParagraph.startLine,
         endLine: lines.length - 1,
-        text: para.text.trim(),
+        text: currentParagraph.text.trim(),
       });
     }
 

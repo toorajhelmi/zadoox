@@ -45,11 +45,10 @@ export function useAIAnalysis(content: string, model: AIModel = 'auto') {
       }
     });
 
-    if (currentParagraph) {
-      const para = currentParagraph; // Type narrowing helper
+    if (currentParagraph !== null && currentParagraph !== undefined) {
       parsed.push({
-        id: `para-${para.startLine}`,
-        text: para.text.trim(),
+        id: `para-${currentParagraph.startLine}`,
+        text: currentParagraph.text.trim(),
       });
     }
 
