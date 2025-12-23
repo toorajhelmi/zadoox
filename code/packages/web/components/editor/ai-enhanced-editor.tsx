@@ -28,8 +28,8 @@ export function AIEnhancedEditor({
   model = 'auto',
   sidebarOpen: _sidebarOpen = true,
 }: AIEnhancedEditorProps) {
-  const [hoveredParagraph, setHoveredParagraph] = useState<string | null>(null);
-  const [isProcessingAction, setIsProcessingAction] = useState(false);
+  const [_hoveredParagraph, setHoveredParagraph] = useState<string | null>(null);
+  const [_isProcessingAction, setIsProcessingAction] = useState(false);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
