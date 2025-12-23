@@ -110,8 +110,11 @@ describe('VersionService', () => {
         error: null,
       });
 
-      // Mock getVersion (for reconstructVersion to check current content) - version 1
-      mockQueryBuilder.single.mockResolvedValueOnce({
+      // Mock getVersion calls - need 3 calls total:
+      // 1. reconstructVersion(documentId, 1) to check if content changed
+      // 2. getVersion(documentId, 1) to get base version for delta calculation  
+      // 3. reconstructVersion(documentId, 1) recursive call to get base content
+      const version1Mock = {
         data: {
           id: 'version-1',
           document_id: documentId,
@@ -126,28 +129,11 @@ describe('VersionService', () => {
           metadata: {},
         },
         error: null,
-      });
-
-      // Mock getVersion (for base version lookup in createVersion) - version 1
-      mockQueryBuilder.single.mockResolvedValueOnce({
-        data: {
-          id: 'version-1',
-          document_id: documentId,
-          version_number: 1,
-          content_snapshot: oldContent,
-          content_delta: null,
-          is_snapshot: true,
-          snapshot_base_version: null,
-          author_id: authorId,
-          change_type: 'milestone',
-          created_at: new Date().toISOString(),
-          metadata: {},
-        },
-        error: null,
-      });
-
-      // Note: listVersions is not called for snapshot versions in reconstructVersion
-      // It's only called when reconstructing from deltas, which we're not doing here
+      };
+      
+      mockQueryBuilder.single.mockResolvedValueOnce(version1Mock); // Call 1
+      mockQueryBuilder.single.mockResolvedValueOnce(version1Mock); // Call 2
+      mockQueryBuilder.single.mockResolvedValueOnce(version1Mock); // Call 3
 
       // Mock insert (new delta version)
       mockQueryBuilder.single.mockResolvedValueOnce({
