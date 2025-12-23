@@ -4,6 +4,10 @@
 
 /// <reference types="vitest" />
 import { vi } from 'vitest';
+import React from 'react';
+
+// Make React available globally for JSX
+global.React = React;
 
 // Mock Next.js router
 vi.mock('next/navigation', () => ({

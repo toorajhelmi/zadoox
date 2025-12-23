@@ -3,6 +3,7 @@
  */
 
 /// <reference types="vitest" />
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { FormattingToolbar } from '../formatting-toolbar';
@@ -74,16 +75,11 @@ describe('FormattingToolbar', () => {
     expect(mockOnFormat).toHaveBeenCalledTimes(formatTypes.length);
   });
 
-  it('should prevent default and stop propagation on button click', async () => {
-    const user = userEvent.setup();
+  it('should prevent default and stop propagation on button click', () => {
     render(<FormattingToolbar onFormat={mockOnFormat} viewMode="edit" />);
 
     const boldButton = screen.getByLabelText('Bold');
-    const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
-    const preventDefaultSpy = vi.spyOn(clickEvent, 'preventDefault');
-    const stopPropagationSpy = vi.spyOn(clickEvent, 'stopPropagation');
-
-    boldButton.dispatchEvent(clickEvent);
+    fireEvent.click(boldButton);
 
     // The component should handle the event
     expect(mockOnFormat).toHaveBeenCalled();

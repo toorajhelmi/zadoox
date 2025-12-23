@@ -3,6 +3,7 @@
  */
 
 /// <reference types="vitest" />
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { FloatingFormatMenu } from '../floating-format-menu';
@@ -83,8 +84,7 @@ describe('FloatingFormatMenu', () => {
     expect(mockOnFormat).toHaveBeenCalledTimes(formatTypes.length);
   });
 
-  it('should prevent default and stop propagation on button click', async () => {
-    const user = userEvent.setup();
+  it('should prevent default and stop propagation on button click', () => {
     render(
       <FloatingFormatMenu
         position={{ x: 100, y: 200 }}
@@ -93,11 +93,8 @@ describe('FloatingFormatMenu', () => {
     );
 
     const boldButton = screen.getByLabelText('Bold');
-    const mouseDownEvent = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
-    const preventDefaultSpy = vi.spyOn(mouseDownEvent, 'preventDefault');
-    const stopPropagationSpy = vi.spyOn(mouseDownEvent, 'stopPropagation');
-
-    boldButton.dispatchEvent(mouseDownEvent);
+    fireEvent.mouseDown(boldButton);
+    fireEvent.click(boldButton);
 
     // The component should handle the event
     expect(mockOnFormat).toHaveBeenCalled();

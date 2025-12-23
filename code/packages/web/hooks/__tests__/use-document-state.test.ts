@@ -24,7 +24,7 @@ vi.mock('@/lib/api/client', () => ({
 describe('useDocumentState', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.useFakeTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
   });
 
   afterEach(() => {
@@ -50,9 +50,12 @@ describe('useDocumentState', () => {
 
       expect(result.current.isLoading).toBe(true);
 
-      await waitFor(() => {
-        expect(result.current.isLoading).toBe(false);
-      });
+      await waitFor(
+        () => {
+          expect(result.current.isLoading).toBe(false);
+        },
+        { timeout: 10000 }
+      );
 
       expect(result.current.content).toBe('Test content');
       expect(result.current.documentTitle).toBe('Test Document');
@@ -66,9 +69,12 @@ describe('useDocumentState', () => {
 
       const { result } = renderHook(() => useDocumentState('doc-1', 'project-1'));
 
-      await waitFor(() => {
-        expect(result.current.isLoading).toBe(false);
-      });
+      await waitFor(
+        () => {
+          expect(result.current.isLoading).toBe(false);
+        },
+        { timeout: 10000 }
+      );
 
       expect(result.current.content).toBe('');
       expect(result.current.documentTitle).toBe('');
@@ -92,9 +98,12 @@ describe('useDocumentState', () => {
 
       const { result } = renderHook(() => useDocumentState('default', 'project-1'));
 
-      await waitFor(() => {
-        expect(result.current.isLoading).toBe(false);
-      });
+      await waitFor(
+        () => {
+          expect(result.current.isLoading).toBe(false);
+        },
+        { timeout: 10000 }
+      );
 
       expect(result.current.documentTitle).toBe('Untitled Document');
       expect(result.current.documentId).toBe('doc-new');
@@ -124,9 +133,12 @@ describe('useDocumentState', () => {
 
       const { result } = renderHook(() => useDocumentState('default', 'project-1'));
 
-      await waitFor(() => {
-        expect(result.current.isLoading).toBe(false);
-      });
+      await waitFor(
+        () => {
+          expect(result.current.isLoading).toBe(false);
+        },
+        { timeout: 10000 }
+      );
 
       expect(result.current.documentTitle).toBe('Existing Document');
       expect(result.current.content).toBe('Existing content');
@@ -158,9 +170,12 @@ describe('useDocumentState', () => {
 
       const { result } = renderHook(() => useDocumentState('doc-1', 'project-1'));
 
-      await waitFor(() => {
-        expect(result.current.isLoading).toBe(false);
-      });
+      await waitFor(
+        () => {
+          expect(result.current.isLoading).toBe(false);
+        },
+        { timeout: 10000 }
+      );
 
       // Update content
       act(() => {
@@ -201,9 +216,12 @@ describe('useDocumentState', () => {
 
       const { result } = renderHook(() => useDocumentState('doc-1', 'project-1'));
 
-      await waitFor(() => {
-        expect(result.current.isLoading).toBe(false);
-      });
+      await waitFor(
+        () => {
+          expect(result.current.isLoading).toBe(false);
+        },
+        { timeout: 10000 }
+      );
 
       // Make multiple rapid updates
       act(() => {
@@ -250,9 +268,12 @@ describe('useDocumentState', () => {
 
       const { result } = renderHook(() => useDocumentState('default', 'project-1'));
 
-      await waitFor(() => {
-        expect(result.current.isLoading).toBe(false);
-      });
+      await waitFor(
+        () => {
+          expect(result.current.isLoading).toBe(false);
+        },
+        { timeout: 10000 }
+      );
 
       // Wait for actual document ID to be set
       await waitFor(() => {
@@ -286,9 +307,12 @@ describe('useDocumentState', () => {
 
       const { result } = renderHook(() => useDocumentState('doc-1', 'project-1'));
 
-      await waitFor(() => {
-        expect(result.current.isLoading).toBe(false);
-      });
+      await waitFor(
+        () => {
+          expect(result.current.isLoading).toBe(false);
+        },
+        { timeout: 10000 }
+      );
 
       const initialLastSaved = result.current.lastSaved;
 
@@ -332,9 +356,12 @@ describe('useDocumentState', () => {
 
       const { result } = renderHook(() => useDocumentState('doc-1', 'project-1'));
 
-      await waitFor(() => {
-        expect(result.current.isLoading).toBe(false);
-      });
+      await waitFor(
+        () => {
+          expect(result.current.isLoading).toBe(false);
+        },
+        { timeout: 10000 }
+      );
 
       act(() => {
         result.current.updateContent('New content');

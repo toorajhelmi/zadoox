@@ -3,6 +3,7 @@
  */
 
 /// <reference types="vitest" />
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { EditorSidebar } from '../editor-sidebar';

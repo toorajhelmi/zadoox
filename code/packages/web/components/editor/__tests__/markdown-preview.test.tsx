@@ -3,6 +3,7 @@
  */
 
 /// <reference types="vitest" />
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MarkdownPreview } from '../markdown-preview';
@@ -45,7 +46,7 @@ describe('MarkdownPreview', () => {
     const { container } = render(<MarkdownPreview content="Test content" />);
 
     const markdownContent = container.querySelector('.markdown-content');
-    expect(markdownContent).toBeInTheDocument();
+    expect(markdownContent).not.toBeNull();
     expect(markdownContent?.innerHTML).toBe(htmlContent);
   });
 
@@ -64,7 +65,7 @@ describe('MarkdownPreview', () => {
     const { container } = render(<MarkdownPreview content="# Introduction\n## Getting Started" />);
 
     const markdownContent = container.querySelector('.markdown-content');
-    expect(markdownContent).toBeInTheDocument();
+    expect(markdownContent).not.toBeNull();
     expect(markdownContent?.innerHTML).toContain('id="introduction"');
     expect(markdownContent?.innerHTML).toContain('id="getting-started"');
   });
@@ -101,7 +102,7 @@ describe('MarkdownPreview', () => {
     const { container } = render(<MarkdownPreview content="# Test (with) [brackets]" />);
 
     const markdownContent = container.querySelector('.markdown-content');
-    expect(markdownContent).toBeInTheDocument();
+    expect(markdownContent).not.toBeNull();
     // Should still add the ID despite special characters
     expect(markdownContent?.innerHTML).toContain('id="test-with-brackets"');
   });
@@ -113,7 +114,7 @@ describe('MarkdownPreview', () => {
     const { container } = render(<MarkdownPreview content="Test" />);
 
     const markdownContent = container.querySelector('.markdown-content');
-    expect(markdownContent).toBeInTheDocument();
+    expect(markdownContent).not.toBeNull();
     expect(markdownContent?.className).toContain('markdown-content');
   });
 });
