@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { EditorView } from '@codemirror/view';
+import { EditorView, ViewUpdate } from '@codemirror/view';
 import { FloatingFormatMenu, type FormatType } from './floating-format-menu';
 
 // Dynamically import CodeMirror to avoid SSR issues
@@ -200,7 +200,7 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange }: CodeMir
 
   // Extension to track selection and show floating menu
   const selectionExtension = useCallback(() => {
-    return EditorView.updateListener.of((update) => {
+    return EditorView.updateListener.of((update: ViewUpdate) => {
       if (update.selectionSet && update.view) {
         const selection = update.state.selection.main;
         const selectedText = update.state.sliceDoc(selection.from, selection.to).trim();
