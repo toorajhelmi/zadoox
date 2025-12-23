@@ -45,7 +45,7 @@ export function useAIAnalysis(content: string, model: AIModel = 'auto') {
       }
     });
 
-    if (currentParagraph) {
+    if (currentParagraph !== null) {
       parsed.push({
         id: `para-${currentParagraph.startLine}`,
         text: currentParagraph.text.trim(),

@@ -63,7 +63,7 @@ export function AIIndicators({
     });
 
     // Add final paragraph if exists
-    if (currentParagraph) {
+    if (currentParagraph !== null) {
       parsed.push({
         id: `para-${currentParagraph.startLine}`,
         startLine: currentParagraph.startLine,
