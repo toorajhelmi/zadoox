@@ -67,11 +67,11 @@ export function renderMarkdownToHtml(content: string): string {
   // Inline code
   html = html.replace(/`([^`]+)`/gim, '<code>$1</code>');
 
+  // Images (must come before links, as images start with !)
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/gim, '<img src="$2" alt="$1" />');
+
   // Links
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2">$1</a>');
-
-  // Images
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/gim, '<img src="$2" alt="$1" />');
 
   // HTML tags (underline, superscript, subscript - these are allowed in markdown)
   // These are already HTML, so we don't need to convert them

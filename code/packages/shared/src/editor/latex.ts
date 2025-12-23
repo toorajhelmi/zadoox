@@ -45,12 +45,13 @@ export function markdownToLatex(content: string): string {
   // Block math: $$...$$
   // Already handled by LaTeX, just ensure they're preserved
 
+  // Escape special LaTeX characters (before line break replacements to preserve \par and \\)
+  latex = escapeLatex(latex);
+
   // Line breaks - LaTeX uses \\ for line breaks, \par for paragraphs
+  // Do this after escaping to avoid escaping the LaTeX commands we're adding
   latex = latex.replace(/\n\n/gim, '\n\n\\par\n\n');
   latex = latex.replace(/\n/gim, '\\\\\n');
-
-  // Escape special LaTeX characters
-  latex = escapeLatex(latex);
 
   return latex;
 }
