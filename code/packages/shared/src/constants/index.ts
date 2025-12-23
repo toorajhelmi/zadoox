@@ -2,5 +2,5 @@
  * Shared constants
  */
 
-export * from './placeholders.js';
-export * from './markdown.js';
+export * from './placeholders';
+export * from './markdown';

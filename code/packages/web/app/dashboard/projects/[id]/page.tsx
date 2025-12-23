@@ -36,6 +36,12 @@ export default function ProjectDetailPage() {
     }
   }, [projectId]);
 
+  const handleEdit = () => {
+    // TODO: Fetch documents and use the first one, or create a default document
+    const defaultDocumentId = 'default';
+    router.push(`/dashboard/projects/${projectId}/documents/${defaultDocumentId}`);
+  };
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -81,12 +87,20 @@ export default function ProjectDetailPage() {
                 {project.description || 'No description'}
               </p>
             </div>
-            <button
-              onClick={() => router.push('/dashboard/projects')}
-              className="px-4 py-2 text-sm text-[#cccccc] hover:text-white transition-colors"
-            >
-              ← Back
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleEdit}
+                className="px-4 py-2 bg-[#007acc] hover:bg-[#1a8cd8] text-white rounded text-sm font-medium transition-colors"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => router.push('/dashboard/projects')}
+                className="px-4 py-2 text-sm text-[#cccccc] hover:text-white transition-colors"
+              >
+                ← Back
+              </button>
+            </div>
           </div>
         </div>
 
@@ -112,24 +126,6 @@ export default function ProjectDetailPage() {
                   </dd>
                 </div>
               </dl>
-            </div>
-
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">📝</div>
-              <h2 className="text-2xl font-semibold text-white mb-4">Document Editor</h2>
-              <p className="text-[#969696] mb-8">
-                Document editor will be available in Phase 9
-              </p>
-              <div className="p-6 bg-[#252526] border border-[#3e3e42] rounded text-left">
-                <h3 className="font-semibold text-white mb-3">Coming Soon:</h3>
-                <ul className="space-y-2 text-sm text-[#cccccc]">
-                  <li>• Extended Markdown editor</li>
-                  <li>• LaTeX input support</li>
-                  <li>• Real-time preview</li>
-                  <li>• AI-powered suggestions</li>
-                  <li>• Document management</li>
-                </ul>
-              </div>
             </div>
           </div>
         </div>

@@ -2,7 +2,7 @@
  * API Client for Zadoox
  */
 
-import type { ApiResponse, Project, CreateProjectInput, UpdateProjectInput } from '@zadoox/shared';
+import type { ApiResponse, Project, CreateProjectInput, UpdateProjectInput, Document, CreateDocumentInput, UpdateDocumentInput } from '@zadoox/shared';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
 
@@ -127,6 +127,43 @@ export const api = {
       await fetchApi<void>(`/projects/${id}`, {
         method: 'DELETE',
       });
+    },
+  },
+
+  documents: {
+    listByProject: async (projectId: string): Promise<Document[]> => {
+      const response = await fetchApi<Document[]>(`/projects/${projectId}/documents`);
+      return response.data || [];
+    },
+
+    create: async (input: CreateDocumentInput): Promise<Document> => {
+      const response = await fetchApi<Document>('/documents', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      });
+      if (!response.data) {
+        throw new ApiError('Failed to create document', 'CREATE_FAILED', 500);
+      }
+      return response.data;
+    },
+
+    get: async (id: string): Promise<Document> => {
+      const response = await fetchApi<Document>(`/documents/${id}`);
+      if (!response.data) {
+        throw new ApiError('Document not found', 'NOT_FOUND', 404);
+      }
+      return response.data;
+    },
+
+    update: async (id: string, input: UpdateDocumentInput): Promise<Document> => {
+      const response = await fetchApi<Document>(`/documents/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      });
+      if (!response.data) {
+        throw new ApiError('Failed to update document', 'UPDATE_FAILED', 500);
+      }
+      return response.data;
     },
   },
 };
