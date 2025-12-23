@@ -3,7 +3,8 @@
  * Converts between Extended Markdown and LaTeX
  */
 
-import { PLACEHOLDER_PATTERNS, PLACEHOLDERS } from '../constants/placeholders';
+// Placeholder utilities (not currently used in LaTeX conversion)
+// import { PLACEHOLDER_PATTERNS, PLACEHOLDERS } from '../constants/placeholders';
 
 /**
  * Convert Extended Markdown to LaTeX

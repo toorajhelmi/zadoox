@@ -3,7 +3,7 @@
  * Handles resolution, replacement, and validation of placeholders ({CH}, {REF})
  */
 
-import { PLACEHOLDER_PATTERNS, PLACEHOLDERS, type PlaceholderType } from '../constants/placeholders';
+import { PLACEHOLDER_PATTERNS, type PlaceholderType } from '../constants/placeholders';
 
 /**
  * Context for placeholder resolution
