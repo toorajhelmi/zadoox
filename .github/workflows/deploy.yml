@@ -166,8 +166,22 @@ jobs:
           fi
           
           echo "✅ Project files found"
-          echo "Package.json contents (first 20 lines):"
-          head -20 package.json
           
+          # Verify Next.js is in package.json
+          if ! grep -q '"next"' package.json; then
+            echo "❌ ERROR: Next.js not found in package.json"
+            exit 1
+          fi
+          echo "✅ Next.js found in package.json"
+          
+          # Check .vercel directory exists
+          if [ ! -d ".vercel" ]; then
+            echo "❌ ERROR: .vercel directory not found - project not linked"
+            exit 1
+          fi
+          echo "✅ .vercel directory exists"
+          
+          # Deploy - Vercel should detect Next.js from vercel.json
           echo "Deploying with vercel deploy --prod..."
+          echo "Note: Make sure Root Directory in Vercel project settings is set to 'code/packages/web'"
           vercel deploy --prod --token=$VERCEL_TOKEN --yes
