@@ -46,7 +46,10 @@ Instead of adding error handling, defensive checks, or workarounds for things th
    - REST API for documents
    - Document CRUD operations
    - Export service (LaTeX conversion, PDF generation)
-   - Basic AI service (OpenAI integration)
+   - AI service (OpenAI integration):
+     - Text analysis (quality, sentiment, wordiness, clarity)
+     - Text improvement/expansion/clarification
+     - Citation research (online + knowledge base search)
    - File upload/storage integration
 
 3. **Shared Package**
@@ -62,23 +65,29 @@ Instead of adding error handling, defensive checks, or workarounds for things th
    - Documents table
    - Basic schema
 
-5. **Basic AI Features**
-   - Inline writing suggestions
-   - Text expansion
-   - Basic grammar/improvements
+5. **AI Features** (Core "WOW" Features)
+   - Real-time AI analysis (quality, sentiment, wordiness, clarity)
+   - Visual AI indicators (left margin indicators with hover actions)
+   - Inline AI suggestions with underlines
+   - One-click AI actions (Improve, Expand, Clarify, Condense)
+   - AI-powered citation research (academic style, enabled by default)
+   - Smart completion (context-aware autocomplete)
    - OpenAI integration
 
 ### ❌ Out of Scope (Future Phases)
 
+See `POST_MVP_FEATURES.md` for detailed post-MVP feature list, including:
 - Real-time collaboration (WebSocket)
 - Code-doc linking
 - Cursor extension
 - Meta content system (ideation, fragments)
-- Advanced AI features (references, translation)
+- Advanced AI features (batch operations, advanced suggestions)
 - Git integration
 - Mobile/Desktop apps
-- Style/Template system
+- Advanced style/template system
 - Vector search
+- Templates & snippets
+- Advanced productivity features
 
 ---
 
@@ -298,22 +307,138 @@ Instead of adding error handling, defensive checks, or workarounds for things th
 ---
 
 ### Phase 7: Web App - Document Editor (Basic) ✅
-**Status**: Not Started
+**Status**: ✅ COMPLETED
 
-- [ ] Editor layout (sidebar, main, toolbar)
-- [ ] CodeMirror/Monaco integration
-- [ ] Markdown syntax highlighting
-- [ ] Basic text editing
-- [ ] Editor toolbar (basic buttons)
-- [ ] Document outline/sidebar
-- [ ] Auto-save functionality
-- [ ] Document state management
+- [x] Editor layout (sidebar, main, toolbar)
+- [x] CodeMirror/Monaco integration
+- [x] Markdown syntax highlighting
+- [x] Basic text editing
+- [x] Editor toolbar (basic buttons)
+- [x] Document outline/sidebar
+- [x] Auto-save functionality
+- [x] Document state management
+- [x] Formatting toolbar (bold, italic, underline, superscript, subscript, code, link)
+- [x] Floating format menu on text selection
+- [x] Markdown preview with view modes (edit, split, preview)
+- [x] Breadcrumb navigation
+- [x] Auto-create "Untitled Document" for projects
+- [x] Line wrapping in editor
 
 **Deliverables**:
-- Editor page working
-- Can edit documents
-- Markdown highlighting working
-- Auto-save functional
+- ✅ Editor page working
+- ✅ Can edit documents
+- ✅ Markdown highlighting working
+- ✅ Auto-save functional
+- ✅ Formatting tools functional
+- ✅ Document outline working
+- ✅ Preview mode working
+
+**Completed**: Implemented a complete document editor with CodeMirror integration, markdown syntax highlighting, auto-save functionality, document state management, formatting toolbar, floating format menu, markdown preview with multiple view modes, breadcrumb navigation, and document outline. The editor automatically creates an "Untitled Document" for projects and provides a professional VS Code-inspired editing experience.
+
+---
+
+### Phase 7.5: Web App - Advanced Editing Features (MVP "WOW" Features) 🚀
+**Status**: Not Started
+
+This phase focuses on the core AI-driven features that make Zadoox feel like a futuristic, intelligent writing tool. These features are designed to create a "WOW" experience for users and investors, demonstrating the AI-powered nature of the editor.
+
+**Note**: Advanced features like collaboration, batch operations, templates, and productivity tools are documented in `POST_MVP_FEATURES.md` for future implementation.
+
+#### Category 1: Visual AI Indicators & Metadata (The "WOW" Factor)
+
+- [ ] **Left margin indicator system**:
+  - [ ] Color-coded vertical indicators (red/yellow/green/blue/gray)
+  - [ ] Multiple stacked indicators when needed (errors + suggestions)
+  - [ ] Indicator states: error, warning, suggestion, good, pending
+  - [ ] Visual bar/dot indicators aligned with paragraphs
+  - [ ] Hover on indicator → Quick action menu
+  - [ ] Real-time updates as user types
+
+- [ ] **Paragraph-level metadata & hover interactions**:
+  - [ ] Quality score calculation and display
+  - [ ] AI analysis metrics (sentiment, wordiness, clarity)
+  - [ ] Paragraph hover highlight effect
+  - [ ] Info banner on paragraph hover (top of paragraph)
+  - [ ] Quick action buttons in banner (Improve, Expand, Clarify, View Details)
+  - [ ] Last edit timestamp (optional, can be toggled)
+
+#### Category 2: Real-Time AI Analysis & Inline Suggestions
+
+- [ ] **Real-time content analysis** (background, debounced):
+  - [ ] Quality scoring algorithm
+  - [ ] Sentiment analysis
+  - [ ] Wordiness detection
+  - [ ] Clarity scoring
+  - [ ] Grammar and style checks
+  - [ ] Updates indicators in real-time
+
+- [ ] **Inline AI indicators**:
+  - [ ] Visual underlines (wavy/straight) for issues
+  - [ ] Color-coded: red (error), yellow (warning), blue (suggestion)
+  - [ ] Hover tooltips showing specific issues
+  - [ ] Click to accept/apply suggestions
+  - [ ] Keyboard shortcuts (Ctrl+. to see suggestions)
+
+- [ ] **Smart AI suggestions**:
+  - [ ] Context-aware improvement suggestions
+  - [ ] Tone/style suggestions
+  - [ ] Clarity improvements
+  - [ ] Concision suggestions (reduce wordiness)
+  - [ ] Structure suggestions for paragraphs
+
+#### Category 3: One-Click AI Writing Assistance
+
+- [ ] **AI editing actions** (quick access buttons):
+  - [ ] One-click "Improve" button (in hover banner)
+  - [ ] "Expand" button (adds content)
+  - [ ] "Clarify" button (improves clarity)
+  - [ ] "Condense" button (reduces wordiness)
+  - [ ] "Formalize" / "Casualize" (tone adjustment)
+  - [ ] Loading states and progress indicators
+
+- [ ] **Smart completion**:
+  - [ ] Context-aware autocomplete (AI-powered)
+  - [ ] Expand selection with AI
+  - [ ] Inline suggestions appear as user types
+  - [ ] Accept with Tab/Enter
+
+#### Category 4: AI-Powered Citation Research (Academic Style) 🔬
+
+- [ ] **Automatic citation research** (enabled by default for academic style):
+  - [ ] Research online sources based on content context
+  - [ ] Search within user's existing knowledge base (all previous documents)
+  - [ ] Search user-provided sources (uploaded documents, references)
+  - [ ] AI suggests relevant citations as user writes
+  - [ ] Citation suggestions appear inline with content
+
+- [ ] **Citation suggestion UI**:
+  - [ ] Inline citation chips/badges showing suggested sources
+  - [ ] Hover to see citation summary (title, author, relevance)
+  - [ ] Click to view full document/source preview
+  - [ ] One-click to insert citation in proper format
+  - [ ] Citation format based on project style (APA, MLA, Chicago, etc.)
+
+- [ ] **Citation management**:
+  - [ ] View all suggested citations for document
+  - [ ] Accept/reject citations
+  - [ ] Manual citation addition
+  - [ ] Citation library (saved citations for reuse)
+  - [ ] Citation formatting per style guide
+
+- [ ] **Configuration**:
+  - [ ] Enable/disable per project (project settings)
+  - [ ] Configure per style (academic, industrial, etc.) in global settings
+  - [ ] Toggle online research vs. knowledge base only
+  - [ ] Configure citation style preferences
+
+**Deliverables**:
+- ✅ Visual AI indicators system (left margin + hover interactions)
+- ✅ Real-time AI analysis with inline suggestions
+- ✅ One-click AI writing assistance
+- ✅ AI-powered citation research system
+- ✅ Professional, futuristic editor experience that makes users say "WOW"
+
+---
 
 ### Phase 8: Backend API - Export Service ✅
 **Status**: Not Started
@@ -351,6 +476,17 @@ Instead of adding error handling, defensive checks, or workarounds for things th
   - [ ] Suggest text completion
   - [ ] Expand text
   - [ ] Improve text
+  - [ ] Analyze text (quality, sentiment, wordiness, clarity)
+  - [ ] Clarify text
+  - [ ] Condense text
+  - [ ] Adjust tone (formalize/casualize)
+- [ ] **Citation Research Service**:
+  - [ ] Online research integration (web search API)
+  - [ ] Knowledge base search (user's documents)
+  - [ ] Source relevance scoring
+  - [ ] Citation suggestion generation
+  - [ ] Citation format conversion (APA, MLA, Chicago, etc.)
+  - [ ] Source document indexing and search
 - [ ] Rate limiting
 - [ ] Error handling
 
@@ -358,6 +494,8 @@ Instead of adding error handling, defensive checks, or workarounds for things th
 - AI service working
 - OpenAI integration functional
 - AI endpoints tested
+- Citation research service functional
+- Knowledge base search working
 
 ---
 
