@@ -6,6 +6,7 @@
 import type { AIProvider, AIAnalysisResult, AIModelInfo } from './ai-provider.js';
 
 // Import OpenAI - will throw if package not installed
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let OpenAI: any;
 try {
   OpenAI = require('openai');
@@ -15,6 +16,7 @@ try {
 }
 
 export class OpenAIProvider implements AIProvider {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private client: any;
   private model: string;
 

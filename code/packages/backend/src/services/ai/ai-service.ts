@@ -152,7 +152,6 @@ export class AIService {
    */
   getModelInfo(model: AIModel): AIModelInfo | null {
     if (model === 'auto') {
-      const provider = this.getProvider('auto');
       return {
         id: 'auto',
         name: 'Auto (Best Available)',
