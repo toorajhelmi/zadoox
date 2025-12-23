@@ -8,12 +8,18 @@ import {
   Document,
   CreateDocumentInput,
   UpdateDocumentInput,
+  VersionChangeType,
 } from '@zadoox/shared';
 import { isValidDocumentType } from '@zadoox/shared';
 import { generateId } from '@zadoox/shared';
+import { VersionService } from './version-service.js';
 
 export class DocumentService {
-  constructor(private supabase: SupabaseClient) {}
+  private versionService: VersionService;
+
+  constructor(private supabase: SupabaseClient) {
+    this.versionService = new VersionService(supabase);
+  }
 
   /**
    * Create a new document
@@ -63,7 +69,25 @@ export class DocumentService {
       throw new Error(`Failed to create document: ${error.message}`);
     }
 
-    return this.mapDbDocumentToDocument(data);
+    const document = this.mapDbDocumentToDocument(data);
+
+    // Create initial version snapshot
+    if (input.content) {
+      try {
+        await this.versionService.createVersion(
+          document.id,
+          input.content,
+          authorId,
+          'milestone',
+          'Initial document version'
+        );
+      } catch (versionError) {
+        // Log but don't fail document creation if versioning fails
+        console.error('Failed to create initial version:', versionError);
+      }
+    }
+
+    return document;
   }
 
   /**
@@ -88,17 +112,34 @@ export class DocumentService {
    */
   async updateDocument(
     documentId: string,
-    input: UpdateDocumentInput
+    input: UpdateDocumentInput,
+    authorId?: string,
+    changeType: VersionChangeType = 'auto-save',
+    changeDescription?: string
   ): Promise<Document> {
     // Get existing document to check access (via RLS) and get current version
     const existing = await this.getDocumentById(documentId);
 
     const updateData: Partial<Record<string, unknown>> = {};
     if (input.title !== undefined) updateData.title = input.title;
-    if (input.content !== undefined) {
+    
+    let newVersion = existing.version;
+    if (input.content !== undefined && input.content !== existing.content) {
+      // Content changed - create version and increment version number
+      if (authorId) {
+        await this.versionService.createVersion(
+          documentId,
+          input.content,
+          authorId,
+          changeType,
+          changeDescription
+        );
+      }
       updateData.content = input.content;
-      updateData.version = existing.version + 1; // Increment version on content change
+      newVersion = existing.version + 1;
+      updateData.version = newVersion;
     }
+    
     if (input.metadata !== undefined) {
       // Merge with existing metadata
       updateData.metadata = {

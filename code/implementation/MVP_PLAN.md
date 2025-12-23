@@ -459,6 +459,47 @@ This phase focuses on the core AI-driven features that make Zadoox feel like a f
 
 ---
 
+### Phase 7.6: Document Versioning System 📝
+**Status**: 🚧 IN PROGRESS
+
+This phase implements delta-based document versioning to efficiently track document changes over time.
+
+#### Version Triggers (What creates a new version):
+- **Manual Save**: Explicit user action (Ctrl+S, Cmd+S, or Save button)
+- **Auto-save**: Periodic saves after inactivity (default: 30 seconds of no typing)
+- **Significant Changes**: Large edits (e.g., >100 characters changed, or >5% of document)
+- **Milestone Events**: Explicit version creation (Publish, Submit for Review, etc.)
+- **AI Actions**: When AI improves/expands/clarifies text (creates a new version)
+
+#### Implementation:
+- [x] **Database Schema**:
+  - [x] Create `document_versions` table with delta storage
+  - [x] Create `document_version_metadata` table for quick queries
+  - [x] Migration for existing documents (create initial version)
+  
+- [x] **Backend Service**:
+  - [x] Version service for creating/retrieving versions
+  - [x] Delta calculation using diff-match-patch algorithm
+  - [x] Version reconstruction from deltas
+  - [x] Snapshot management (every 10 versions)
+  - [x] API endpoints for version history (list, get, get content, metadata)
+  
+- [ ] **Frontend Integration**:
+  - [ ] Auto-save with version creation
+  - [ ] Manual save button/action
+  - [ ] Version history UI
+  - [ ] Version comparison/diff view
+  - [ ] Rollback to previous version
+
+**Deliverables**:
+- Delta-based versioning system
+- Efficient storage (deltas + periodic snapshots)
+- Version history UI
+- Rollback functionality
+- API endpoints for version management
+
+---
+
 ### Phase 8: Backend API - Export Service ✅
 **Status**: Not Started
 
