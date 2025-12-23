@@ -11,6 +11,7 @@ export interface ParagraphAnalysis {
   text: string;
   analysis?: AIAnalysisResponse;
   lastAnalyzed?: Date;
+  lastEdited?: Date;
   isAnalyzing: boolean;
 }
 
@@ -83,6 +84,7 @@ export function useAIAnalysis(content: string, model: AIModel = 'auto') {
             text,
             analysis,
             lastAnalyzed: new Date(),
+            lastEdited: new Date(),
             isAnalyzing: false,
           });
           return next;
@@ -139,6 +141,7 @@ export function useAIAnalysis(content: string, model: AIModel = 'auto') {
             next.set(para.id, {
               id: para.id,
               text: para.text,
+              lastEdited: new Date(),
               isAnalyzing: true,
             });
             // Trigger analysis

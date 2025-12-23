@@ -1,6 +1,6 @@
 'use client';
 
-import { StateField, StateEffect } from '@codemirror/state';
+import { StateField, StateEffect, Transaction } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { createRoot, Root } from 'react-dom/client';
 import { ParagraphToolbar } from './paragraph-toolbar';
@@ -105,7 +105,7 @@ export function toolbarExtension(
     create() {
       return Decoration.none;
     },
-    update(decorations, tr) {
+    update(decorations: DecorationSet, tr: Transaction) {
       // Check for toolbar show/hide effects first
       for (const effect of tr.effects) {
         if (effect.is(showToolbar)) {
@@ -161,7 +161,7 @@ export function toolbarExtension(
       }
       return Decoration.none;
     },
-    provide: (f) => EditorView.decorations.from(f),
+    provide: (f: StateField<DecorationSet>) => EditorView.decorations.from(f),
   });
 }
 
