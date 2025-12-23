@@ -89,7 +89,7 @@ export function AIEnhancedEditor({
 
         // Replace paragraph text with improved version
         const lines = value.split('\n');
-        const paragraphStart = lines.findIndex((line, idx) => {
+        const paragraphStart = lines.findIndex((line) => {
           // Find the line that contains this paragraph
           // This is a simplified approach - in production, you'd track exact positions
           return line.includes(paragraph.text.substring(0, 20));
@@ -228,8 +228,8 @@ export function AIEnhancedEditor({
     console.log('Indicator clicked:', paragraphId, state);
   }, []);
 
-  // Get current paragraph analysis
-  const currentAnalysis = hoveredParagraph ? getAnalysis(hoveredParagraph) : undefined;
+  // Get current paragraph analysis (for future use)
+  // const currentAnalysis = hoveredParagraph ? getAnalysis(hoveredParagraph) : undefined;
 
 
   return (

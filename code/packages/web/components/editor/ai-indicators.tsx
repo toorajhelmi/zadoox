@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import type { AIAnalysisResponse, AISuggestion } from '@zadoox/shared';
+import { useState, useEffect, useCallback } from 'react';
+import type { AIAnalysisResponse } from '@zadoox/shared';
 
 export type IndicatorState = 'error' | 'warning' | 'suggestion' | 'good' | 'pending';
 
