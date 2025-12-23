@@ -28,6 +28,7 @@ export function AIEnhancedEditor({
   model = 'auto',
   sidebarOpen: _sidebarOpen = true,
 }: AIEnhancedEditorProps) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_hoveredParagraph, setHoveredParagraph] = useState<string | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_isProcessingAction, setIsProcessingAction] = useState(false);
