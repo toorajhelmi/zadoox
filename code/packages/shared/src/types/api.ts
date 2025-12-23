@@ -62,11 +62,95 @@ export interface AISuggestRequest {
   text: string;
   context?: string;
   type: 'completion' | 'expand' | 'improve';
+  model?: AIModel;
 }
 
 export interface AISuggestResponse {
   suggestion: string;
   alternatives?: string[];
+  model?: string; // Model used for suggestion
+}
+
+// AI Model Info
+export interface AIModelInfo {
+  id: string;
+  name: string;
+  provider: string;
+  maxTokens?: number;
+  supportsStreaming?: boolean;
+}
+
+// AI Model types
+export type AIModel = 'openai' | 'auto';
+
+// AI Analysis types
+export interface AIAnalysisRequest {
+  text: string;
+  context?: string;
+  model?: AIModel;
+}
+
+export interface AIAnalysisResponse {
+  quality: number; // 0-100
+  sentiment: 'positive' | 'neutral' | 'negative';
+  wordiness: number; // 0-100 (higher = more wordy)
+  clarity: number; // 0-100 (higher = clearer)
+  suggestions?: AISuggestion[];
+  model?: string; // Model used for analysis
+}
+
+export interface AISuggestion {
+  type: 'error' | 'warning' | 'suggestion';
+  text: string;
+  position?: {
+    from: number;
+    to: number;
+  };
+  message: string;
+  replacement?: string;
+}
+
+// AI Action types
+export type AIActionType = 'improve' | 'expand' | 'clarify' | 'condense' | 'formalize' | 'casualize';
+
+export interface AIActionRequest {
+  text: string;
+  action: AIActionType;
+  context?: string;
+  model?: AIModel;
+}
+
+export interface AIActionResponse {
+  result: string;
+  explanation?: string;
+  model?: string; // Model used for action
+}
+
+// Citation Research types
+export interface CitationResearchRequest {
+  text: string;
+  documentId?: string;
+  projectId?: string;
+  style?: 'academic' | 'industrial';
+  searchOnline?: boolean;
+  searchKnowledgeBase?: boolean;
+}
+
+export interface CitationSuggestion {
+  id: string;
+  title: string;
+  author?: string;
+  source: 'online' | 'knowledge_base' | 'uploaded';
+  relevance: number; // 0-100
+  summary: string;
+  url?: string;
+  documentId?: string;
+  citationFormat?: string; // Formatted citation (APA, MLA, etc.)
+}
+
+export interface CitationResearchResponse {
+  suggestions: CitationSuggestion[];
+  query: string;
 }
 
 

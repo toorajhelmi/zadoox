@@ -1,10 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { DashboardLayout } from '@/app/components/dashboard-layout';
-import { ProjectCard } from '@/app/components/project-card';
-import { CreateProjectModal } from '@/app/components/create-project-modal';
-import { ProjectsIcon, PlusIcon, SparkleIcon, LoaderIcon } from '@/app/components/icons';
+import { DashboardLayout, ProjectCard, CreateProjectModal, ProjectsIcon, PlusIcon, SparkleIcon, LoaderIcon } from '@/components/dashboard';
 import { api } from '@/lib/api/client';
 import type { Project, CreateProjectInput } from '@zadoox/shared';
 

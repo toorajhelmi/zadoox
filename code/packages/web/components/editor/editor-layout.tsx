@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { EditorSidebar } from './editor-sidebar';
 import { EditorToolbar } from './editor-toolbar';
-import { CodeMirrorEditor } from './codemirror-editor';
+import { AIEnhancedEditor } from './ai-enhanced-editor';
 import { MarkdownPreview } from './markdown-preview';
 import { FormattingToolbar } from './formatting-toolbar';
 import { useDocumentState } from '@/hooks/use-document-state';
@@ -135,10 +135,12 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         <div className="flex-1 overflow-hidden flex">
           {(viewMode === 'edit' || viewMode === 'split') && (
             <div className={viewMode === 'split' ? 'flex-1 border-r border-vscode-border' : 'flex-1'}>
-              <CodeMirrorEditor
+              <AIEnhancedEditor
                 value={content}
                 onChange={handleContentChange}
                 onSelectionChange={handleSelectionChange}
+                model="auto"
+                sidebarOpen={sidebarOpen}
               />
             </div>
           )}

@@ -1,7 +1,6 @@
 'use client';
 
-import { DashboardLayout } from '@/app/components/dashboard-layout';
-import { SettingsIcon } from '@/app/components/icons';
+import { DashboardLayout, SettingsIcon } from '@/components/dashboard';
 
 export default function SettingsPage() {
   return (
