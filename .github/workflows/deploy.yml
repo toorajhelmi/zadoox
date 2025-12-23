@@ -130,9 +130,6 @@ jobs:
           echo "Linking Vercel project..."
           vercel link --yes --token=$VERCEL_TOKEN --project=$VERCEL_PROJECT_ID --scope=$VERCEL_ORG_ID
           
-          echo "Pulling project settings to sync configuration..."
-          vercel pull --yes --environment=production --token=$VERCEL_TOKEN
-          
           echo "Verifying package.json is present..."
           if [ ! -f "package.json" ]; then
             echo "❌ ERROR: package.json not found in current directory"
