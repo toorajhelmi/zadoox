@@ -35,14 +35,11 @@ describe('DocumentService', () => {
       select: vi.fn().mockReturnValue(insertSelectSingle),
     };
     
-    // Create a function that returns insertSelect when insert is called
-    const createInsertFn = () => {
-      const fn = function() { return insertSelect; };
-      return fn;
-    };
+    // Create insert function that returns insertSelect and can be mocked
+    const insertFn = vi.fn().mockImplementation(() => insertSelect);
     
     mockQueryBuilder = {
-      insert: createInsertFn(),
+      insert: insertFn,
       select: vi.fn().mockReturnThis(),
       single: vi.fn(),
       update: vi.fn().mockReturnThis(),
