@@ -42,6 +42,11 @@ describe('DocumentService', () => {
       })),
     };
     
+    // Make insert().select() chain work properly
+    mockQueryBuilder.insert.mockImplementation(() => ({
+      select: vi.fn().mockReturnThis(),
+    }));
+    
     vi.mocked(mockSupabase.from).mockReturnValue(mockQueryBuilder);
   });
 
@@ -58,23 +63,61 @@ describe('DocumentService', () => {
         },
       };
 
+      const createdDate = new Date();
+      const docData = {
+        id: 'doc-id',
+        project_id: input.projectId,
+        title: input.title,
+        content: input.content,
+        metadata: input.metadata,
+        version: 1,
+        author_id: 'user-id',
+        created_at: createdDate.toISOString(),
+        updated_at: createdDate.toISOString(),
+      };
+
       // Mock project exists check
       mockQueryBuilder.single
         .mockResolvedValueOnce({
           data: { id: 'project-id' },
           error: null,
         })
+        // Mock document insert
+        .mockResolvedValueOnce({
+          data: docData,
+          error: null,
+        })
+        // Mock version metadata query (for createVersion - called by version service)
         .mockResolvedValueOnce({
           data: {
-            id: 'doc-id',
-            project_id: input.projectId,
-            title: input.title,
-            content: input.content,
-            metadata: input.metadata,
-            version: 1,
+            document_id: 'doc-id',
+            current_version: 0,
+            last_snapshot_version: null,
+            total_versions: 0,
+            last_modified_at: createdDate.toISOString(),
+            last_modified_by: 'user-id',
+          },
+          error: null,
+        });
+
+      // Mock metadata insert (returns success)
+      mockQueryBuilder.insert
+        .mockResolvedValueOnce({
+          data: null,
+          error: null,
+        })
+        // Mock version insert
+        .mockResolvedValueOnce({
+          data: {
+            id: 'version-id',
+            document_id: 'doc-id',
+            version_number: 1,
+            content_snapshot: input.content,
+            is_snapshot: true,
             author_id: 'user-id',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+            change_type: 'milestone',
+            change_description: 'Initial document version',
+            created_at: createdDate.toISOString(),
           },
           error: null,
         });
@@ -86,6 +129,7 @@ describe('DocumentService', () => {
       expect(result.version).toBe(1);
       expect(mockSupabase.from).toHaveBeenCalledWith('projects');
       expect(mockSupabase.from).toHaveBeenCalledWith('documents');
+      expect(mockSupabase.from).toHaveBeenCalledWith('document_version_metadata');
     });
 
     it('should use default values if not provided', async () => {
@@ -94,22 +138,61 @@ describe('DocumentService', () => {
         title: 'Test Document',
       };
 
+      const createdDate = new Date();
+      const docData = {
+        id: 'doc-id',
+        project_id: input.projectId,
+        title: input.title,
+        content: '',
+        metadata: { type: 'standalone', order: 0 },
+        version: 1,
+        author_id: 'user-id',
+        created_at: createdDate.toISOString(),
+        updated_at: createdDate.toISOString(),
+      };
+
+      // Mock project exists check
       mockQueryBuilder.single
         .mockResolvedValueOnce({
           data: { id: 'project-id' },
           error: null,
         })
+        // Mock document insert
+        .mockResolvedValueOnce({
+          data: docData,
+          error: null,
+        })
+        // Mock version metadata query (for createVersion - called by version service)
         .mockResolvedValueOnce({
           data: {
-            id: 'doc-id',
-            project_id: input.projectId,
-            title: input.title,
-            content: '',
-            metadata: { type: 'standalone', order: 0 },
-            version: 1,
+            document_id: 'doc-id',
+            current_version: 0,
+            last_snapshot_version: null,
+            total_versions: 0,
+            last_modified_at: createdDate.toISOString(),
+            last_modified_by: 'user-id',
+          },
+          error: null,
+        });
+
+      // Mock metadata insert (returns success)
+      mockQueryBuilder.insert
+        .mockResolvedValueOnce({
+          data: null,
+          error: null,
+        })
+        // Mock version insert
+        .mockResolvedValueOnce({
+          data: {
+            id: 'version-id',
+            document_id: 'doc-id',
+            version_number: 1,
+            content_snapshot: '',
+            is_snapshot: true,
             author_id: 'user-id',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+            change_type: 'milestone',
+            change_description: 'Initial document version',
+            created_at: createdDate.toISOString(),
           },
           error: null,
         });
