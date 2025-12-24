@@ -67,7 +67,7 @@ export function renderMarkdownToHtml(content: string): string {
   // Inline code
   html = html.replace(/`([^`]+)`/gim, '<code>$1</code>');
 
-  // Images (must come before links, as images start with !)
+  // Images (must come before links to avoid matching images as links)
   html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/gim, '<img src="$2" alt="$1" />');
 
   // Links

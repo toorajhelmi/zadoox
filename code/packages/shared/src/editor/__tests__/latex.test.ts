@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { markdownToLatex, latexToMarkdown } from '../latex';
 
+// TODO: LaTeX tests are part of Phase 6, skipping for Phase 7 push
 describe.skip('LaTeX Conversion Utilities', () => {
   describe('markdownToLatex', () => {
     it('should convert headers to LaTeX sections', () => {
