@@ -34,10 +34,9 @@ describe('DocumentService', () => {
     const insertSelect = {
       select: vi.fn().mockReturnValue(insertSelectSingle),
     };
-    const insertMock = vi.fn().mockReturnValue(insertSelect);
     
     mockQueryBuilder = {
-      insert: insertMock,
+      insert: vi.fn().mockReturnValue(insertSelect),
       select: vi.fn().mockReturnThis(),
       single: vi.fn(),
       update: vi.fn().mockReturnThis(),
@@ -89,24 +88,26 @@ describe('DocumentService', () => {
         .mockResolvedValueOnce({
           data: { id: 'project-id' },
           error: null,
-        })
-        // Mock document insert
-        .mockResolvedValueOnce({
-          data: docData,
-          error: null,
-        })
-        // Mock version metadata query (for createVersion - called by version service)
-        .mockResolvedValueOnce({
-          data: {
-            document_id: 'doc-id',
-            current_version: 0,
-            last_snapshot_version: null,
-            total_versions: 0,
-            last_modified_at: createdDate.toISOString(),
-            last_modified_by: 'user-id',
-          },
-          error: null,
         });
+
+      // Mock document insert - insert().select().single() chain
+      mockQueryBuilder.insertSelectSingle.single.mockResolvedValueOnce({
+        data: docData,
+        error: null,
+      });
+      
+      // Mock version metadata query (for createVersion - called by version service)
+      mockQueryBuilder.single.mockResolvedValueOnce({
+        data: {
+          document_id: 'doc-id',
+          current_version: 0,
+          last_snapshot_version: null,
+          total_versions: 0,
+          last_modified_at: createdDate.toISOString(),
+          last_modified_by: 'user-id',
+        },
+        error: null,
+      });
 
       // Mock metadata insert (returns success) - insert() without select()
       mockQueryBuilder.insert.mockResolvedValueOnce({
@@ -164,24 +165,26 @@ describe('DocumentService', () => {
         .mockResolvedValueOnce({
           data: { id: 'project-id' },
           error: null,
-        })
-        // Mock document insert
-        .mockResolvedValueOnce({
-          data: docData,
-          error: null,
-        })
-        // Mock version metadata query (for createVersion - called by version service)
-        .mockResolvedValueOnce({
-          data: {
-            document_id: 'doc-id',
-            current_version: 0,
-            last_snapshot_version: null,
-            total_versions: 0,
-            last_modified_at: createdDate.toISOString(),
-            last_modified_by: 'user-id',
-          },
-          error: null,
         });
+
+      // Mock document insert - insert().select().single() chain
+      mockQueryBuilder.insertSelectSingle.single.mockResolvedValueOnce({
+        data: docData,
+        error: null,
+      });
+      
+      // Mock version metadata query (for createVersion - called by version service)
+      mockQueryBuilder.single.mockResolvedValueOnce({
+        data: {
+          document_id: 'doc-id',
+          current_version: 0,
+          last_snapshot_version: null,
+          total_versions: 0,
+          last_modified_at: createdDate.toISOString(),
+          last_modified_by: 'user-id',
+        },
+        error: null,
+      });
 
       // Mock metadata insert (returns success) - insert() without select()
       mockQueryBuilder.insert.mockResolvedValueOnce({
