@@ -35,15 +35,33 @@ export class VersionService {
     changeDescription?: string,
     forceSnapshot = false
   ): Promise<DocumentVersion | null> {
-    // Get current version metadata
+    // Get current version metadata (must exist - if not, data needs to be fixed via migration)
     const metadata = await this.getVersionMetadata(documentId);
     if (!metadata) {
-      throw new Error(`Document ${documentId} not found`);
+      throw new Error(`Version metadata not found for document ${documentId}. Data must be fixed via migration.`);
     }
 
     // For manual-save and auto-save, check if content actually changed
     if (changeType === 'manual-save' || changeType === 'auto-save') {
-      const currentContent = await this.reconstructVersion(documentId, metadata.currentVersion);
+      let currentContent: string;
+      try {
+        // Try to reconstruct current version
+        currentContent = await this.reconstructVersion(documentId, metadata.currentVersion);
+      } catch (error) {
+        // If reconstruction fails (e.g., no versions exist yet), get content from document table
+        const { data: docData, error: docError } = await this.supabase
+          .from('documents')
+          .select('content')
+          .eq('id', documentId)
+          .single();
+        
+        if (docError || !docData) {
+          throw new Error(`Failed to get document content: ${docError?.message || 'Document not found'}`);
+        }
+        
+        currentContent = docData.content || '';
+      }
+      
       if (currentContent === newContent) {
         // No change - don't create a version
         return null;

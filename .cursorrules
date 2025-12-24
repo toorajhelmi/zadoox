@@ -1,0 +1,17 @@
+# Zadoox Global Rules
+
+## Document Versioning Rules
+
+### STRICT RULE: Initial Document Version
+**Every document MUST have an initial version created immediately upon document creation.**
+- No conditions or workarounds allowed
+- Initial version must be created even if content is empty
+- If version creation fails, document creation must fail (no silent failures)
+- This ensures data integrity and proper version history from the start
+
+### Implementation Requirements
+- When creating a document, an initial version snapshot must be created synchronously
+- Version metadata must be initialized before or during initial version creation
+- No conditional checks like `if (content)` before creating initial version
+- Errors in version creation must propagate and fail the document creation
+
