@@ -35,8 +35,11 @@ describe('DocumentService', () => {
       select: vi.fn().mockReturnValue(insertSelectSingle),
     };
     
+    // Create insert function that always returns insertSelect
+    const insertFn = vi.fn().mockImplementation(() => insertSelect);
+    
     mockQueryBuilder = {
-      insert: vi.fn().mockReturnValue(insertSelect),
+      insert: insertFn,
       select: vi.fn().mockReturnThis(),
       single: vi.fn(),
       update: vi.fn().mockReturnThis(),
