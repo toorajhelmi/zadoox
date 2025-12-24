@@ -71,25 +71,9 @@ export class DocumentService {
 
     const document = this.mapDbDocumentToDocument(data);
 
-    // STRICT RULE: Initialize version metadata before creating initial version
-    // This is part of the normal document creation flow, not a workaround
-    const { error: metaError } = await this.supabase
-      .from('document_version_metadata')
-      .insert({
-        document_id: document.id,
-        current_version: 0, // Will be updated to 1 when initial version is created
-        last_snapshot_version: null,
-        total_versions: 0,
-        last_modified_at: document.createdAt.toISOString(),
-        last_modified_by: authorId,
-      });
-
-    if (metaError) {
-      throw new Error(`Failed to initialize version metadata: ${metaError.message}`);
-    }
-
     // STRICT RULE: Always create initial version snapshot (even if content is empty)
     // This ensures data integrity and proper version history from the start
+    // The database trigger will automatically create version metadata when version is inserted
     await this.versionService.createVersion(
       document.id,
       input.content || '',

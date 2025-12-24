@@ -35,10 +35,44 @@ export class VersionService {
     changeDescription?: string,
     forceSnapshot = false
   ): Promise<DocumentVersion | null> {
-    // Get current version metadata (must exist - if not, data needs to be fixed via migration)
-    const metadata = await this.getVersionMetadata(documentId);
+    // Get current version metadata
+    let metadata = await this.getVersionMetadata(documentId);
+    
+    // If metadata doesn't exist (e.g., first version for new document), initialize it
+    // This is part of the normal flow for initial versions, not a workaround
     if (!metadata) {
-      throw new Error(`Version metadata not found for document ${documentId}. Data must be fixed via migration.`);
+      // Verify document exists
+      const { data: docData, error: docError } = await this.supabase
+        .from('documents')
+        .select('id, version, author_id, updated_at')
+        .eq('id', documentId)
+        .single();
+      
+      if (docError || !docData) {
+        throw new Error(`Document ${documentId} not found`);
+      }
+      
+      // Initialize version metadata for first version
+      const { error: metaError } = await this.supabase
+        .from('document_version_metadata')
+        .insert({
+          document_id: documentId,
+          current_version: 0, // Will be updated to 1 when version is created
+          last_snapshot_version: null,
+          total_versions: 0,
+          last_modified_at: docData.updated_at || new Date().toISOString(),
+          last_modified_by: docData.author_id || authorId,
+        });
+      
+      if (metaError) {
+        throw new Error(`Failed to initialize version metadata: ${metaError.message}`);
+      }
+      
+      // Fetch the newly created metadata
+      metadata = await this.getVersionMetadata(documentId);
+      if (!metadata) {
+        throw new Error(`Failed to retrieve initialized version metadata for document ${documentId}`);
+      }
     }
 
     // For manual-save and auto-save, check if content actually changed
