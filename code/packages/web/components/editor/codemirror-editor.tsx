@@ -17,11 +17,14 @@ interface CodeMirrorEditorProps {
   value: string;
   onChange: (value: string) => void;
   onSelectionChange?: (selection: { from: number; to: number; text: string } | null) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  extensions?: any[];
+  onEditorViewReady?: (view: EditorView | null) => void;
 }
 
 const PLACEHOLDER_TEXT = 'Start editing...';
 
-export function CodeMirrorEditor({ value, onChange, onSelectionChange }: CodeMirrorEditorProps) {
+export function CodeMirrorEditor({ value, onChange, onSelectionChange, extensions = [], onEditorViewReady }: CodeMirrorEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
@@ -199,9 +202,15 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange }: CodeMir
     };
   }, [showFormatMenu]);
 
-  // Extension to track selection and show floating menu
+  // Extension to track selection and show floating menu, and expose editor view
   const selectionExtension = useCallback(() => {
     return EditorView.updateListener.of((update: ViewUpdate) => {
+      // Expose editor view to parent
+      if (update.view && onEditorViewReady) {
+        editorViewRef.current = update.view;
+        onEditorViewReady(update.view);
+      }
+      
       if (update.selectionSet && update.view) {
         const selection = update.state.selection.main;
         const selectedText = update.state.sliceDoc(selection.from, selection.to).trim();
@@ -256,7 +265,7 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange }: CodeMir
         }, 150);
       }
     });
-  }, [onSelectionChange]);
+  }, [onSelectionChange, onEditorViewReady]);
 
   return (
     <div ref={editorContainerRef} className="h-full w-full relative">
@@ -264,7 +273,7 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange }: CodeMir
         <CodeMirror
           value={displayValue}
           onChange={handleChange}
-          extensions={[markdown(), EditorView.lineWrapping, selectionExtension()]}
+          extensions={[markdown(), EditorView.lineWrapping, selectionExtension(), ...extensions]}
           theme={oneDark}
           basicSetup={{
             lineNumbers: true,

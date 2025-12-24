@@ -26,6 +26,7 @@
     "@zadoox/shared": "workspace:*",
     "dotenv": "^16.3.1",
     "fastify": "^4.25.2",
+    "openai": "^4.20.0",
     "pg": "^8.11.3",
     "zod": "^3.22.4"
   },

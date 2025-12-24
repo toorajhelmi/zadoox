@@ -40,4 +40,21 @@ code {
   font-family: var(--font-ai);
 }
 
+/* Force AI banner to appear above everything */
+.paragraph-info-banner {
+  z-index: 999999 !important;
+  position: fixed !important;
+}
+
+/* Ensure CodeMirror doesn't create stacking context issues */
+.cm-editor {
+  position: relative;
+  z-index: 1;
+}
+
+.cm-scroller {
+  position: relative;
+  z-index: 1;
+}
+
 

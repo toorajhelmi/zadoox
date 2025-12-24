@@ -2,9 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { DashboardLayout } from '@/app/components/dashboard-layout';
-import { CreateProjectModal } from '@/app/components/create-project-modal';
-import { ProjectTypeIcon, PlusIcon, ChevronRightIcon } from '@/app/components/icons';
+import { DashboardLayout, CreateProjectModal, ProjectTypeIcon, PlusIcon, ChevronRightIcon } from '@/components/dashboard';
 import { api } from '@/lib/api/client';
 import type { Project, CreateProjectInput } from '@zadoox/shared';
 

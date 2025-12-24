@@ -25,8 +25,10 @@ DATABASE_URL=postgresql://postgres.lfyljalqovgibqpqzajd:[YOUR-PASSWORD]@aws-0-us
 NODE_ENV=development
 PORT=3001
 
-# OpenAI API (for AI features - Phase 5)
-# OPENAI_API_KEY=sk-your-api-key-here
+# OpenAI API (for AI features - Phase 7.5)
+OPENAI_API_KEY=sk-your-api-key-here
+AI_DEFAULT_MODEL=auto  # Options: 'openai' or 'auto'
+OPENAI_MODEL=gpt-4o-mini  # Options: 'gpt-4o-mini', 'gpt-4', 'gpt-3.5-turbo', etc.
 ```
 
 ### Where to Find Supabase Credentials

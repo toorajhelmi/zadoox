@@ -2,7 +2,22 @@
  * API Client for Zadoox
  */
 
-import type { ApiResponse, Project, CreateProjectInput, UpdateProjectInput, Document, CreateDocumentInput, UpdateDocumentInput } from '@zadoox/shared';
+import type {
+  ApiResponse,
+  Project,
+  CreateProjectInput,
+  UpdateProjectInput,
+  Document,
+  CreateDocumentInput,
+  UpdateDocumentInput,
+  AIAnalysisRequest,
+  AIAnalysisResponse,
+  AIActionRequest,
+  AIActionResponse,
+  AISuggestRequest,
+  AISuggestResponse,
+  AIModelInfo,
+} from '@zadoox/shared';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
 
@@ -162,6 +177,46 @@ export const api = {
       });
       if (!response.data) {
         throw new ApiError('Failed to update document', 'UPDATE_FAILED', 500);
+      }
+      return response.data;
+    },
+  },
+
+  ai: {
+    getModels: async (): Promise<AIModelInfo[]> => {
+      const response = await fetchApi<AIModelInfo[]>('/ai/models');
+      return response.data || [];
+    },
+
+    analyze: async (request: AIAnalysisRequest): Promise<AIAnalysisResponse> => {
+      const response = await fetchApi<AIAnalysisResponse>('/ai/analyze', {
+        method: 'POST',
+        body: JSON.stringify(request),
+      });
+      if (!response.data) {
+        throw new ApiError('Failed to analyze text', 'ANALYSIS_FAILED', 500);
+      }
+      return response.data;
+    },
+
+    action: async (request: AIActionRequest): Promise<AIActionResponse> => {
+      const response = await fetchApi<AIActionResponse>('/ai/action', {
+        method: 'POST',
+        body: JSON.stringify(request),
+      });
+      if (!response.data) {
+        throw new ApiError('Failed to perform AI action', 'ACTION_FAILED', 500);
+      }
+      return response.data;
+    },
+
+    suggest: async (request: AISuggestRequest): Promise<AISuggestResponse> => {
+      const response = await fetchApi<AISuggestResponse>('/ai/suggest', {
+        method: 'POST',
+        body: JSON.stringify(request),
+      });
+      if (!response.data) {
+        throw new ApiError('Failed to get AI suggestion', 'SUGGESTION_FAILED', 500);
       }
       return response.data;
     },

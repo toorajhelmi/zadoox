@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { DashboardLayout } from '@/app/components/dashboard-layout';
-import { LoaderIcon } from '@/app/components/icons';
+import { DashboardLayout, LoaderIcon } from '@/components/dashboard';
 import { api } from '@/lib/api/client';
 import type { Project } from '@zadoox/shared';
 
