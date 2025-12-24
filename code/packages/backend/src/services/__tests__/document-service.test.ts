@@ -27,15 +27,17 @@ describe('DocumentService', () => {
     service = new DocumentService(mockSupabase);
     
     // Reset query builder mock
+    // Create chainable insert mock: insert().select().single()
     const insertSelectSingle = {
       single: vi.fn(),
     };
     const insertSelect = {
       select: vi.fn().mockReturnValue(insertSelectSingle),
     };
+    const insertMock = vi.fn().mockReturnValue(insertSelect);
     
     mockQueryBuilder = {
-      insert: vi.fn().mockReturnValue(insertSelect),
+      insert: insertMock,
       select: vi.fn().mockReturnThis(),
       single: vi.fn(),
       update: vi.fn().mockReturnThis(),
@@ -48,6 +50,10 @@ describe('DocumentService', () => {
         }),
       })),
     };
+    
+    // Store references for test setup
+    (mockQueryBuilder as any).insertSelectSingle = insertSelectSingle;
+    (mockQueryBuilder as any).insertSelect = insertSelect;
     
     vi.mocked(mockSupabase.from).mockReturnValue(mockQueryBuilder);
   });
@@ -102,27 +108,27 @@ describe('DocumentService', () => {
           error: null,
         });
 
-      // Mock metadata insert (returns success)
-      mockQueryBuilder.insert
-        .mockResolvedValueOnce({
-          data: null,
-          error: null,
-        })
-        // Mock version insert
-        .mockResolvedValueOnce({
-          data: {
-            id: 'version-id',
-            document_id: 'doc-id',
-            version_number: 1,
-            content_snapshot: input.content,
-            is_snapshot: true,
-            author_id: 'user-id',
-            change_type: 'milestone',
-            change_description: 'Initial document version',
-            created_at: createdDate.toISOString(),
-          },
-          error: null,
-        });
+      // Mock metadata insert (returns success) - insert() without select()
+      mockQueryBuilder.insert.mockResolvedValueOnce({
+        data: null,
+        error: null,
+      });
+      
+      // Mock version insert - insert().select().single() chain
+      mockQueryBuilder.insertSelectSingle.single.mockResolvedValueOnce({
+        data: {
+          id: 'version-id',
+          document_id: 'doc-id',
+          version_number: 1,
+          content_snapshot: input.content,
+          is_snapshot: true,
+          author_id: 'user-id',
+          change_type: 'milestone',
+          change_description: 'Initial document version',
+          created_at: createdDate.toISOString(),
+        },
+        error: null,
+      });
 
       const result = await service.createDocument(input, 'user-id');
 
@@ -177,27 +183,27 @@ describe('DocumentService', () => {
           error: null,
         });
 
-      // Mock metadata insert (returns success)
-      mockQueryBuilder.insert
-        .mockResolvedValueOnce({
-          data: null,
-          error: null,
-        })
-        // Mock version insert
-        .mockResolvedValueOnce({
-          data: {
-            id: 'version-id',
-            document_id: 'doc-id',
-            version_number: 1,
-            content_snapshot: '',
-            is_snapshot: true,
-            author_id: 'user-id',
-            change_type: 'milestone',
-            change_description: 'Initial document version',
-            created_at: createdDate.toISOString(),
-          },
-          error: null,
-        });
+      // Mock metadata insert (returns success) - insert() without select()
+      mockQueryBuilder.insert.mockResolvedValueOnce({
+        data: null,
+        error: null,
+      });
+      
+      // Mock version insert - insert().select().single() chain
+      mockQueryBuilder.insertSelectSingle.single.mockResolvedValueOnce({
+        data: {
+          id: 'version-id',
+          document_id: 'doc-id',
+          version_number: 1,
+          content_snapshot: '',
+          is_snapshot: true,
+          author_id: 'user-id',
+          change_type: 'milestone',
+          change_description: 'Initial document version',
+          created_at: createdDate.toISOString(),
+        },
+        error: null,
+      });
 
       const result = await service.createDocument(input, 'user-id');
 
