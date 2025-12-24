@@ -27,8 +27,15 @@ describe('DocumentService', () => {
     service = new DocumentService(mockSupabase);
     
     // Reset query builder mock
+    const insertSelectSingle = {
+      single: vi.fn(),
+    };
+    const insertSelect = {
+      select: vi.fn().mockReturnValue(insertSelectSingle),
+    };
+    
     mockQueryBuilder = {
-      insert: vi.fn().mockReturnThis(),
+      insert: vi.fn().mockReturnValue(insertSelect),
       select: vi.fn().mockReturnThis(),
       single: vi.fn(),
       update: vi.fn().mockReturnThis(),
@@ -41,11 +48,6 @@ describe('DocumentService', () => {
         }),
       })),
     };
-    
-    // Make insert().select() chain work properly
-    mockQueryBuilder.insert.mockImplementation(() => ({
-      select: vi.fn().mockReturnThis(),
-    }));
     
     vi.mocked(mockSupabase.from).mockReturnValue(mockQueryBuilder);
   });
