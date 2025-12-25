@@ -25,7 +25,7 @@ vi.mock('@/lib/api/client', () => ({
 describe('useDocumentState - Core Functionality', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
@@ -121,24 +121,22 @@ describe('useDocumentState - Core Functionality', () => {
       result.current.updateContent('Updated content');
     });
 
-    // Fast-forward time by 2 seconds
-    act(() => {
-      vi.advanceTimersByTime(2000);
+    // Fast-forward time by 2 seconds and wait for async operations
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
     });
 
+    // Wait for the save operation to complete
     await waitFor(
       () => {
         expect(api.documents.update).toHaveBeenCalled();
+        expect(result.current.isSaving).toBe(false);
       },
       { timeout: 10000 }
     );
 
     // Check that update was called with correct arguments
-    const updateCalls = vi.mocked(api.documents.update).mock.calls;
-    expect(updateCalls.length).toBeGreaterThan(0);
-    const lastCall = updateCalls[updateCalls.length - 1];
-    expect(lastCall[0]).toBe('doc-1');
-    expect(lastCall[1]).toMatchObject({
+    expect(api.documents.update).toHaveBeenCalledWith('doc-1', {
       content: 'Updated content',
       changeType: 'auto-save',
     });
