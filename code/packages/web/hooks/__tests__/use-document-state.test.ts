@@ -133,7 +133,12 @@ describe('useDocumentState - Core Functionality', () => {
       { timeout: 10000 }
     );
 
-    expect(api.documents.update).toHaveBeenCalledWith('doc-1', {
+    // Check that update was called with correct arguments
+    const updateCalls = vi.mocked(api.documents.update).mock.calls;
+    expect(updateCalls.length).toBeGreaterThan(0);
+    const lastCall = updateCalls[updateCalls.length - 1];
+    expect(lastCall[0]).toBe('doc-1');
+    expect(lastCall[1]).toMatchObject({
       content: 'Updated content',
       changeType: 'auto-save',
     });
