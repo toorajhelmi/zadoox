@@ -74,14 +74,14 @@ export class DocumentService {
     // STRICT RULE: Always create initial version snapshot (even if content is empty)
     // This ensures data integrity and proper version history from the start
     // The database trigger will automatically create version metadata when version is inserted
-    await this.versionService.createVersion(
-      document.id,
+        await this.versionService.createVersion(
+          document.id,
       input.content || '',
-      authorId,
-      'milestone',
+          authorId,
+          'milestone',
       'Initial document version',
       true // forceSnapshot = true for initial version
-    );
+        );
 
     return document;
   }

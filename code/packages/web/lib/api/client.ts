@@ -17,6 +17,8 @@ import type {
   AISuggestRequest,
   AISuggestResponse,
   AIModelInfo,
+  DocumentVersion,
+  VersionMetadata,
 } from '@zadoox/shared';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
@@ -219,6 +221,48 @@ export const api = {
         throw new ApiError('Failed to get AI suggestion', 'SUGGESTION_FAILED', 500);
       }
       return response.data;
+    },
+  },
+
+  versions: {
+    list: async (documentId: string, limit = 50, offset = 0): Promise<DocumentVersion[]> => {
+      const response = await fetchApi<DocumentVersion[]>(
+        `/documents/${documentId}/versions?limit=${limit}&offset=${offset}`
+      );
+      return response.data || [];
+    },
+
+    get: async (documentId: string, versionNumber: number): Promise<DocumentVersion> => {
+      const response = await fetchApi<DocumentVersion>(
+        `/documents/${documentId}/versions/${versionNumber}`
+      );
+      if (!response.data) {
+        throw new ApiError('Version not found', 'NOT_FOUND', 404);
+      }
+      return response.data;
+    },
+
+    getMetadata: async (documentId: string): Promise<VersionMetadata> => {
+      const response = await fetchApi<VersionMetadata>(
+        `/documents/${documentId}/versions/metadata`
+      );
+      if (!response.data) {
+        throw new ApiError('Version metadata not found', 'NOT_FOUND', 404);
+      }
+      return response.data;
+    },
+
+    reconstruct: async (documentId: string, versionNumber: number): Promise<string> => {
+      const response = await fetchApi<{ content: string }>(
+        `/documents/${documentId}/versions/${versionNumber}/reconstruct`,
+        {
+          method: 'POST',
+        }
+      );
+      if (!response.data) {
+        throw new ApiError('Failed to reconstruct version', 'RECONSTRUCT_FAILED', 500);
+      }
+      return response.data.content;
     },
   },
 };

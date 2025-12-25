@@ -65,6 +65,8 @@ export const updateDocumentSchema = z.object({
       order: z.number().int().nonnegative().optional(),
     })
     .optional(),
+  changeType: z.enum(['manual-save', 'auto-save', 'ai-action', 'milestone', 'rollback']).optional(),
+  changeDescription: z.string().optional(),
 });
 
 export const documentIdSchema = z.object({

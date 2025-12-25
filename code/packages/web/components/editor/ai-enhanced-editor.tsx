@@ -15,6 +15,7 @@ interface AIEnhancedEditorProps {
   onSelectionChange?: (selection: { from: number; to: number; text: string } | null) => void;
   model?: 'openai' | 'auto';
   sidebarOpen?: boolean;
+  onSaveWithType?: (content: string, changeType: 'auto-save' | 'ai-action') => Promise<void>;
 }
 
 /**
@@ -27,6 +28,7 @@ export function AIEnhancedEditor({
   onSelectionChange,
   model = 'auto',
   sidebarOpen: _sidebarOpen = true,
+  onSaveWithType,
 }: AIEnhancedEditorProps) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_hoveredParagraph, setHoveredParagraph] = useState<string | null>(null);
@@ -103,6 +105,11 @@ export function AIEnhancedEditor({
           const after = lines.slice(paragraphStart + 1).join('\n');
           const newContent = before + '\n' + response.result + '\n' + after;
           onChange(newContent);
+          
+          // Save with ai-action changeType if callback is provided
+          if (onSaveWithType) {
+            await onSaveWithType(newContent, 'ai-action');
+          }
         }
       } catch (error) {
         console.error('Failed to perform AI action:', error);
@@ -110,7 +117,7 @@ export function AIEnhancedEditor({
         setIsProcessingAction(false);
       }
     },
-    [paragraphs, value, onChange, model]
+    [paragraphs, value, onChange, model, onSaveWithType]
   );
 
   // Create toolbar extension - create once and persist

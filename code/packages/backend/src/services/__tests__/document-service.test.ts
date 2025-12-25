@@ -126,19 +126,19 @@ describe('DocumentService', () => {
       
       // Mock version insert - insert().select().single() chain
       mockQueryBuilder.insertSelectSingle.single.mockResolvedValueOnce({
-        data: {
+          data: {
           id: 'version-id',
           document_id: 'doc-id',
           version_number: 1,
           content_snapshot: input.content,
           is_snapshot: true,
-          author_id: 'user-id',
+            author_id: 'user-id',
           change_type: 'milestone',
           change_description: 'Initial document version',
           created_at: createdDate.toISOString(),
-        },
-        error: null,
-      });
+          },
+          error: null,
+        });
 
       const result = await service.createDocument(input, 'user-id');
 
@@ -158,13 +158,13 @@ describe('DocumentService', () => {
 
       const createdDate = new Date();
       const docData = {
-        id: 'doc-id',
-        project_id: input.projectId,
-        title: input.title,
-        content: '',
-        metadata: { type: 'standalone', order: 0 },
-        version: 1,
-        author_id: 'user-id',
+            id: 'doc-id',
+            project_id: input.projectId,
+            title: input.title,
+            content: '',
+            metadata: { type: 'standalone', order: 0 },
+            version: 1,
+            author_id: 'user-id',
         created_at: createdDate.toISOString(),
         updated_at: createdDate.toISOString(),
       };
@@ -210,9 +210,9 @@ describe('DocumentService', () => {
           change_type: 'milestone',
           change_description: 'Initial document version',
           created_at: createdDate.toISOString(),
-        },
-        error: null,
-      });
+          },
+          error: null,
+        });
 
       const result = await service.createDocument(input, 'user-id');
 

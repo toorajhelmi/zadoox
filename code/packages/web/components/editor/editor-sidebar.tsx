@@ -1,15 +1,34 @@
 'use client';
 
-import { ChevronRightIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
+import { useState } from 'react';
+import { ChevronRightIcon, DocumentTextIcon, ClockIcon } from '@heroicons/react/24/outline';
 import { DocumentOutline } from './document-outline';
+import { VersionHistoryPanel } from './version-history-panel';
+
+type SidebarTab = 'outline' | 'history';
 
 interface EditorSidebarProps {
   isOpen: boolean;
   onToggle: () => void;
   content: string;
+  documentId?: string;
+  onRollback?: (versionNumber: number) => Promise<void>;
+  activeTab?: SidebarTab;
+  onTabChange?: (tab: SidebarTab) => void;
 }
 
-export function EditorSidebar({ isOpen, onToggle, content }: EditorSidebarProps) {
+export function EditorSidebar({ isOpen, onToggle, content, documentId, onRollback, activeTab: externalActiveTab, onTabChange }: EditorSidebarProps) {
+  const [internalActiveTab, setInternalActiveTab] = useState<SidebarTab>('outline');
+  const activeTab = externalActiveTab ?? internalActiveTab;
+  
+  const handleTabChange = (tab: SidebarTab) => {
+    if (onTabChange) {
+      onTabChange(tab);
+    } else {
+      setInternalActiveTab(tab);
+    }
+  };
+
   return (
     <>
       {/* Collapsed sidebar button */}
@@ -26,17 +45,43 @@ export function EditorSidebar({ isOpen, onToggle, content }: EditorSidebarProps)
       {/* Expanded sidebar */}
       {isOpen && (
         <div className="w-64 bg-vscode-sidebar border-r border-vscode-border flex flex-col">
-          {/* Sidebar header */}
-          <div className="h-12 flex items-center px-4 border-b border-vscode-border">
-            <div className="flex items-center gap-2">
-              <DocumentTextIcon className="w-5 h-5 text-vscode-text-secondary" />
-              <span className="text-sm font-medium text-vscode-text">Outline</span>
-            </div>
+          {/* Sidebar header with tabs */}
+          <div className="h-12 flex items-center border-b border-vscode-border">
+            <button
+              onClick={() => handleTabChange('outline')}
+              className={`flex-1 h-full flex items-center justify-center gap-2 px-4 transition-colors ${
+                activeTab === 'outline'
+                  ? 'bg-vscode-active text-vscode-text border-b-2 border-vscode-button'
+                  : 'text-vscode-text-secondary hover:text-vscode-text hover:bg-vscode-hover'
+              }`}
+            >
+              <DocumentTextIcon className="w-4 h-4" />
+              <span className="text-sm font-medium">Outline</span>
+            </button>
+            {documentId && (
+              <button
+                onClick={() => handleTabChange('history')}
+                className={`flex-1 h-full flex items-center justify-center gap-2 px-4 transition-colors ${
+                  activeTab === 'history'
+                    ? 'bg-vscode-active text-vscode-text border-b-2 border-vscode-button'
+                    : 'text-vscode-text-secondary hover:text-vscode-text hover:bg-vscode-hover'
+                }`}
+              >
+                <ClockIcon className="w-4 h-4" />
+                <span className="text-sm font-medium">History</span>
+              </button>
+            )}
           </div>
 
-          {/* Document outline */}
+          {/* Tab content */}
           <div className="flex-1 overflow-y-auto">
-            <DocumentOutline content={content} />
+            {activeTab === 'outline' && <DocumentOutline content={content} />}
+            {activeTab === 'history' && documentId && onRollback && (
+              <VersionHistoryPanel
+                documentId={documentId}
+                onRollback={onRollback}
+              />
+            )}
           </div>
         </div>
       )}

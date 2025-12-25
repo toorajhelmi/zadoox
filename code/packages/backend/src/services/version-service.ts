@@ -49,7 +49,7 @@ export class VersionService {
         .single();
       
       if (docError || !docData) {
-        throw new Error(`Document ${documentId} not found`);
+      throw new Error(`Document ${documentId} not found`);
       }
       
       // Initialize version metadata for first version
