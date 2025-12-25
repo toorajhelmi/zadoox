@@ -5,6 +5,7 @@ import { api } from '@/lib/api/client';
 import type { AIAnalysisResponse, AIModel } from '@zadoox/shared';
 
 const DEBOUNCE_DELAY = 2000; // 2 seconds after typing stops
+const ANALYSIS_TIMEOUT = 30000; // 30 seconds timeout for analysis
 
 export interface ParagraphAnalysis {
   id: string;
@@ -71,11 +72,22 @@ export function useAIAnalysis(content: string, model: AIModel = 'auto') {
       analyzingParagraphsRef.current.add(paragraphId);
       setIsAnalyzing(true);
 
+      // Create a timeout promise
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('Analysis timeout'));
+        }, ANALYSIS_TIMEOUT);
+      });
+
       try {
-        const analysis = await api.ai.analyze({
-          text,
-          model,
-        });
+        // Race between analysis and timeout
+        const analysis = await Promise.race([
+          api.ai.analyze({
+            text,
+            model,
+          }),
+          timeoutPromise,
+        ]);
 
         setParagraphs((prev) => {
           const next = new Map(prev);
@@ -85,19 +97,28 @@ export function useAIAnalysis(content: string, model: AIModel = 'auto') {
             text,
             analysis,
             lastAnalyzed: new Date(),
-            lastEdited: new Date(),
+            lastEdited: existing?.lastEdited || new Date(),
             isAnalyzing: false,
           });
           return next;
         });
       } catch (error) {
         console.error(`Failed to analyze paragraph ${paragraphId}:`, error);
+        // Always reset analyzing state on error
         setParagraphs((prev) => {
           const next = new Map(prev);
           const existing = next.get(paragraphId);
           if (existing) {
             next.set(paragraphId, {
               ...existing,
+              isAnalyzing: false,
+            });
+          } else {
+            // If paragraph doesn't exist, create it with no analysis
+            next.set(paragraphId, {
+              id: paragraphId,
+              text,
+              lastEdited: new Date(),
               isAnalyzing: false,
             });
           }

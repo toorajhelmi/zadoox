@@ -378,7 +378,7 @@ This phase focuses on the core AI-driven features that make Zadoox feel like a f
   - [x] Quick action buttons in banner (Improve, Expand, Clarify, View Details)
   - [x] Last edit timestamp (optional, can be toggled)
 
-#### Category 2: Real-Time AI Analysis & Inline Suggestions
+#### Category 2: Real-Time AI Analysis & Inline Suggestions ✅
 
 - [x] **Real-time content analysis** (background, debounced):
   - [x] Quality scoring algorithm
@@ -387,6 +387,8 @@ This phase focuses on the core AI-driven features that make Zadoox feel like a f
   - [x] Clarity scoring
   - [x] Grammar and style checks
   - [x] Updates indicators in real-time
+  - [x] Timeout handling (30s) to prevent stuck "Analyzing..." state
+  - [x] Error handling and state recovery
 
 - [ ] **Inline AI indicators**:
   - [ ] Visual underlines (wavy/straight) for issues
@@ -449,7 +451,8 @@ This phase focuses on the core AI-driven features that make Zadoox feel like a f
 
 **Deliverables**:
 - ✅ Visual AI indicators system (left margin + hover interactions)
-- ✅ Real-time AI analysis with debounced background processing
+- ✅ Real-time AI analysis with debounced background processing (Category 2 complete)
+- ✅ Timeout and error handling for AI analysis (prevents stuck states)
 - ✅ One-click AI writing assistance (Improve, Expand, Clarify, Condense, Tone adjustment)
 - ✅ Cursor-style AI model selection (openai/auto) with extensible provider system
 - ✅ Backend AI service with OpenAI integration
@@ -472,6 +475,23 @@ This phase focuses on the core AI-driven features that make Zadoox feel like a f
 - Add inline suggestion underlines (CodeMirror decorations)
 - Implement smart completion with context-aware autocomplete
 - Add citation research service (Phase 9 backend + Phase 7.5 frontend)
+
+---
+
+### Phase 7.5.c2: Fix AI Analysis Timeout & Complete Category 2 ✅
+**Status**: ✅ COMPLETED
+
+**Changes**:
+- Fixed "Analyzing..." stuck state by adding 30-second timeout to AI analysis calls
+- Improved error handling in `useAIAnalysis` hook to properly reset state on failures
+- Ensured paragraph state is always reset even if API call fails or times out
+- Category 2 features (Real-Time AI Analysis) marked as complete
+
+**Technical Details**:
+- Added `ANALYSIS_TIMEOUT` constant (30 seconds)
+- Implemented `Promise.race()` between analysis and timeout
+- Enhanced error handling to reset `isAnalyzing` state in all error scenarios
+- Fixed state management to prevent paragraphs from staying in analyzing state indefinitely
 
 ---
 
