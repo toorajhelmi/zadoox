@@ -35,12 +35,17 @@ describe('DocumentService', () => {
     // Create insertSelect that is both chainable and thenable (for direct insert calls)
     const insertSelect = {
       select: vi.fn().mockReturnValue(insertSelectSingle),
-      then: vi.fn(), // Make it thenable for direct insert().then() calls
+      then: vi.fn((onResolve) => Promise.resolve(onResolve({ data: null, error: null }))), // Default thenable behavior
       catch: vi.fn(),
     };
     
-    // Create insert function that returns insertSelect and can be mocked
-    const insertFn = vi.fn().mockImplementation(() => insertSelect);
+    // Create insert function - must be a real function, not vi.fn() to work with chains
+    function insertFn() {
+      return insertSelect;
+    }
+    // Add mock methods to the function for test setup
+    (insertFn as any).mockResolvedValueOnce = vi.fn();
+    (insertFn as any).mockImplementation = vi.fn();
     
     mockQueryBuilder = {
       insert: insertFn,
@@ -116,11 +121,8 @@ describe('DocumentService', () => {
         error: null,
       });
 
-      // Mock metadata insert (returns success) - insert() without select()
-      mockQueryBuilder.insert.mockResolvedValueOnce({
-        data: null,
-        error: null,
-      });
+      // Mock metadata insert - insertSelect.then() is already set up to return success
+      // No need to mock it separately since insertSelect.then has default behavior
       
       // Mock version insert - insert().select().single() chain
       mockQueryBuilder.insertSelectSingle.single.mockResolvedValueOnce({
@@ -193,11 +195,8 @@ describe('DocumentService', () => {
         error: null,
       });
 
-      // Mock metadata insert (returns success) - insert() without select()
-      mockQueryBuilder.insert.mockResolvedValueOnce({
-        data: null,
-        error: null,
-      });
+      // Mock metadata insert - insertSelect.then() is already set up to return success
+      // No need to mock it separately since insertSelect.then has default behavior
       
       // Mock version insert - insert().select().single() chain
       mockQueryBuilder.insertSelectSingle.single.mockResolvedValueOnce({
