@@ -104,7 +104,13 @@ describe('useDocumentState - Core Functionality', () => {
     };
 
     vi.mocked(api.documents.get).mockResolvedValueOnce(mockDocument);
-    vi.mocked(api.documents.update).mockResolvedValueOnce(updatedDocument);
+    
+    // Capture the arguments passed to update
+    let capturedArgs: [string, { content: string; changeType?: string }] | null = null;
+    vi.mocked(api.documents.update).mockImplementation(async (id, input) => {
+      capturedArgs = [id, input as { content: string; changeType?: string }];
+      return updatedDocument;
+    });
 
     const { result } = renderHook(() => useDocumentState('doc-1', 'project-1'));
 
@@ -130,7 +136,9 @@ describe('useDocumentState - Core Functionality', () => {
     );
 
     // Check that update was called with correct arguments
-    expect(api.documents.update).toHaveBeenCalledWith('doc-1', {
+    expect(capturedArgs).not.toBeNull();
+    expect(capturedArgs![0]).toBe('doc-1');
+    expect(capturedArgs![1]).toEqual({
       content: 'Updated content',
       changeType: 'auto-save',
     });
