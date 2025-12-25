@@ -25,7 +25,6 @@ vi.mock('@/lib/api/client', () => ({
 describe('useDocumentState - Core Functionality', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.useFakeTimers();
   });
 
   afterEach(() => {
@@ -121,18 +120,13 @@ describe('useDocumentState - Core Functionality', () => {
       result.current.updateContent('Updated content');
     });
 
-    // Fast-forward time by 2 seconds and wait for async operations
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(2000);
-    });
-
-    // Wait for the save operation to complete
+    // Wait for auto-save to trigger (2 seconds delay + async operation)
     await waitFor(
       () => {
         expect(api.documents.update).toHaveBeenCalled();
         expect(result.current.isSaving).toBe(false);
       },
-      { timeout: 10000 }
+      { timeout: 5000 }
     );
 
     // Check that update was called with correct arguments
