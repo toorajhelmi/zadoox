@@ -31,8 +31,12 @@ describe('DocumentService', () => {
     const insertSelectSingle = {
       single: vi.fn(),
     };
+    
+    // Create insertSelect that is both chainable and thenable (for direct insert calls)
     const insertSelect = {
       select: vi.fn().mockReturnValue(insertSelectSingle),
+      then: vi.fn(), // Make it thenable for direct insert().then() calls
+      catch: vi.fn(),
     };
     
     // Create insert function that returns insertSelect and can be mocked
