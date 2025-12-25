@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ArrowPathIcon } from '@heroicons/react/24/outline';
 import { formatDistanceToNow } from 'date-fns';
 import { api } from '@/lib/api/client';
@@ -10,9 +10,10 @@ interface VersionHistoryPanelProps {
   documentId: string;
   onRollback: (versionNumber: number) => Promise<void>;
   onVersionSelect?: (versionNumber: number) => Promise<void>;
+  refreshTrigger?: Date | null; // When this changes, refresh versions
 }
 
-export function VersionHistoryPanel({ documentId, onRollback, onVersionSelect }: VersionHistoryPanelProps) {
+export function VersionHistoryPanel({ documentId, onRollback, onVersionSelect, refreshTrigger }: VersionHistoryPanelProps) {
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
   const [metadata, setMetadata] = useState<VersionMetadata | null>(null);
   const [loading, setLoading] = useState(true);
@@ -21,7 +22,9 @@ export function VersionHistoryPanel({ documentId, onRollback, onVersionSelect }:
 
   useEffect(() => {
     loadVersions();
-  }, [documentId]);
+  }, [documentId, refreshTrigger?.getTime()]);
+
+  const previousRefreshTriggerRef = useRef<number | null>(null);
 
   async function loadVersions() {
     setLoading(true);
@@ -32,6 +35,37 @@ export function VersionHistoryPanel({ documentId, onRollback, onVersionSelect }:
       ]);
       setVersions(versionsData);
       setMetadata(metadataData);
+      
+      if (metadataData || versionsData.length > 0) {
+        // Get the latest version - use metadata if available, otherwise use first version from list
+        let latestVersionNumber: number | null = null;
+        if (metadataData?.currentVersion !== undefined && metadataData.currentVersion !== null) {
+          latestVersionNumber = Number(metadataData.currentVersion);
+        } else if (versionsData.length > 0) {
+          // Fallback: first version in list is the latest (sorted DESC)
+          latestVersionNumber = versionsData[0].versionNumber;
+        }
+        
+        const currentRefreshTime = refreshTrigger?.getTime() ?? null;
+        const isRefresh = currentRefreshTime !== null && previousRefreshTriggerRef.current !== currentRefreshTime;
+        
+        // If refresh was triggered (new version created), automatically select the latest version
+        if (isRefresh && latestVersionNumber !== null) {
+          // New version was created - select the latest version in the panel
+          const previousSelected = selectedVersion;
+          setSelectedVersion(latestVersionNumber);
+          // Notify editor-layout to update its state (only if we were viewing the latest before)
+          // If user was viewing an older version, they should stay on that version (read-only)
+          if (onVersionSelect && (previousSelected === null || previousSelected === latestVersionNumber - 1)) {
+            // We were viewing the latest, so update to new latest
+            await onVersionSelect(latestVersionNumber);
+          }
+          previousRefreshTriggerRef.current = currentRefreshTime;
+        } else if (selectedVersion === null && latestVersionNumber !== null) {
+          // Initial load - select the latest version
+          setSelectedVersion(latestVersionNumber);
+        }
+      }
     } catch (error) {
       console.error('Failed to load versions:', error);
     } finally {
