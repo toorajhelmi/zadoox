@@ -8,12 +8,18 @@ import {
   Document,
   CreateDocumentInput,
   UpdateDocumentInput,
+  VersionChangeType,
 } from '@zadoox/shared';
 import { isValidDocumentType } from '@zadoox/shared';
 import { generateId } from '@zadoox/shared';
+import { VersionService } from './version-service.js';
 
 export class DocumentService {
-  constructor(private supabase: SupabaseClient) {}
+  private versionService: VersionService;
+
+  constructor(private supabase: SupabaseClient) {
+    this.versionService = new VersionService(supabase);
+  }
 
   /**
    * Create a new document
@@ -63,7 +69,21 @@ export class DocumentService {
       throw new Error(`Failed to create document: ${error.message}`);
     }
 
-    return this.mapDbDocumentToDocument(data);
+    const document = this.mapDbDocumentToDocument(data);
+
+    // STRICT RULE: Always create initial version snapshot (even if content is empty)
+    // This ensures data integrity and proper version history from the start
+    // The database trigger will automatically create version metadata when version is inserted
+        await this.versionService.createVersion(
+          document.id,
+      input.content || '',
+          authorId,
+          'milestone',
+      'Initial document version',
+      true // forceSnapshot = true for initial version
+        );
+
+    return document;
   }
 
   /**
@@ -88,17 +108,43 @@ export class DocumentService {
    */
   async updateDocument(
     documentId: string,
-    input: UpdateDocumentInput
+    input: UpdateDocumentInput,
+    authorId?: string,
+    changeType: VersionChangeType = 'auto-save',
+    changeDescription?: string
   ): Promise<Document> {
     // Get existing document to check access (via RLS) and get current version
     const existing = await this.getDocumentById(documentId);
 
     const updateData: Partial<Record<string, unknown>> = {};
     if (input.title !== undefined) updateData.title = input.title;
-    if (input.content !== undefined) {
+    
+    let newVersion = existing.version;
+    if (input.content !== undefined && input.content !== existing.content) {
+      // Content changed - create version and increment version number
+      // Version service will check if content actually changed for manual-save/auto-save
+      if (authorId) {
+        const version = await this.versionService.createVersion(
+          documentId,
+          input.content,
+          authorId,
+          changeType,
+          changeDescription
+        );
+        // Only increment version if a new version was actually created
+        // (manual-save and auto-save return null if content hasn't changed)
+        if (version) {
+          newVersion = existing.version + 1;
+          updateData.version = newVersion;
+        }
+      } else {
+        // No authorId - just increment version number (backward compatibility)
+        newVersion = existing.version + 1;
+        updateData.version = newVersion;
+      }
       updateData.content = input.content;
-      updateData.version = existing.version + 1; // Increment version on content change
     }
+    
     if (input.metadata !== undefined) {
       // Merge with existing metadata
       updateData.metadata = {

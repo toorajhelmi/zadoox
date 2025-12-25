@@ -74,7 +74,7 @@ export function useDocumentState(documentId: string, projectId: string) {
 
   // Auto-save function
   const saveDocument = useCallback(
-    async (contentToSave: string) => {
+    async (contentToSave: string, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
@@ -86,7 +86,10 @@ export function useDocumentState(documentId: string, projectId: string) {
 
       setIsSaving(true);
       try {
-        const document = await api.documents.update(actualDocumentId, { content: contentToSave });
+        const document = await api.documents.update(actualDocumentId, {
+          content: contentToSave,
+          changeType,
+        });
         setDocumentTitle(document.title);
         setLastSaved(new Date(document.updatedAt));
       } catch (error) {
@@ -111,7 +114,7 @@ export function useDocumentState(documentId: string, projectId: string) {
 
       // Set new timeout for auto-save
       saveTimeoutRef.current = setTimeout(() => {
-        saveDocument(newContent);
+        saveDocument(newContent, 'auto-save');
       }, AUTO_SAVE_DELAY);
     },
     [saveDocument]
@@ -134,6 +137,9 @@ export function useDocumentState(documentId: string, projectId: string) {
     lastSaved,
     isLoading,
     documentId: actualDocumentId,
+    saveDocument: async (contentToSave: string, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
+      await saveDocument(contentToSave, changeType);
+    },
   };
 }
 

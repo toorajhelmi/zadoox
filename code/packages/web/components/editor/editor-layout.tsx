@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { EditorSidebar } from './editor-sidebar';
 import { EditorToolbar } from './editor-toolbar';
 import { AIEnhancedEditor } from './ai-enhanced-editor';
 import { MarkdownPreview } from './markdown-preview';
 import { FormattingToolbar } from './formatting-toolbar';
 import { useDocumentState } from '@/hooks/use-document-state';
+import { api } from '@/lib/api/client';
 import type { FormatType } from './floating-format-menu';
 
 interface EditorLayoutProps {
@@ -16,9 +17,12 @@ interface EditorLayoutProps {
 
 type ViewMode = 'edit' | 'preview' | 'split';
 
+type SidebarTab = 'outline' | 'history';
+
 export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
-  const { content, documentTitle, updateContent, isSaving, lastSaved } = useDocumentState(documentId, projectId);
+  const { content, documentTitle, updateContent, isSaving, lastSaved, documentId: actualDocumentId, saveDocument } = useDocumentState(documentId, projectId);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>('outline');
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
   const currentSelectionRef = useRef<{ from: number; to: number; text: string } | null>(null);
 
@@ -33,6 +37,22 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const handleSelectionChange = useCallback((selection: { from: number; to: number; text: string } | null) => {
     currentSelectionRef.current = selection;
   }, []);
+
+  // Handle keyboard shortcuts (Ctrl+S / Cmd+S for immediate auto-save)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        // Trigger immediate auto-save by calling saveDocument directly
+        if (saveDocument) {
+          saveDocument(content, 'auto-save');
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [content, saveDocument]);
 
   // Handle formatting from toolbar
   const handleFormat = useCallback((format: FormatType) => {
@@ -110,6 +130,18 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         isOpen={sidebarOpen}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
         content={content}
+        documentId={actualDocumentId}
+        activeTab={sidebarTab}
+        onTabChange={setSidebarTab}
+        onRollback={async (versionNumber: number) => {
+          try {
+            const content = await api.versions.reconstruct(actualDocumentId, versionNumber);
+            updateContent(content);
+            // Auto-save will handle saving the rollback
+          } catch (error) {
+            console.error('Failed to rollback:', error);
+          }
+        }}
       />
 
       {/* Main Editor Area */}
@@ -141,6 +173,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 onSelectionChange={handleSelectionChange}
                 model="auto"
                 sidebarOpen={sidebarOpen}
+                onSaveWithType={async (contentToSave, changeType) => {
+                  await saveDocument(contentToSave, changeType);
+                }}
               />
             </div>
           )}

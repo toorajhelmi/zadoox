@@ -319,7 +319,13 @@ export async function documentRoutes(fastify: FastifyInstance) {
         const { id } = paramValidation.data;
         const body = bodyValidation.data as UpdateDocumentInput;
         const documentService = new DocumentService(request.supabase!);
-        const document = await documentService.updateDocument(id, body);
+        const document = await documentService.updateDocument(
+          id,
+          body,
+          request.userId!,
+          body.changeType || 'auto-save',
+          body.changeDescription
+        );
 
         const response: ApiResponse<Document> = {
           success: true,

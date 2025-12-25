@@ -29,6 +29,22 @@ Instead of adding error handling, defensive checks, or workarounds for things th
 
 ---
 
+## UX Guidelines
+
+**IMPORTANT**: See `UX_GUIDELINES.md` for core UX principles that apply to all features.
+
+**Key Principle**: Prefer inline/tabs over popups/modals whenever possible.
+
+- ✅ Use tabs for switching between related views
+- ✅ Use sidebars for secondary information
+- ✅ Use inline panels that slide in/out
+- ❌ Avoid modals for content viewing/editing
+- ⚠️ Use modals only for critical confirmations or short forms
+
+**Reference**: `code/UX_GUIDELINES.md` - Always check this before implementing new UI features.
+
+---
+
 ## MVP Scope: What's IN
 
 ### ✅ Included Features
@@ -456,6 +472,57 @@ This phase focuses on the core AI-driven features that make Zadoox feel like a f
 - Add inline suggestion underlines (CodeMirror decorations)
 - Implement smart completion with context-aware autocomplete
 - Add citation research service (Phase 9 backend + Phase 7.5 frontend)
+
+---
+
+### Phase 7.6: Document Versioning System 📝
+**Status**: ✅ COMPLETED
+
+This phase implements delta-based document versioning to efficiently track document changes over time.
+
+#### Version Triggers (What creates a new version):
+- **Auto-save**: Periodic saves after inactivity (default: 2 seconds of no typing)
+  - Ctrl+S / Cmd+S triggers immediate auto-save (no delay)
+- **AI Actions**: When AI improves/expands/clarifies text (creates a new version with changeType: 'ai-action')
+- **Future**: Milestone Events (Publish, Submit for Review, etc.) - not yet implemented
+
+#### Implementation:
+- [x] **Database Schema**:
+  - [x] Create `document_versions` table with delta storage
+  - [x] Create `document_version_metadata` table for quick queries
+  - [x] Migration for existing documents (create initial version)
+  
+- [x] **Backend Service**:
+  - [x] Version service for creating/retrieving versions
+  - [x] Delta calculation using diff-match-patch algorithm
+  - [x] Version reconstruction from deltas
+  - [x] Snapshot management (every 10 versions)
+  - [x] API endpoints for version history (list, get, get content, metadata)
+  
+- [x] **Frontend Integration**:
+  - [x] Auto-save with version creation (changeType: 'auto-save', 2 second delay)
+  - [x] Ctrl+S / Cmd+S shortcut triggers immediate auto-save (no delay)
+  - [x] Version history UI (modal with version list)
+  - [x] Version comparison/diff view (side-by-side comparison)
+  - [x] Rollback to previous version functionality
+  - [x] AI actions create versions (changeType: 'ai-action')
+
+**Deliverables**:
+- ✅ Delta-based versioning system
+- ✅ Efficient storage (deltas + periodic snapshots)
+- ✅ Version history UI with modal interface
+- ✅ Rollback functionality
+- ✅ API endpoints for version management
+- ✅ Keyboard shortcuts (Ctrl+S / Cmd+S for immediate auto-save)
+- ✅ Version comparison view
+
+**Completed**: 
+- Backend versioning system with delta-based storage and snapshot management
+- Frontend integration with auto-save, manual save, and AI action versioning
+- Version history modal UI with version list, content viewing, and comparison
+- Rollback functionality to restore previous versions
+- All version triggers implemented (auto-save, ai-action)
+- Simplified UX: Auto-save only (no manual save button, Ctrl+S triggers immediate auto-save)
 
 ---
 

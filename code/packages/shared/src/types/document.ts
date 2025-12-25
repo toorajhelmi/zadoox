@@ -34,6 +34,8 @@ export interface UpdateDocumentInput {
   title?: string;
   content?: string;
   metadata?: Partial<DocumentMetadata>;
+  changeType?: 'manual-save' | 'auto-save' | 'ai-action' | 'milestone' | 'rollback';
+  changeDescription?: string;
 }
 
 // For MVP, we'll keep it simple and not include codeLinks or metaContentLinks

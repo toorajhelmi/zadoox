@@ -27,8 +27,28 @@ describe('DocumentService', () => {
     service = new DocumentService(mockSupabase);
     
     // Reset query builder mock
+    // Create chainable insert mock: insert().select().single()
+    const insertSelectSingle = {
+      single: vi.fn(),
+    };
+    
+    // Create insertSelect that is both chainable and thenable (for direct insert calls)
+    const insertSelect = {
+      select: vi.fn().mockReturnValue(insertSelectSingle),
+      then: vi.fn((onResolve) => Promise.resolve(onResolve({ data: null, error: null }))), // Default thenable behavior
+      catch: vi.fn(),
+    };
+    
+    // Create insert function - must be a real function, not vi.fn() to work with chains
+    function insertFn() {
+      return insertSelect;
+    }
+    // Add mock methods to the function for test setup
+    (insertFn as any).mockResolvedValueOnce = vi.fn();
+    (insertFn as any).mockImplementation = vi.fn();
+    
     mockQueryBuilder = {
-      insert: vi.fn().mockReturnThis(),
+      insert: insertFn,
       select: vi.fn().mockReturnThis(),
       single: vi.fn(),
       update: vi.fn().mockReturnThis(),
@@ -42,7 +62,11 @@ describe('DocumentService', () => {
       })),
     };
     
-    vi.mocked(mockSupabase.from).mockReturnValue(mockQueryBuilder);
+    // Store references for test setup
+    (mockQueryBuilder as any).insertSelectSingle = insertSelectSingle;
+    (mockQueryBuilder as any).insertSelect = insertSelect;
+    
+    (mockSupabase.from as any).mockImplementation(() => mockQueryBuilder);
   });
 
   describe('createDocument', () => {
@@ -58,23 +82,60 @@ describe('DocumentService', () => {
         },
       };
 
+      const createdDate = new Date();
+      const docData = {
+        id: 'doc-id',
+        project_id: input.projectId,
+        title: input.title,
+        content: input.content,
+        metadata: input.metadata,
+        version: 1,
+        author_id: 'user-id',
+        created_at: createdDate.toISOString(),
+        updated_at: createdDate.toISOString(),
+      };
+
       // Mock project exists check
       mockQueryBuilder.single
         .mockResolvedValueOnce({
           data: { id: 'project-id' },
           error: null,
-        })
-        .mockResolvedValueOnce({
+        });
+
+      // Mock document insert - insert().select().single() chain
+      mockQueryBuilder.insertSelectSingle.single.mockResolvedValueOnce({
+        data: docData,
+        error: null,
+      });
+      
+      // Mock version metadata query (for createVersion - called by version service)
+      mockQueryBuilder.single.mockResolvedValueOnce({
+        data: {
+          document_id: 'doc-id',
+          current_version: 0,
+          last_snapshot_version: null,
+          total_versions: 0,
+          last_modified_at: createdDate.toISOString(),
+          last_modified_by: 'user-id',
+        },
+        error: null,
+      });
+
+      // Mock metadata insert - insertSelect.then() is already set up to return success
+      // No need to mock it separately since insertSelect.then has default behavior
+      
+      // Mock version insert - insert().select().single() chain
+      mockQueryBuilder.insertSelectSingle.single.mockResolvedValueOnce({
           data: {
-            id: 'doc-id',
-            project_id: input.projectId,
-            title: input.title,
-            content: input.content,
-            metadata: input.metadata,
-            version: 1,
+          id: 'version-id',
+          document_id: 'doc-id',
+          version_number: 1,
+          content_snapshot: input.content,
+          is_snapshot: true,
             author_id: 'user-id',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+          change_type: 'milestone',
+          change_description: 'Initial document version',
+          created_at: createdDate.toISOString(),
           },
           error: null,
         });
@@ -86,6 +147,7 @@ describe('DocumentService', () => {
       expect(result.version).toBe(1);
       expect(mockSupabase.from).toHaveBeenCalledWith('projects');
       expect(mockSupabase.from).toHaveBeenCalledWith('documents');
+      expect(mockSupabase.from).toHaveBeenCalledWith('document_version_metadata');
     });
 
     it('should use default values if not provided', async () => {
@@ -94,13 +156,8 @@ describe('DocumentService', () => {
         title: 'Test Document',
       };
 
-      mockQueryBuilder.single
-        .mockResolvedValueOnce({
-          data: { id: 'project-id' },
-          error: null,
-        })
-        .mockResolvedValueOnce({
-          data: {
+      const createdDate = new Date();
+      const docData = {
             id: 'doc-id',
             project_id: input.projectId,
             title: input.title,
@@ -108,8 +165,51 @@ describe('DocumentService', () => {
             metadata: { type: 'standalone', order: 0 },
             version: 1,
             author_id: 'user-id',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+        created_at: createdDate.toISOString(),
+        updated_at: createdDate.toISOString(),
+      };
+
+      // Mock project exists check
+      mockQueryBuilder.single
+        .mockResolvedValueOnce({
+          data: { id: 'project-id' },
+          error: null,
+        });
+
+      // Mock document insert - insert().select().single() chain
+      mockQueryBuilder.insertSelectSingle.single.mockResolvedValueOnce({
+        data: docData,
+        error: null,
+      });
+      
+      // Mock version metadata query (for createVersion - called by version service)
+      mockQueryBuilder.single.mockResolvedValueOnce({
+        data: {
+          document_id: 'doc-id',
+          current_version: 0,
+          last_snapshot_version: null,
+          total_versions: 0,
+          last_modified_at: createdDate.toISOString(),
+          last_modified_by: 'user-id',
+        },
+        error: null,
+      });
+
+      // Mock metadata insert - insertSelect.then() is already set up to return success
+      // No need to mock it separately since insertSelect.then has default behavior
+      
+      // Mock version insert - insert().select().single() chain
+      mockQueryBuilder.insertSelectSingle.single.mockResolvedValueOnce({
+        data: {
+          id: 'version-id',
+          document_id: 'doc-id',
+          version_number: 1,
+          content_snapshot: '',
+          is_snapshot: true,
+          author_id: 'user-id',
+          change_type: 'milestone',
+          change_description: 'Initial document version',
+          created_at: createdDate.toISOString(),
           },
           error: null,
         });

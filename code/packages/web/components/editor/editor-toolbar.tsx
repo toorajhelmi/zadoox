@@ -26,7 +26,7 @@ export function EditorToolbar({
   lastSaved, 
   onToggleSidebar,
   viewMode,
-  onViewModeChange 
+  onViewModeChange,
 }: EditorToolbarProps) {
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
