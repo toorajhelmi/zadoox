@@ -32,7 +32,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: ./code
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Build shared package
         working-directory: ./code
@@ -53,4 +53,10 @@ jobs:
       - name: Test
         working-directory: ./code
         run: pnpm test
+        env:
+          # Mock environment variables for tests (tests use mocks, but some code might check for these)
+          SUPABASE_URL: https://mock.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: mock-key
+          SUPABASE_ANON_KEY: mock-key
+          DATABASE_URL: postgresql://mock:mock@localhost:5432/mock
 
