@@ -61,7 +61,7 @@ async function findVersion19() {
         if (content.includes('using.')) {
           console.log('\n⚠️  FOUND "using." in content!');
           const lines = content.split('\n');
-          lines.forEach((line, idx) => {
+          lines.forEach((line: string, idx: number) => {
             if (line.includes('using.')) {
               const match = line.match(/(.{0,30}using\.{0,30})/);
               console.log(`Line ${idx + 1}: ${match ? match[0] : line.substring(0, 60)}`);

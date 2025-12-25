@@ -43,7 +43,7 @@ async function checkVersion(documentId: string, versionNumber: number) {
       if (version.content_snapshot.includes('using.')) {
         console.log('\n⚠️  Found "using." in content - checking context...');
         const lines = version.content_snapshot.split('\n');
-        lines.forEach((line, idx) => {
+        lines.forEach((line: string, idx: number) => {
           if (line.includes('using.')) {
             console.log(`Line ${idx + 1}: ${line}`);
           }

@@ -61,8 +61,9 @@ async function queryVersion19() {
     for (const version of versions) {
       console.log('='.repeat(70));
       console.log(`Document ID: ${version.document_id}`);
-      console.log(`Document Title: ${version.documents?.title || 'N/A'}`);
-      console.log(`Current Doc Version: ${version.documents?.version || 'N/A'}`);
+      const docData = Array.isArray(version.documents) ? version.documents[0] : version.documents;
+      console.log(`Document Title: ${docData?.title || 'N/A'}`);
+      console.log(`Current Doc Version: ${docData?.version || 'N/A'}`);
       console.log(`Version Number: ${version.version_number}`);
       console.log(`Is Snapshot: ${version.is_snapshot}`);
       console.log(`Change Type: ${version.change_type}`);
@@ -80,7 +81,7 @@ async function queryVersion19() {
           console.log('\n⚠️  FOUND "using." in content!');
           const lines = content.split('\n');
           let found = false;
-          lines.forEach((line, idx) => {
+          lines.forEach((line: string, idx: number) => {
             if (line.includes('using.')) {
               found = true;
               // Show context around the line
