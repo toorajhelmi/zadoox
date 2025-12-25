@@ -5,14 +5,19 @@
 
 import type { AIProvider, AIAnalysisResult, AIModelInfo } from './ai-provider.js';
 
-// Import OpenAI - will throw if package not installed
+// Lazy load OpenAI to avoid module loading issues
+// Use createRequire for ESM compatibility
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let OpenAI: any;
-try {
-  OpenAI = require('openai');
-} catch (error) {
-  // Package not installed - will throw error when provider is used
-  OpenAI = null;
+function getOpenAI(): any {
+  try {
+    return require('openai');
+  } catch (error: unknown) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    throw new Error(`OpenAI package is not installed. Run: pnpm install openai. Error: ${errorMsg}`);
+  }
 }
 
 export class OpenAIProvider implements AIProvider {
@@ -24,9 +29,7 @@ export class OpenAIProvider implements AIProvider {
     if (!apiKey) {
       throw new Error('OpenAI API key is required');
     }
-    if (!OpenAI) {
-      throw new Error('OpenAI package is not installed. Run: pnpm install openai');
-    }
+    const OpenAI = getOpenAI();
     this.client = new OpenAI({ apiKey });
     this.model = model;
   }
