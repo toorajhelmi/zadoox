@@ -296,13 +296,14 @@ export class VersionService {
         // newPosition stays the same
       } else if (operation === 1) {
         // Insert into new content
+        // Position should be in OLD content where to insert, not new content
         operations.push({
           type: 'insert',
-          position: newPosition,
+          position: oldPosition,
           text,
         });
         newPosition += text.length;
-        // oldPosition stays the same
+        // oldPosition stays the same (insert doesn't advance old position)
       }
     }
 

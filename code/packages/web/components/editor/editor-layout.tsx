@@ -134,13 +134,12 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         activeTab={sidebarTab}
         onTabChange={setSidebarTab}
         onRollback={async (versionNumber: number) => {
-          try {
-            const content = await api.versions.reconstruct(actualDocumentId, versionNumber);
-            updateContent(content);
-            // Auto-save will handle saving the rollback
-          } catch (error) {
-            console.error('Failed to rollback:', error);
-          }
+          const content = await api.versions.reconstruct(actualDocumentId, versionNumber);
+          updateContent(content);
+        }}
+        onVersionSelect={async (versionNumber: number) => {
+          const content = await api.versions.reconstruct(actualDocumentId, versionNumber);
+          updateContent(content);
         }}
       />
 
