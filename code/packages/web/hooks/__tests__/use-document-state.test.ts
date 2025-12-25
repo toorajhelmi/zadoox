@@ -135,6 +135,7 @@ describe('useDocumentState - Core Functionality', () => {
 
     expect(api.documents.update).toHaveBeenCalledWith('doc-1', {
       content: 'Updated content',
+      changeType: 'auto-save',
     });
   });
 });
