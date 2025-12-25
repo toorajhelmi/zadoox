@@ -278,13 +278,11 @@ export class VersionService {
     // diff-match-patch returns: -1 = delete, 0 = equal, 1 = insert
     const operations: DeltaOperation[] = [];
     let oldPosition = 0;
-    let newPosition = 0;
 
     for (const [operation, text] of diffs) {
       if (operation === 0) {
-        // Equal - no change, advance both positions
+        // Equal - no change, advance position
         oldPosition += text.length;
-        newPosition += text.length;
       } else if (operation === -1) {
         // Delete from old content
         operations.push({
@@ -293,16 +291,14 @@ export class VersionService {
           length: text.length,
         });
         oldPosition += text.length;
-        // newPosition stays the same
       } else if (operation === 1) {
         // Insert into new content
-        // Position should be in OLD content where to insert, not new content
+        // Position should be in OLD content where to insert
         operations.push({
           type: 'insert',
           position: oldPosition,
           text,
         });
-        newPosition += text.length;
         // oldPosition stays the same (insert doesn't advance old position)
       }
     }
