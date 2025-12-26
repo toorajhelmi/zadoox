@@ -4,8 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { EditorView, ViewUpdate, gutter, GutterMarker, lineNumbers } from '@codemirror/view';
-import { StateField } from '@codemirror/state';
+import { EditorView, ViewUpdate, gutter, GutterMarker } from '@codemirror/view';
 import { FloatingFormatMenu, type FormatType } from './floating-format-menu';
 
 // Dynamically import CodeMirror to avoid SSR issues

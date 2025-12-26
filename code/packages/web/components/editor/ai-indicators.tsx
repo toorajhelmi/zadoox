@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { AIAnalysisResponse } from '@zadoox/shared';
-import { EditorView, ViewUpdate } from '@codemirror/view';
+import { EditorView } from '@codemirror/view';
 
 export type IndicatorState = 'error' | 'warning' | 'suggestion' | 'good' | 'pending';
 
@@ -139,7 +139,6 @@ export function AIIndicators({
                 if (currentElement.classList.contains('paragraph-toolbar-widget')) {
                   // Found toolbar - get its height and adjust
                   const toolbarRect = currentElement.getBoundingClientRect();
-                  const contentRect = editorView.contentDOM.getBoundingClientRect();
                   const toolbarHeight = toolbarRect.height;
                   // The toolbar is above the line, so the line's top includes the toolbar
                   // We need to add the toolbar height to skip it

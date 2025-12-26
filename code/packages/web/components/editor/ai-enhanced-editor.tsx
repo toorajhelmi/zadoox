@@ -171,7 +171,6 @@ export function AIEnhancedEditor({
         // Find the updated paragraph text from the new content
         const newLines = newContent.split('\n');
         let newParagraphText = '';
-        let newStartLine = startLine;
         
         // Reconstruct paragraph text from new content
         let lineIdx = startLine;

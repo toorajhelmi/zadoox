@@ -21,8 +21,8 @@ interface EditorToolbarProps {
 export function EditorToolbar({ 
   projectId,
   documentTitle,
-  isSaving, 
-  lastSaved, 
+  isSaving: _isSaving, 
+  lastSaved: _lastSaved, 
   onToggleSidebar,
   viewMode,
   onViewModeChange,
