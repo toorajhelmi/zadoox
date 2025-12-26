@@ -1,6 +1,5 @@
 'use client';
 
-import { formatDistanceToNow } from 'date-fns';
 import { Bars3Icon, EyeIcon, PencilIcon, Squares2X2Icon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -22,8 +21,8 @@ interface EditorToolbarProps {
 export function EditorToolbar({ 
   projectId,
   documentTitle,
-  isSaving, 
-  lastSaved, 
+  isSaving: _isSaving, 
+  lastSaved: _lastSaved, 
   onToggleSidebar,
   viewMode,
   onViewModeChange,
@@ -115,15 +114,7 @@ export function EditorToolbar({
         </div>
       </div>
 
-      <div className="flex items-center gap-4 text-sm text-vscode-text-secondary">
-        {isSaving && <span>Saving...</span>}
-        {!isSaving && lastSaved && (
-          <span>
-            Saved {formatDistanceToNow(lastSaved, { addSuffix: true })}
-          </span>
-        )}
-        {!isSaving && !lastSaved && <span>Not saved</span>}
-      </div>
+      {/* Save status moved to status bar */}
     </div>
   );
 }

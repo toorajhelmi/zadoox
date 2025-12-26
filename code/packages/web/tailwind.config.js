@@ -23,6 +23,12 @@ module.exports = {
         'vscode-input-border': '#454545',
         'vscode-sidebarBg': '#252526',
         'vscode-sidebarBorder': '#3e3e42',
+        'vscode-statusBar-background': '#007acc',
+        'vscode-statusBar-border': '#005a9e',
+        'vscode-statusBar-foreground': '#ffffff',
+        'vscode-buttonBg': '#0e639c',
+        'vscode-buttonHoverBg': '#1177bb',
+        'vscode-buttonText': '#ffffff',
       },
     },
     fontFamily: {

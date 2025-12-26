@@ -50,11 +50,53 @@ code {
 .cm-editor {
   position: relative;
   z-index: 1;
+  height: 100%;
+  overflow: hidden;
 }
 
 .cm-scroller {
   position: relative;
   z-index: 1;
+  overflow: auto !important;
+  height: 100%;
+}
+
+/* Custom scrollbar styling for CodeMirror (VS Code-like) */
+.cm-scroller::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.cm-scroller::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+
+.cm-scroller::-webkit-scrollbar-thumb {
+  background: #424242;
+  border-radius: 5px;
+}
+
+.cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: #4e4e4e;
+}
+
+/* Firefox scrollbar */
+.cm-scroller {
+  scrollbar-width: thin;
+  scrollbar-color: #424242 #1e1e1e;
+}
+
+/* Progress bar animation for paragraph toolbar */
+@keyframes progress {
+  0% {
+    width: 0%;
+  }
+  50% {
+    width: 70%;
+  }
+  100% {
+    width: 100%;
+  }
 }
 
 

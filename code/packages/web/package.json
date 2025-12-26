@@ -6,6 +6,8 @@
     "dev": "next dev",
     "build": "node scripts/validate-env.js && next build",
     "validate-env": "node scripts/validate-env.js",
+    "setup-env": "node scripts/switch-env.js",
+    "switch-env": "node scripts/switch-env.js",
     "start": "next start",
     "lint": "next lint",
     "lint:strict": "next lint --max-warnings=0",

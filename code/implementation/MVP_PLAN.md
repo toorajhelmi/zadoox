@@ -369,6 +369,7 @@ This phase focuses on the core AI-driven features that make Zadoox feel like a f
   - [x] Visual bar/dot indicators aligned with paragraphs
   - [x] Hover on indicator → Quick action menu
   - [x] Real-time updates as user types
+  - [ ] **Fix indicator alignment issue** - Indicators not aligning correctly with paragraphs when toolbar is present (needs proper coordinate system calculation)
 
 - [x] **Paragraph-level metadata & hover interactions**:
   - [x] Quality score calculation and display

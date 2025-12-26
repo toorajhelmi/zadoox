@@ -9,11 +9,14 @@ import type { AIAnalysisResponse, AIActionType } from '@zadoox/shared';
 interface ToolbarWidgetProps {
   paragraphId: string;
   analysis?: AIAnalysisResponse;
+  previousAnalysis?: AIAnalysisResponse;
   lastEdited?: Date;
   onAction?: (action: AIActionType) => void;
   onViewDetails?: () => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
+  isProcessing?: boolean;
+  processingAction?: AIActionType;
 }
 
 /**
@@ -49,10 +52,13 @@ class ToolbarWidget extends WidgetType {
       <ParagraphToolbar
         paragraphId={this.props.paragraphId}
         analysis={this.props.analysis}
+        previousAnalysis={this.props.previousAnalysis}
         lastEdited={this.props.lastEdited}
         onAction={this.props.onAction}
         onViewDetails={this.props.onViewDetails}
         visible={true}
+        isProcessing={this.props.isProcessing}
+        processingAction={this.props.processingAction}
       />
     );
     
@@ -68,20 +74,35 @@ class ToolbarWidget extends WidgetType {
   }
 
   updateDOM(dom: HTMLElement): boolean {
-    // Update props if needed
+    // Always update props when they change (especially isProcessing)
     if (this.root && this.container === dom) {
+      // Use flushSync for immediate update
       this.root.render(
         <ParagraphToolbar
           paragraphId={this.props.paragraphId}
           analysis={this.props.analysis}
+          previousAnalysis={this.props.previousAnalysis}
           lastEdited={this.props.lastEdited}
           onAction={this.props.onAction}
           onViewDetails={this.props.onViewDetails}
           visible={true}
+          isProcessing={this.props.isProcessing}
+          processingAction={this.props.processingAction}
         />
       );
+      return true; // Indicate that we handled the update
     }
-    return true;
+    return false;
+  }
+  
+  eq(other: ToolbarWidget): boolean {
+    // Consider widgets equal only if processing state matches
+    // This forces update when processing state changes
+    return (
+      this.props.paragraphId === other.props.paragraphId &&
+      this.props.isProcessing === other.props.isProcessing &&
+      this.props.processingAction === other.props.processingAction
+    );
   }
 
   ignoreEvent() {
@@ -107,12 +128,19 @@ export function toolbarExtension(
     },
     update(decorations: DecorationSet, tr: Transaction) {
       // Check for toolbar show/hide effects first
+      let propsChanged = false;
       for (const effect of tr.effects) {
         if (effect.is(showToolbar)) {
           if (effect.value) {
+            // Check if props actually changed (especially isProcessing)
+            const processingChanged = 
+              currentWidgetProps?.isProcessing !== effect.value.isProcessing ||
+              currentWidgetProps?.processingAction !== effect.value.processingAction;
+            
             // Show toolbar - update state
             currentParagraphId = effect.value.paragraphId;
             currentWidgetProps = effect.value;
+            propsChanged = processingChanged;
           } else {
             // Hide toolbar - clear state
             currentParagraphId = null;
@@ -127,27 +155,32 @@ export function toolbarExtension(
         const pos = getParagraphStart(currentParagraphId);
         
         if (pos !== null && pos <= tr.newDoc.length) {
-          // Always recreate widget at the correct position (handles document changes)
+          // Always recreate widget to ensure props are up to date (especially isProcessing)
           const analysisData = getAnalysis(currentParagraphId);
           const widgetDeco = Decoration.widget({
             widget: new ToolbarWidget({
               paragraphId: currentParagraphId,
               analysis: analysisData?.analysis,
+              previousAnalysis: currentWidgetProps.previousAnalysis, // Always preserve previousAnalysis
               lastEdited: analysisData?.lastEdited,
               onAction: currentWidgetProps.onAction,
               onViewDetails: currentWidgetProps.onViewDetails,
               onMouseEnter: currentWidgetProps.onMouseEnter,
               onMouseLeave: currentWidgetProps.onMouseLeave,
+              isProcessing: currentWidgetProps.isProcessing,
+              processingAction: currentWidgetProps.processingAction,
             }),
             side: -1, // Before the position (above the paragraph)
           });
           
-          // Create new decoration set with widget at current position
-          // This ensures the widget stays visible even when document changes
-          // Use Decoration.none.update() to add decorations
-          return Decoration.none.update({
-            add: [widgetDeco.range(pos)]
-          });
+          // Always recreate decoration to force widget update
+          if (propsChanged || tr.docChanged || decorations.size === 0) {
+            return Decoration.none.update({
+              add: [widgetDeco.range(pos)]
+            });
+          }
+          // Otherwise, map existing decorations through changes
+          return decorations.map(tr.changes);
         } else {
           // Position is invalid - clear decorations
           return Decoration.none;

@@ -47,6 +47,7 @@ describe('EditorToolbar', () => {
     render(
       <EditorToolbar
         projectId="project-1"
+        documentTitle="Test Document"
         isSaving={false}
         lastSaved={null}
         onToggleSidebar={mockOnToggleSidebar}
@@ -56,36 +57,5 @@ describe('EditorToolbar', () => {
     );
 
     expect(screen.getByLabelText('Toggle sidebar')).toBeInTheDocument();
-  });
-
-  it('should display "Saving..." when isSaving is true', () => {
-    render(
-      <EditorToolbar
-        projectId="project-1"
-        isSaving={true}
-        lastSaved={null}
-        onToggleSidebar={mockOnToggleSidebar}
-        viewMode="edit"
-        onViewModeChange={mockOnViewModeChange}
-      />
-    );
-
-    expect(screen.getByText('Saving...')).toBeInTheDocument();
-  });
-
-  it('should display saved time when lastSaved is provided', () => {
-    const lastSaved = new Date();
-    render(
-      <EditorToolbar
-        projectId="project-1"
-        isSaving={false}
-        lastSaved={lastSaved}
-        onToggleSidebar={mockOnToggleSidebar}
-        viewMode="edit"
-        onViewModeChange={mockOnViewModeChange}
-      />
-    );
-
-    expect(screen.getByText(/Saved/)).toBeInTheDocument();
   });
 });

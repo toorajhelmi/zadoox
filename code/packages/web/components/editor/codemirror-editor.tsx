@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { EditorView, ViewUpdate } from '@codemirror/view';
+import { EditorView, ViewUpdate, gutter, GutterMarker } from '@codemirror/view';
 import { FloatingFormatMenu, type FormatType } from './floating-format-menu';
 
 // Dynamically import CodeMirror to avoid SSR issues
@@ -17,6 +17,7 @@ interface CodeMirrorEditorProps {
   value: string;
   onChange: (value: string) => void;
   onSelectionChange?: (selection: { from: number; to: number; text: string } | null) => void;
+  onCursorPositionChange?: (position: { line: number; column: number } | null) => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   extensions?: any[];
   onEditorViewReady?: (view: EditorView | null) => void;
@@ -25,7 +26,45 @@ interface CodeMirrorEditorProps {
 
 const PLACEHOLDER_TEXT = 'Start editing...';
 
-export function CodeMirrorEditor({ value, onChange, onSelectionChange, extensions = [], onEditorViewReady, readOnly = false }: CodeMirrorEditorProps) {
+// Custom line number marker that only shows for non-empty lines
+class LineNumberMarker extends GutterMarker {
+  constructor(private lineNumber: number) {
+    super();
+  }
+
+  eq(other: LineNumberMarker) {
+    return this.lineNumber === other.lineNumber;
+  }
+
+  toDOM() {
+    return document.createTextNode(this.lineNumber.toString());
+  }
+}
+
+// Custom line numbers extension that hides numbers for empty lines
+function customLineNumbers() {
+  return gutter({
+    class: 'cm-lineNumbers',
+    renderEmptyElements: false,
+    lineMarker: (view, line) => {
+      try {
+        const lineInfo = view.state.doc.lineAt(line.from);
+        const lineText = lineInfo.text;
+        // Only show line number if line is not empty (after trimming whitespace)
+        if (lineText.trim().length > 0) {
+          return new LineNumberMarker(lineInfo.number);
+        }
+        // Return null for empty lines (no number shown)
+        return null;
+      } catch {
+        // Fallback: show number if we can't determine line content
+        return null;
+      }
+    },
+  });
+}
+
+export function CodeMirrorEditor({ value, onChange, onSelectionChange, onCursorPositionChange, extensions = [], onEditorViewReady, readOnly = false }: CodeMirrorEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
@@ -217,6 +256,30 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange, extension
         onEditorViewReady(update.view);
       }
       
+      // Track cursor position (line and column)
+      if (update.selectionSet && update.view && onCursorPositionChange) {
+        const selection = update.state.selection.main;
+        const line = update.state.doc.lineAt(selection.head);
+        const lineNumber = line.number;
+        const column = selection.head - line.from + 1; // +1 for 1-based column
+        
+        onCursorPositionChange({
+          line: lineNumber,
+          column: column,
+        });
+      } else if (update.view && onCursorPositionChange) {
+        // Also update on other changes (like content changes)
+        const selection = update.view.state.selection.main;
+        const line = update.view.state.doc.lineAt(selection.head);
+        const lineNumber = line.number;
+        const column = selection.head - line.from + 1;
+        
+        onCursorPositionChange({
+          line: lineNumber,
+          column: column,
+        });
+      }
+      
       if (update.selectionSet && update.view) {
         const selection = update.state.selection.main;
         const selectedText = update.state.sliceDoc(selection.from, selection.to).trim();
@@ -271,7 +334,7 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange, extension
         }, 150);
       }
     });
-  }, [onSelectionChange, onEditorViewReady]);
+  }, [onSelectionChange, onEditorViewReady, onCursorPositionChange]);
 
   return (
     <div ref={editorContainerRef} className="h-full w-full relative">
@@ -279,10 +342,10 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange, extension
         <CodeMirror
           value={displayValue}
           onChange={handleChange}
-          extensions={[markdown(), EditorView.lineWrapping, selectionExtension(), ...extensions]}
+          extensions={[markdown(), EditorView.lineWrapping, customLineNumbers(), selectionExtension(), ...extensions]}
           theme={oneDark}
           basicSetup={{
-            lineNumbers: true,
+            lineNumbers: false, // Disable default line numbers, use custom
             highlightActiveLine: true,
             foldGutter: true,
             dropCursor: false,
