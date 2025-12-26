@@ -253,11 +253,8 @@ export const api = {
     },
 
     reconstruct: async (documentId: string, versionNumber: number): Promise<string> => {
-      const response = await fetchApi<{ content: string }>(
-        `/documents/${documentId}/versions/${versionNumber}/reconstruct`,
-        {
-          method: 'POST',
-        }
+      const response = await fetchApi<{ content: string; versionNumber: number }>(
+        `/documents/${documentId}/versions/${versionNumber}/content`
       );
       if (!response.data) {
         throw new ApiError('Failed to reconstruct version', 'RECONSTRUCT_FAILED', 500);

@@ -16,6 +16,7 @@ interface AIEnhancedEditorProps {
   model?: 'openai' | 'auto';
   sidebarOpen?: boolean;
   onSaveWithType?: (content: string, changeType: 'auto-save' | 'ai-action') => Promise<void>;
+  readOnly?: boolean;
 }
 
 /**
@@ -29,6 +30,7 @@ export function AIEnhancedEditor({
   model = 'auto',
   sidebarOpen: _sidebarOpen = true,
   onSaveWithType,
+  readOnly = false,
 }: AIEnhancedEditorProps) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_hoveredParagraph, setHoveredParagraph] = useState<string | null>(null);
@@ -253,6 +255,7 @@ export function AIEnhancedEditor({
           onEditorViewReady={(view) => {
             editorViewRef.current = view;
           }}
+          readOnly={readOnly}
         />
         
         {/* AI Indicators Column (overlay on left) */}

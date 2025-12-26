@@ -142,4 +142,39 @@ describe('useDocumentState - Core Functionality', () => {
       })
     );
   });
+
+  it('should provide setContentWithoutSave that does not trigger auto-save', async () => {
+    const mockDocument: Document = {
+      id: 'doc-1',
+      projectId: 'project-1',
+      title: 'Test Document',
+      content: 'Initial content',
+      metadata: { type: 'standalone' },
+      createdAt: new Date('2024-01-01'),
+      updatedAt: new Date('2024-01-02'),
+    };
+
+    vi.mocked(api.documents.get).mockResolvedValueOnce(mockDocument);
+
+    const { result } = renderHook(() => useDocumentState('doc-1', 'project-1'));
+
+    await waitFor(
+      () => {
+        expect(result.current.isLoading).toBe(false);
+      },
+      { timeout: 10000 }
+    );
+
+    // Use setContentWithoutSave
+    act(() => {
+      result.current.setContentWithoutSave('New content without save');
+    });
+
+    // Wait a bit to ensure auto-save doesn't trigger
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+
+    // updateContent should NOT have been called (no auto-save)
+    expect(api.documents.update).not.toHaveBeenCalled();
+    expect(result.current.content).toBe('New content without save');
+  });
 });

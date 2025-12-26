@@ -20,11 +20,12 @@ interface CodeMirrorEditorProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   extensions?: any[];
   onEditorViewReady?: (view: EditorView | null) => void;
+  readOnly?: boolean;
 }
 
 const PLACEHOLDER_TEXT = 'Start editing...';
 
-export function CodeMirrorEditor({ value, onChange, onSelectionChange, extensions = [], onEditorViewReady }: CodeMirrorEditorProps) {
+export function CodeMirrorEditor({ value, onChange, onSelectionChange, extensions = [], onEditorViewReady, readOnly = false }: CodeMirrorEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
@@ -55,6 +56,11 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange, extension
   }, [value]);
 
   const handleChange = (newValue: string) => {
+    // Don't allow changes when read-only
+    if (readOnly) {
+      return;
+    }
+    
     if (!hasEdited && newValue !== value) {
       setHasEdited(true);
     }
@@ -283,6 +289,7 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange, extension
             allowMultipleSelections: false,
           }}
           className="h-full"
+          editable={!readOnly}
         />
       </div>
       {showFormatMenu && (

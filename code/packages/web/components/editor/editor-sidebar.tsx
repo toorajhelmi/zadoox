@@ -13,11 +13,13 @@ interface EditorSidebarProps {
   content: string;
   documentId?: string;
   onRollback?: (versionNumber: number) => Promise<void>;
+  onVersionSelect?: (versionNumber: number) => Promise<void>;
+  lastSaved?: Date | null;
   activeTab?: SidebarTab;
   onTabChange?: (tab: SidebarTab) => void;
 }
 
-export function EditorSidebar({ isOpen, onToggle, content, documentId, onRollback, activeTab: externalActiveTab, onTabChange }: EditorSidebarProps) {
+export function EditorSidebar({ isOpen, onToggle, content, documentId, onRollback, onVersionSelect, lastSaved, activeTab: externalActiveTab, onTabChange }: EditorSidebarProps) {
   const [internalActiveTab, setInternalActiveTab] = useState<SidebarTab>('outline');
   const activeTab = externalActiveTab ?? internalActiveTab;
   
@@ -80,6 +82,8 @@ export function EditorSidebar({ isOpen, onToggle, content, documentId, onRollbac
               <VersionHistoryPanel
                 documentId={documentId}
                 onRollback={onRollback}
+                onVersionSelect={onVersionSelect}
+                refreshTrigger={lastSaved}
               />
             )}
           </div>

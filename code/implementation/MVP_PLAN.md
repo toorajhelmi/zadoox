@@ -380,13 +380,15 @@ This phase focuses on the core AI-driven features that make Zadoox feel like a f
 
 #### Category 2: Real-Time AI Analysis & Inline Suggestions
 
-- [x] **Real-time content analysis** (background, debounced):
-  - [x] Quality scoring algorithm
-  - [x] Sentiment analysis
-  - [x] Wordiness detection
-  - [x] Clarity scoring
-  - [x] Grammar and style checks
-  - [x] Updates indicators in real-time
+- [ ] **Real-time content analysis** (background, debounced):
+  - [ ] Quality scoring algorithm
+  - [ ] Sentiment analysis
+  - [ ] Wordiness detection
+  - [ ] Clarity scoring
+  - [ ] Grammar and style checks
+  - [ ] Updates indicators in real-time
+  - [ ] Timeout handling (30s) to prevent stuck "Analyzing..." state
+  - [ ] Error handling and state recovery
 
 - [ ] **Inline AI indicators**:
   - [ ] Visual underlines (wavy/straight) for issues
@@ -395,12 +397,12 @@ This phase focuses on the core AI-driven features that make Zadoox feel like a f
   - [ ] Click to accept/apply suggestions
   - [ ] Keyboard shortcuts (Ctrl+. to see suggestions)
 
-- [x] **Smart AI suggestions**:
-  - [x] Context-aware improvement suggestions
-  - [x] Tone/style suggestions
-  - [x] Clarity improvements
-  - [x] Concision suggestions (reduce wordiness)
-  - [x] Structure suggestions for paragraphs
+- [ ] **Smart AI suggestions**:
+  - [ ] Context-aware improvement suggestions
+  - [ ] Tone/style suggestions
+  - [ ] Clarity improvements
+  - [ ] Concision suggestions (reduce wordiness)
+  - [ ] Structure suggestions for paragraphs
 
 #### Category 3: One-Click AI Writing Assistance
 
@@ -449,7 +451,8 @@ This phase focuses on the core AI-driven features that make Zadoox feel like a f
 
 **Deliverables**:
 - ✅ Visual AI indicators system (left margin + hover interactions)
-- ✅ Real-time AI analysis with debounced background processing
+- ⏳ Real-time AI analysis with debounced background processing (Category 2 - TODO)
+- ⏳ Timeout and error handling for AI analysis (prevents stuck states) - TODO
 - ✅ One-click AI writing assistance (Improve, Expand, Clarify, Condense, Tone adjustment)
 - ✅ Cursor-style AI model selection (openai/auto) with extensible provider system
 - ✅ Backend AI service with OpenAI integration
@@ -464,7 +467,6 @@ This phase focuses on the core AI-driven features that make Zadoox feel like a f
 - AI API endpoints for analysis, actions, and suggestions
 - Left margin indicator system with color-coded indicators
 - Paragraph metadata tracking and hover info banner
-- Real-time AI analysis with debounced processing
 - One-click AI actions integrated into hover banner
 - AI-enhanced editor component that wraps CodeMirror with AI features
 
@@ -472,6 +474,8 @@ This phase focuses on the core AI-driven features that make Zadoox feel like a f
 - Add inline suggestion underlines (CodeMirror decorations)
 - Implement smart completion with context-aware autocomplete
 - Add citation research service (Phase 9 backend + Phase 7.5 frontend)
+
+---
 
 ---
 

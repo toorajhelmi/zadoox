@@ -120,6 +120,16 @@ export function useDocumentState(documentId: string, projectId: string) {
     [saveDocument]
   );
 
+  // Set content without triggering auto-save (for viewing older versions)
+  const setContentWithoutSave = useCallback((newContent: string) => {
+    // Clear any pending auto-save
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    setContent(newContent);
+  }, []);
+
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
@@ -133,6 +143,7 @@ export function useDocumentState(documentId: string, projectId: string) {
     content,
     documentTitle,
     updateContent,
+    setContentWithoutSave,
     isSaving,
     lastSaved,
     isLoading,

@@ -20,17 +20,81 @@ type ViewMode = 'edit' | 'preview' | 'split';
 type SidebarTab = 'outline' | 'history';
 
 export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
-  const { content, documentTitle, updateContent, isSaving, lastSaved, documentId: actualDocumentId, saveDocument } = useDocumentState(documentId, projectId);
+  const { content, documentTitle, updateContent, setContentWithoutSave, isSaving, lastSaved, documentId: actualDocumentId, saveDocument } = useDocumentState(documentId, projectId);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('outline');
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
+  const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
+  const [latestVersion, setLatestVersion] = useState<number | null>(null);
   const currentSelectionRef = useRef<{ from: number; to: number; text: string } | null>(null);
+
+  // Load version metadata to determine latest version
+  useEffect(() => {
+    if (!actualDocumentId || actualDocumentId === 'default') return;
+
+    async function loadMetadata() {
+      try {
+        const metadata = await api.versions.getMetadata(actualDocumentId);
+        let newLatestVersion: number | null = null;
+        
+        // Check if currentVersion exists and is valid
+        if (metadata.currentVersion !== undefined && metadata.currentVersion !== null) {
+          newLatestVersion = Number(metadata.currentVersion);
+        } else {
+          // Fallback: get latest from versions list
+          const versions = await api.versions.list(actualDocumentId, 1, 0);
+          if (versions.length > 0) {
+            newLatestVersion = versions[0].versionNumber;
+          }
+        }
+        
+        if (newLatestVersion !== null) {
+          // If the latest version changed and we were viewing the latest, update to new latest
+          if (latestVersion !== null && newLatestVersion > latestVersion && selectedVersion === null) {
+            // New version was created while viewing the latest - stay on latest
+            setLatestVersion(newLatestVersion);
+            setSelectedVersion(null); // Ensure we're still viewing the latest
+          } else if (latestVersion !== null && newLatestVersion > latestVersion && selectedVersion !== null) {
+            // New version was created while viewing an older version - keep viewing that older version (read-only)
+            setLatestVersion(newLatestVersion);
+            // Don't change selectedVersion - keep it read-only
+          } else {
+            setLatestVersion(newLatestVersion);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load version metadata:', error);
+        // Fallback: try to get latest from versions list
+        try {
+          const versions = await api.versions.list(actualDocumentId, 1, 0);
+          if (versions.length > 0) {
+            setLatestVersion(versions[0].versionNumber);
+          }
+        } catch (listError) {
+          console.error('Failed to fetch versions list:', listError);
+        }
+      }
+    }
+
+    loadMetadata();
+  }, [actualDocumentId, lastSaved?.getTime()]); // Reload when lastSaved changes (new version created)
 
   const handleContentChange = useCallback(
     (value: string) => {
+      const safeLatestVersion = latestVersion ?? null;
+      // Only allow editing if viewing the latest version
+      // selectedVersion === null means latest, or selectedVersion === latestVersion means latest
+      if (selectedVersion !== null) {
+        // If a specific version is selected, check if it's the latest (type-safe comparison)
+        if (safeLatestVersion === null || Number(selectedVersion) !== Number(safeLatestVersion)) {
+          return; // Don't allow editing older versions
+        }
+        // If selectedVersion === latestVersion, allow editing (fall through)
+      }
+      // If selectedVersion === null, allow editing (fall through)
       updateContent(value);
     },
-    [updateContent]
+    [updateContent, selectedVersion, latestVersion]
   );
 
   // Handle selection changes from editor
@@ -41,6 +105,12 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   // Handle keyboard shortcuts (Ctrl+S / Cmd+S for immediate auto-save)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't allow save if viewing an older version
+      // Allow save if selectedVersion === null (latest) or selectedVersion === latestVersion
+      if (selectedVersion !== null && latestVersion !== null && selectedVersion !== latestVersion) {
+        return; // Don't allow saving older versions
+      }
+      
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         // Trigger immediate auto-save by calling saveDocument directly
@@ -52,10 +122,16 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [content, saveDocument]);
+  }, [content, saveDocument, selectedVersion, latestVersion]);
 
   // Handle formatting from toolbar
   const handleFormat = useCallback((format: FormatType) => {
+    // Don't allow formatting if viewing an older version
+    // Allow formatting if selectedVersion === null (latest) or selectedVersion === latestVersion
+    if (selectedVersion !== null && latestVersion !== null && selectedVersion !== latestVersion) {
+      return; // Don't allow formatting older versions
+    }
+    
     const selection = currentSelectionRef.current;
     
     if (selection && selection.text) {
@@ -121,7 +197,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       const newContent = content + placeholder;
       updateContent(newContent);
     }
-  }, [content, updateContent]);
+  }, [content, updateContent, selectedVersion, latestVersion]);
 
   return (
     <div className="flex h-screen bg-vscode-bg text-vscode-text">
@@ -131,15 +207,59 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         onToggle={() => setSidebarOpen(!sidebarOpen)}
         content={content}
         documentId={actualDocumentId}
+        lastSaved={lastSaved}
         activeTab={sidebarTab}
         onTabChange={setSidebarTab}
         onRollback={async (versionNumber: number) => {
+          const content = await api.versions.reconstruct(actualDocumentId, versionNumber);
+          setSelectedVersion(null); // Reset to latest after rollback
+          updateContent(content);
+        }}
+        onVersionSelect={async (versionNumber: number) => {
+          const content = await api.versions.reconstruct(actualDocumentId, versionNumber);
+          
+          // Always fetch latest version metadata to ensure we have the current latest
+          let currentLatestVersion: number | null = latestVersion ?? null;
           try {
-            const content = await api.versions.reconstruct(actualDocumentId, versionNumber);
-            updateContent(content);
-            // Auto-save will handle saving the rollback
+            const metadata = await api.versions.getMetadata(actualDocumentId);
+            // Check if currentVersion exists and is valid
+            if (metadata.currentVersion !== undefined && metadata.currentVersion !== null) {
+              currentLatestVersion = Number(metadata.currentVersion);
+            } else {
+              // Metadata exists but currentVersion is missing - fall back to versions list
+              const versions = await api.versions.list(actualDocumentId, 1, 0);
+              if (versions.length > 0) {
+                currentLatestVersion = versions[0].versionNumber; // First version is latest (sorted DESC)
+              }
+            }
+            // Update latestVersion state
+            setLatestVersion(currentLatestVersion);
           } catch (error) {
-            console.error('Failed to rollback:', error);
+            console.error('Failed to fetch version metadata:', error);
+            // Fallback: try to get latest from versions list
+            try {
+              const versions = await api.versions.list(actualDocumentId, 1, 0);
+              if (versions.length > 0) {
+                currentLatestVersion = versions[0].versionNumber;
+                setLatestVersion(currentLatestVersion);
+              }
+            } catch (listError) {
+              console.error('Failed to fetch versions list:', listError);
+            }
+          }
+          
+          // If selecting the latest version, reset to null to enable editing
+          // Use Number() to ensure type-safe comparison
+          if (currentLatestVersion !== null && Number(versionNumber) === Number(currentLatestVersion)) {
+            // This is the latest version - set to null to enable editing
+            setSelectedVersion(null);
+            // Use updateContent to allow editing
+            updateContent(content);
+          } else {
+            // This is an older version - set selectedVersion and make read-only
+            setSelectedVersion(versionNumber);
+            // Use setContentWithoutSave to prevent auto-save
+            setContentWithoutSave(content);
           }
         }}
       />
@@ -173,6 +293,17 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 onSelectionChange={handleSelectionChange}
                 model="auto"
                 sidebarOpen={sidebarOpen}
+                readOnly={(() => {
+                  // Handle undefined/null latestVersion and ensure it's a valid number
+                  let safeLatestVersion: number | null = null;
+                  if (latestVersion !== undefined && latestVersion !== null && !isNaN(Number(latestVersion))) {
+                    safeLatestVersion = Number(latestVersion);
+                  }
+                  const isReadOnly = selectedVersion !== null && 
+                                    safeLatestVersion !== null && 
+                                    Number(selectedVersion) !== Number(safeLatestVersion);
+                  return isReadOnly;
+                })()}
                 onSaveWithType={async (contentToSave, changeType) => {
                   await saveDocument(contentToSave, changeType);
                 }}
