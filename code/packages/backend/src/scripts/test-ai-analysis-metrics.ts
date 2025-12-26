@@ -181,7 +181,7 @@ async function testAnalysis(testCase: TestCase): Promise<void> {
     // Show suggestions if any
     if (analysis.suggestions && analysis.suggestions.length > 0) {
       console.log(`\n  Suggestions (${analysis.suggestions.length}):`);
-      analysis.suggestions.slice(0, 3).forEach((sug: any, idx: number) => {
+      analysis.suggestions.slice(0, 3).forEach((sug, idx: number) => {
         console.log(`    ${idx + 1}. [${sug.type}] ${sug.message || sug.text}`);
       });
       if (analysis.suggestions.length > 3) {
