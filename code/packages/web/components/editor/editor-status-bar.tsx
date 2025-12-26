@@ -53,12 +53,13 @@ export function EditorStatusBar({
     });
 
     // Add final paragraph if exists
-    if (currentParagraph) {
+    if (currentParagraph !== null) {
       paragraphNumber++; // Increment before adding
+      const finalPara = currentParagraph; // Type narrowing helper
       paragraphs.push({
-        startLine: currentParagraph.startLine,
+        startLine: finalPara.startLine,
         endLine: lines.length - 1,
-        text: currentParagraph.text.trim(),
+        text: finalPara.text.trim(),
         paragraphNumber: paragraphNumber, // Store sequential number
       });
     }
