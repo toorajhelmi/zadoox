@@ -6,7 +6,7 @@ import { AIIndicators } from './ai-indicators';
 import { toolbarExtension, showToolbar } from './toolbar-extension';
 import { useAIAnalysis } from '@/hooks/use-ai-analysis';
 import { api } from '@/lib/api/client';
-import type { AIActionType, AIAnalysisResponse } from '@zadoox/shared';
+import type { AIActionType, AIAnalysisResponse, ParagraphMode } from '@zadoox/shared';
 import { EditorView } from '@codemirror/view';
 
 interface AIEnhancedEditorProps {
@@ -18,6 +18,9 @@ interface AIEnhancedEditorProps {
   sidebarOpen?: boolean;
   onSaveWithType?: (content: string, changeType: 'auto-save' | 'ai-action') => Promise<void>;
   readOnly?: boolean;
+  paragraphModes?: Record<string, ParagraphMode>;
+  onModeToggle?: (paragraphId: string, newMode: ParagraphMode) => Promise<void>;
+  documentId?: string;
 }
 
 /**
@@ -33,6 +36,9 @@ export function AIEnhancedEditor({
   sidebarOpen: _sidebarOpen = true,
   onSaveWithType,
   readOnly = false,
+  paragraphModes = {},
+  onModeToggle,
+  documentId,
 }: AIEnhancedEditorProps) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_hoveredParagraph, setHoveredParagraph] = useState<string | null>(null);
@@ -252,13 +258,38 @@ export function AIEnhancedEditor({
     };
   }, [getAnalysis]);
   
+  // Handle mode toggle
+  const handleModeToggle = useCallback(
+    async (paragraphId: string, newMode: ParagraphMode) => {
+      if (onModeToggle) {
+        await onModeToggle(paragraphId, newMode);
+      }
+    },
+    [onModeToggle]
+  );
+
+  // Get mode for a paragraph
+  const getMode = useCallback(
+    (paragraphId: string): ParagraphMode | undefined => {
+      return paragraphModes[paragraphId] || 'write';
+    },
+    [paragraphModes]
+  );
+
+  const getModeRef = useRef(getMode);
+  useEffect(() => {
+    getModeRef.current = getMode;
+  }, [getMode]);
+
   // Create extension once - it will use the refs which always point to latest callbacks
   const toolbarExt = useMemo(() => {
     return toolbarExtension(
       (id: string) => getParagraphStartRef.current(id),
-      (id: string) => getAnalysisRef.current(id)
+      (id: string) => getAnalysisRef.current(id),
+      (id: string) => getModeRef.current(id),
+      handleModeToggle
     );
-  }, []); // Empty deps - extension created once
+  }, [handleModeToggle]); // Include handleModeToggle in deps
 
   // Track if mouse is over toolbar widget
   const isMouseOverToolbarRef = useRef(false);
@@ -307,6 +338,8 @@ export function AIEnhancedEditor({
             onAction: (action: AIActionType) => handleAIAction(action, paragraphId),
             isProcessing,
             processingAction: isProcessing && currentProcessing !== null ? currentProcessing.action : undefined,
+            mode: getMode(paragraphId),
+            onModeToggle: handleModeToggle,
             onMouseEnter: () => {
               isMouseOverToolbarRef.current = true;
               // Clear any pending hide
@@ -361,7 +394,7 @@ export function AIEnhancedEditor({
         }, 300);
       }
     }
-  }, [getAnalysis, handleAIAction, processingParagraph, previousAnalysis, safeDispatchToolbar]);
+  }, [getAnalysis, handleAIAction, processingParagraph, previousAnalysis, safeDispatchToolbar, getMode, handleModeToggle]);
 
   // Keep toolbar visible and update it when processing state changes
   // This ensures immediate update when processing starts and stays open throughout
@@ -393,6 +426,8 @@ export function AIEnhancedEditor({
             onAction: (action: AIActionType) => handleAIAction(action, activeParagraphId),
             isProcessing,
             processingAction: isProcessing ? processingParagraph?.action : undefined,
+            mode: getMode(activeParagraphId),
+            onModeToggle: handleModeToggle,
             onMouseEnter: () => {
               isMouseOverToolbarRef.current = true;
               // Clear any pending hide
@@ -431,7 +466,7 @@ export function AIEnhancedEditor({
         });
       }
     });
-  }, [processingParagraph, _hoveredParagraph, handleAIAction, previousAnalysis, paragraphs, value, safeDispatchToolbar]);
+  }, [processingParagraph, _hoveredParagraph, handleAIAction, previousAnalysis, paragraphs, value, safeDispatchToolbar, getMode, handleModeToggle]);
 
   // Cleanup timeouts on unmount
   useEffect(() => {

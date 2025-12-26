@@ -21,7 +21,7 @@ type ViewMode = 'edit' | 'preview' | 'split';
 type SidebarTab = 'outline' | 'history';
 
 export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
-  const { content, documentTitle, updateContent, setContentWithoutSave, isSaving, lastSaved, documentId: actualDocumentId, saveDocument } = useDocumentState(documentId, projectId);
+  const { content, documentTitle, updateContent, setContentWithoutSave, isSaving, lastSaved, documentId: actualDocumentId, saveDocument, paragraphModes, handleModeToggle } = useDocumentState(documentId, projectId);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('outline');
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
@@ -109,15 +109,16 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     setCursorPosition(position);
   }, []);
 
-  // Handle keyboard shortcuts (Ctrl+S / Cmd+S for immediate auto-save)
+  // Handle keyboard shortcuts (Ctrl+S / Cmd+S for immediate auto-save, Ctrl+T / Cmd+T for mode toggle)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't allow save if viewing an older version
-      // Allow save if selectedVersion === null (latest) or selectedVersion === latestVersion
+      // Don't allow shortcuts if viewing an older version
+      // Allow shortcuts if selectedVersion === null (latest) or selectedVersion === latestVersion
       if (selectedVersion !== null && latestVersion !== null && selectedVersion !== latestVersion) {
-        return; // Don't allow saving older versions
+        return; // Don't allow shortcuts for older versions
       }
       
+      // Ctrl+S / Cmd+S for immediate auto-save
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         // Trigger immediate auto-save by calling saveDocument directly
@@ -125,11 +126,58 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           saveDocument(content, 'auto-save');
         }
       }
+      
+      // Ctrl+T / Cmd+T for mode toggle
+      if ((e.ctrlKey || e.metaKey) && e.key === 't') {
+        e.preventDefault();
+        // Find paragraph at cursor position
+        if (cursorPosition && handleModeToggle) {
+          const lines = content.split('\n');
+          const cursorLine = cursorPosition.line - 1; // Convert to 0-based
+          
+          // Find which paragraph contains this line
+          let currentParagraph: { startLine: number; text: string } | null = null;
+          let paragraphStartLine = 0;
+          
+          for (let i = 0; i < lines.length; i++) {
+            const trimmed = lines[i].trim();
+            
+            if (!trimmed && currentParagraph) {
+              // Blank line ends current paragraph
+              if (cursorLine >= paragraphStartLine && cursorLine < i) {
+                // Cursor is in this paragraph
+                const paragraphId = `para-${paragraphStartLine}`;
+                const currentMode = paragraphModes[paragraphId] || 'write';
+                const newMode = currentMode === 'write' ? 'think' : 'write';
+                handleModeToggle(paragraphId, newMode);
+                return;
+              }
+              currentParagraph = null;
+            } else if (trimmed) {
+              // Non-empty line - start or continue paragraph
+              if (!currentParagraph) {
+                currentParagraph = { startLine: i, text: trimmed };
+                paragraphStartLine = i;
+              } else {
+                currentParagraph.text += ' ' + trimmed;
+              }
+            }
+          }
+          
+          // Check if cursor is in the final paragraph
+          if (currentParagraph && cursorLine >= paragraphStartLine) {
+            const paragraphId = `para-${paragraphStartLine}`;
+            const currentMode = paragraphModes[paragraphId] || 'write';
+            const newMode = currentMode === 'write' ? 'think' : 'write';
+            handleModeToggle(paragraphId, newMode);
+          }
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [content, saveDocument, selectedVersion, latestVersion]);
+  }, [content, saveDocument, selectedVersion, latestVersion, cursorPosition, handleModeToggle, paragraphModes]);
 
   // Handle formatting from toolbar
   const handleFormat = useCallback((format: FormatType) => {
@@ -301,6 +349,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 onCursorPositionChange={handleCursorPositionChange}
                 model="auto"
                 sidebarOpen={sidebarOpen}
+                paragraphModes={paragraphModes}
+                onModeToggle={handleModeToggle}
+                documentId={actualDocumentId}
                 readOnly={(() => {
                   // Handle undefined/null latestVersion and ensure it's a valid number
                   let safeLatestVersion: number | null = null;

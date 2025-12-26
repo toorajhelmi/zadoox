@@ -17,10 +17,13 @@ export interface Document {
   authorId: string;
 }
 
+export type ParagraphMode = 'write' | 'think';
+
 export interface DocumentMetadata {
   chapterNumber?: number;
   type: DocumentType;
   order?: number;
+  paragraphModes?: Record<string, ParagraphMode>; // paragraphId -> mode mapping
 }
 
 export interface CreateDocumentInput {
