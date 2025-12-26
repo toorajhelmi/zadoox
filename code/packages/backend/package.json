@@ -17,7 +17,8 @@
     "clean": "rm -rf dist",
     "db:test": "tsx src/scripts/test-db-connection.ts",
     "db:migrate": "tsx src/scripts/run-migrations.ts",
-    "db:cleanup-versions": "tsx src/scripts/cleanup-versions.ts"
+    "db:cleanup-versions": "tsx src/scripts/cleanup-versions.ts",
+    "test:ai-metrics": "tsx src/scripts/test-ai-analysis-metrics.ts"
   },
   "dependencies": {
     "@fastify/cors": "^8.5.0",

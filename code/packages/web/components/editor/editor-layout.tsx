@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { EditorSidebar } from './editor-sidebar';
 import { EditorToolbar } from './editor-toolbar';
+import { EditorStatusBar } from './editor-status-bar';
 import { AIEnhancedEditor } from './ai-enhanced-editor';
 import { MarkdownPreview } from './markdown-preview';
 import { FormattingToolbar } from './formatting-toolbar';
@@ -26,6 +27,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
   const [latestVersion, setLatestVersion] = useState<number | null>(null);
+  const [cursorPosition, setCursorPosition] = useState<{ line: number; column: number } | null>(null);
   const currentSelectionRef = useRef<{ from: number; to: number; text: string } | null>(null);
 
   // Load version metadata to determine latest version
@@ -100,6 +102,11 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   // Handle selection changes from editor
   const handleSelectionChange = useCallback((selection: { from: number; to: number; text: string } | null) => {
     currentSelectionRef.current = selection;
+  }, []);
+
+  // Handle cursor position changes from editor
+  const handleCursorPositionChange = useCallback((position: { line: number; column: number } | null) => {
+    setCursorPosition(position);
   }, []);
 
   // Handle keyboard shortcuts (Ctrl+S / Cmd+S for immediate auto-save)
@@ -286,11 +293,12 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         {/* Editor/Preview */}
         <div className="flex-1 overflow-hidden flex">
           {(viewMode === 'edit' || viewMode === 'split') && (
-            <div className={viewMode === 'split' ? 'flex-1 border-r border-vscode-border' : 'flex-1'}>
+            <div className={viewMode === 'split' ? 'flex-1 border-r border-vscode-border overflow-hidden' : 'flex-1 overflow-hidden'}>
               <AIEnhancedEditor
                 value={content}
                 onChange={handleContentChange}
                 onSelectionChange={handleSelectionChange}
+                onCursorPositionChange={handleCursorPositionChange}
                 model="auto"
                 sidebarOpen={sidebarOpen}
                 readOnly={(() => {
@@ -316,6 +324,14 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             </div>
           )}
         </div>
+
+        {/* Status Bar */}
+        <EditorStatusBar
+          isSaving={isSaving}
+          lastSaved={lastSaved}
+          content={content}
+          cursorPosition={cursorPosition}
+        />
       </div>
     </div>
   );

@@ -369,6 +369,7 @@ This phase focuses on the core AI-driven features that make Zadoox feel like a f
   - [x] Visual bar/dot indicators aligned with paragraphs
   - [x] Hover on indicator → Quick action menu
   - [x] Real-time updates as user types
+  - [ ] **Fix indicator alignment issue** - Indicators not aligning correctly with paragraphs when toolbar is present (needs proper coordinate system calculation)
 
 - [x] **Paragraph-level metadata & hover interactions**:
   - [x] Quality score calculation and display
@@ -476,6 +477,64 @@ This phase focuses on the core AI-driven features that make Zadoox feel like a f
 - Add citation research service (Phase 9 backend + Phase 7.5 frontend)
 
 ---
+
+---
+
+### Phase 7.7: Write/Think Mode Toggle & Think Mode UI 🧠
+**Status**: Not Started
+
+This phase adds the ability to toggle each paragraph section between "write" and "think" modes, providing a non-textual tab-based UI for brainstorming, research, and connecting fragments when in think mode.
+
+#### Write/Think Toggle:
+- [ ] **Paragraph mode toggle**:
+  - [ ] Toggle button/indicator per paragraph (write ↔ think)
+  - [ ] Visual indicator showing current mode (icon or badge)
+  - [ ] Mode state persisted per paragraph (stored in document metadata)
+  - [ ] Keyboard shortcut to toggle mode (e.g., Ctrl+T / Cmd+T)
+
+#### Think Mode UI (Non-textual Tab-based Interface):
+- [ ] **Tab-based interface** (replaces text editor when in think mode):
+  - [ ] Tab navigation system
+  - [ ] Multiple tabs for different think features
+  - [ ] Smooth transitions between write and think modes
+
+- [ ] **Brainstorming Tab**:
+  - [ ] Visual brainstorming tools (mind maps, idea clusters)
+  - [ ] Quick idea capture (bullet points, sticky notes)
+  - [ ] Idea organization and grouping
+  - [ ] Connect ideas visually
+  - [ ] Export ideas to text when switching back to write mode
+
+- [ ] **Research Tab**:
+  - [ ] Research notes and findings
+  - [ ] Source collection and organization
+  - [ ] Citation suggestions and management
+  - [ ] Link to external sources
+  - [ ] Research fragments that can be connected to text
+
+- [ ] **Fragments Tab**:
+  - [ ] View and manage text fragments
+  - [ ] Connect fragments into related text
+  - [ ] Fragment organization and tagging
+  - [ ] Merge fragments into paragraphs
+  - [ ] Fragment relationships visualization
+
+- [ ] **Integration with Write Mode**:
+  - [ ] Convert think mode content to text when switching to write
+  - [ ] Preserve think mode data when switching modes
+  - [ ] Seamless transition between modes
+  - [ ] Think mode content visible in write mode as references
+
+**Deliverables**:
+- ✅ Write/think toggle functionality per paragraph
+- ✅ Think mode UI with tab-based interface
+- ✅ Brainstorming tools and features
+- ✅ Research management interface
+- ✅ Fragment connection and organization
+- ✅ Mode state persistence
+- ✅ Smooth transitions between modes
+
+**Note**: This feature enables a unique workflow where users can switch between writing text and thinking/brainstorming for each paragraph, providing a more structured approach to content creation.
 
 ---
 
