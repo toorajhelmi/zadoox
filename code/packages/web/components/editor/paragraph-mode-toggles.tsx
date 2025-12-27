@@ -88,7 +88,7 @@ export function ParagraphModeToggles({
       }
     });
 
-    if (currentParagraph) {
+    if (currentParagraph !== null) {
       parsed.push({
         id: `para-${currentParagraph.startLine}`,
         startLine: currentParagraph.startLine,

@@ -82,7 +82,7 @@ export function EditorStatusBar({
     });
 
     // Add final paragraph if exists
-    if (currentParagraph) {
+    if (currentParagraph !== null) {
       paragraphNumber++;
       paragraphs.push({
         startLine: currentParagraph.startLine,

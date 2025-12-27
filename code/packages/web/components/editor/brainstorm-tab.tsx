@@ -108,8 +108,10 @@ export function BrainstormTab({
     try {
       // Convert messages to format expected by API (without ideaCardIds for history)
       const chatHistory = messages.map(msg => ({
+        id: msg.id,
         role: msg.role,
         content: msg.content,
+        timestamp: msg.timestamp,
       }));
 
       const response = await api.ai.brainstorm.chat({
