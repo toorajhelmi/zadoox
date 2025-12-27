@@ -4,7 +4,7 @@ import { StateField, StateEffect, Transaction } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { createRoot, Root } from 'react-dom/client';
 import { ParagraphToolbar } from './paragraph-toolbar';
-import type { AIAnalysisResponse, AIActionType, ParagraphMode } from '@zadoox/shared';
+import type { AIAnalysisResponse, AIActionType } from '@zadoox/shared';
 
 interface ToolbarWidgetProps {
   paragraphId: string;
@@ -17,8 +17,6 @@ interface ToolbarWidgetProps {
   onMouseLeave?: () => void;
   isProcessing?: boolean;
   processingAction?: AIActionType;
-  mode?: ParagraphMode;
-  onModeToggle?: (paragraphId: string, newMode: ParagraphMode) => void;
 }
 
 /**
@@ -61,8 +59,6 @@ class ToolbarWidget extends WidgetType {
         visible={true}
         isProcessing={this.props.isProcessing}
         processingAction={this.props.processingAction}
-        mode={this.props.mode}
-        onModeToggle={this.props.onModeToggle}
       />
     );
     
@@ -92,8 +88,6 @@ class ToolbarWidget extends WidgetType {
           visible={true}
           isProcessing={this.props.isProcessing}
           processingAction={this.props.processingAction}
-          mode={this.props.mode}
-          onModeToggle={this.props.onModeToggle}
         />
       );
       return true; // Indicate that we handled the update
@@ -102,13 +96,12 @@ class ToolbarWidget extends WidgetType {
   }
   
   eq(other: ToolbarWidget): boolean {
-    // Consider widgets equal only if processing state or mode matches
-    // This forces update when processing state or mode changes
+    // Consider widgets equal only if processing state matches
+    // This forces update when processing state changes
     return (
       this.props.paragraphId === other.props.paragraphId &&
       this.props.isProcessing === other.props.isProcessing &&
-      this.props.processingAction === other.props.processingAction &&
-      this.props.mode === other.props.mode
+      this.props.processingAction === other.props.processingAction
     );
   }
 
@@ -123,9 +116,7 @@ export const showToolbar = StateEffect.define<ToolbarWidgetProps | null>();
 // State field to manage toolbar decorations
 export function toolbarExtension(
   getParagraphStart: (paragraphId: string) => number | null,
-  getAnalysis: (paragraphId: string) => { analysis?: AIAnalysisResponse; lastEdited?: Date } | undefined,
-  getMode?: (paragraphId: string) => ParagraphMode | undefined,
-  onModeToggle?: (paragraphId: string, newMode: ParagraphMode) => void
+  getAnalysis: (paragraphId: string) => { analysis?: AIAnalysisResponse; lastEdited?: Date } | undefined
 ) {
   // Store current toolbar state - shared across all instances
   let currentParagraphId: string | null = null;
@@ -166,7 +157,6 @@ export function toolbarExtension(
         if (pos !== null && pos <= tr.newDoc.length) {
           // Always recreate widget to ensure props are up to date (especially isProcessing)
           const analysisData = getAnalysis(currentParagraphId);
-          const paragraphMode = getMode ? getMode(currentParagraphId) : undefined;
           const widgetDeco = Decoration.widget({
             widget: new ToolbarWidget({
               paragraphId: currentParagraphId,
@@ -179,8 +169,6 @@ export function toolbarExtension(
               onMouseLeave: currentWidgetProps.onMouseLeave,
               isProcessing: currentWidgetProps.isProcessing,
               processingAction: currentWidgetProps.processingAction,
-              mode: paragraphMode,
-              onModeToggle: onModeToggle,
             }),
             side: -1, // Before the position (above the paragraph)
           });

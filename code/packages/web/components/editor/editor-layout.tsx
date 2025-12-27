@@ -7,6 +7,7 @@ import { EditorStatusBar } from './editor-status-bar';
 import { AIEnhancedEditor } from './ai-enhanced-editor';
 import { MarkdownPreview } from './markdown-preview';
 import { FormattingToolbar } from './formatting-toolbar';
+import { ThinkModePanel } from './think-mode-panel';
 import { useDocumentState } from '@/hooks/use-document-state';
 import { api } from '@/lib/api/client';
 import type { FormatType } from './floating-format-menu';
@@ -21,14 +22,31 @@ type ViewMode = 'edit' | 'preview' | 'split';
 type SidebarTab = 'outline' | 'history';
 
 export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
-  const { content, documentTitle, updateContent, setContentWithoutSave, isSaving, lastSaved, documentId: actualDocumentId, saveDocument, paragraphModes, handleModeToggle } = useDocumentState(documentId, projectId);
+  const { content, documentTitle, updateContent, setContentWithoutSave, isSaving, lastSaved, documentId: actualDocumentId, saveDocument, paragraphModes, handleModeToggle: handleModeToggleFromHook } = useDocumentState(documentId, projectId);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('outline');
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
   const [latestVersion, setLatestVersion] = useState<number | null>(null);
   const [cursorPosition, setCursorPosition] = useState<{ line: number; column: number } | null>(null);
+  const [thinkPanelOpen, setThinkPanelOpen] = useState(false);
+  const [openParagraphId, setOpenParagraphId] = useState<string | null>(null);
   const currentSelectionRef = useRef<{ from: number; to: number; text: string } | null>(null);
+
+  // Handle opening panel for a paragraph
+  const handleOpenPanel = useCallback((paragraphId: string) => {
+    setThinkPanelOpen(true);
+    setOpenParagraphId(paragraphId);
+    // Ensure paragraph is in Think mode
+    handleModeToggleFromHook(paragraphId, 'think');
+  }, [handleModeToggleFromHook]);
+
+  // Handle closing panel
+  const handleClosePanel = useCallback(() => {
+    setThinkPanelOpen(false);
+    setOpenParagraphId(null);
+  }, []);
+
 
   // Load version metadata to determine latest version
   useEffect(() => {
@@ -127,11 +145,11 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         }
       }
       
-      // Ctrl+T / Cmd+T for mode toggle
+      // Ctrl+T / Cmd+T to open Think panel for paragraph at cursor
       if ((e.ctrlKey || e.metaKey) && e.key === 't') {
         e.preventDefault();
         // Find paragraph at cursor position
-        if (cursorPosition && handleModeToggle) {
+        if (cursorPosition && handleOpenPanel) {
           const lines = content.split('\n');
           const cursorLine = cursorPosition.line - 1; // Convert to 0-based
           
@@ -147,9 +165,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               if (cursorLine >= paragraphStartLine && cursorLine < i) {
                 // Cursor is in this paragraph
                 const paragraphId = `para-${paragraphStartLine}`;
-                const currentMode = paragraphModes[paragraphId] || 'write';
-                const newMode = currentMode === 'write' ? 'think' : 'write';
-                handleModeToggle(paragraphId, newMode);
+                handleOpenPanel(paragraphId);
                 return;
               }
               currentParagraph = null;
@@ -167,9 +183,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           // Check if cursor is in the final paragraph
           if (currentParagraph && cursorLine >= paragraphStartLine) {
             const paragraphId = `para-${paragraphStartLine}`;
-            const currentMode = paragraphModes[paragraphId] || 'write';
-            const newMode = currentMode === 'write' ? 'think' : 'write';
-            handleModeToggle(paragraphId, newMode);
+            handleOpenPanel(paragraphId);
           }
         }
       }
@@ -177,7 +191,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [content, saveDocument, selectedVersion, latestVersion, cursorPosition, handleModeToggle, paragraphModes]);
+  }, [content, saveDocument, selectedVersion, latestVersion, cursorPosition, handleOpenPanel]);
 
   // Handle formatting from toolbar
   const handleFormat = useCallback((format: FormatType) => {
@@ -339,9 +353,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         />
 
         {/* Editor/Preview */}
-        <div className="flex-1 overflow-hidden flex">
+        <div className="flex-1 overflow-hidden flex relative">
           {(viewMode === 'edit' || viewMode === 'split') && (
-            <div className={viewMode === 'split' ? 'flex-1 border-r border-vscode-border overflow-hidden' : 'flex-1 overflow-hidden'}>
+            <div className={viewMode === 'split' ? 'flex-1 border-r border-vscode-border overflow-hidden relative' : 'flex-1 overflow-hidden relative'}>
               <AIEnhancedEditor
                 value={content}
                 onChange={handleContentChange}
@@ -350,9 +364,15 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 model="auto"
                 sidebarOpen={sidebarOpen}
                 paragraphModes={paragraphModes}
-                onModeToggle={handleModeToggle}
                 documentId={actualDocumentId}
+                thinkPanelOpen={thinkPanelOpen}
+                openParagraphId={openParagraphId}
+                onOpenPanel={handleOpenPanel}
                 readOnly={(() => {
+                  // Disable editing when Think panel is open
+                  if (thinkPanelOpen) {
+                    return true;
+                  }
                   // Handle undefined/null latestVersion and ensure it's a valid number
                   let safeLatestVersion: number | null = null;
                   if (latestVersion !== undefined && latestVersion !== null && !isNaN(Number(latestVersion))) {
@@ -369,6 +389,13 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               />
             </div>
           )}
+          
+          {/* Think Mode Panel - Shows on right when opened */}
+          <ThinkModePanel 
+            isOpen={thinkPanelOpen}
+            onClose={handleClosePanel}
+          />
+          
           {(viewMode === 'preview' || viewMode === 'split') && (
             <div className={viewMode === 'split' ? 'flex-1 overflow-auto' : 'flex-1'}>
               <MarkdownPreview content={content} />

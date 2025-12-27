@@ -1,7 +1,7 @@
 'use client';
 
 // Removed unused imports
-import type { AIAnalysisResponse, AIActionType, ParagraphMode } from '@zadoox/shared';
+import type { AIAnalysisResponse, AIActionType } from '@zadoox/shared';
 import { formatDistanceToNow } from 'date-fns';
 
 interface ParagraphToolbarProps {
@@ -14,8 +14,6 @@ interface ParagraphToolbarProps {
   visible: boolean;
   isProcessing?: boolean;
   processingAction?: AIActionType;
-  mode?: ParagraphMode;
-  onModeToggle?: (paragraphId: string, newMode: ParagraphMode) => void;
 }
 
 /**
@@ -23,7 +21,7 @@ interface ParagraphToolbarProps {
  * Inline horizontal toolbar that appears over a paragraph, pushing content down
  */
 export function ParagraphToolbar({
-  paragraphId,
+  paragraphId: _paragraphId,
   analysis,
   previousAnalysis,
   lastEdited,
@@ -32,8 +30,6 @@ export function ParagraphToolbar({
   visible,
   isProcessing = false,
   processingAction,
-  mode = 'write',
-  onModeToggle,
 }: ParagraphToolbarProps) {
   if (!visible) {
     return null;
@@ -170,31 +166,8 @@ export function ParagraphToolbar({
         )}
       </div>
 
-      {/* Right side - Mode toggle and Action buttons */}
+      {/* Right side - Action buttons */}
       <div className="flex items-center gap-2 flex-wrap">
-        {/* Write/Think Mode Toggle */}
-        {onModeToggle && (
-          <button
-            onClick={() => {
-              const newMode: ParagraphMode = mode === 'write' ? 'think' : 'write';
-              onModeToggle(paragraphId, newMode);
-            }}
-            className="px-3 py-1 text-xs bg-vscode-buttonBg hover:bg-vscode-buttonHoverBg text-vscode-buttonText rounded border border-vscode-border transition-colors flex items-center gap-1.5"
-            title={`Switch to ${mode === 'write' ? 'think' : 'write'} mode (Ctrl+T / Cmd+T)`}
-          >
-            {mode === 'write' ? (
-              <>
-                <span>✍️</span>
-                <span>Write</span>
-              </>
-            ) : (
-              <>
-                <span>🧠</span>
-                <span>Think</span>
-              </>
-            )}
-          </button>
-        )}
         {onAction && (
           <>
             <button

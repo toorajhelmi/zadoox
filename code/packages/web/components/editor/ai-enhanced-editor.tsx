@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { CodeMirrorEditor } from './codemirror-editor';
 import { AIIndicators } from './ai-indicators';
+import { ParagraphModeToggles } from './paragraph-mode-toggles';
 import { toolbarExtension, showToolbar } from './toolbar-extension';
 import { useAIAnalysis } from '@/hooks/use-ai-analysis';
 import { api } from '@/lib/api/client';
@@ -19,8 +20,11 @@ interface AIEnhancedEditorProps {
   onSaveWithType?: (content: string, changeType: 'auto-save' | 'ai-action') => Promise<void>;
   readOnly?: boolean;
   paragraphModes?: Record<string, ParagraphMode>;
-  onModeToggle?: (paragraphId: string, newMode: ParagraphMode) => Promise<void>;
   documentId?: string;
+  onCurrentParagraphChange?: (paragraphId: string | null) => void;
+  thinkPanelOpen?: boolean;
+  openParagraphId?: string | null;
+  onOpenPanel?: (paragraphId: string) => void;
 }
 
 /**
@@ -36,9 +40,12 @@ export function AIEnhancedEditor({
   sidebarOpen: _sidebarOpen = true,
   onSaveWithType,
   readOnly = false,
-  paragraphModes = {},
-  onModeToggle,
-  documentId,
+  paragraphModes: _paragraphModes = {},
+  documentId: _documentId,
+  onCurrentParagraphChange,
+  thinkPanelOpen = false,
+  openParagraphId = null,
+  onOpenPanel,
 }: AIEnhancedEditorProps) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_hoveredParagraph, setHoveredParagraph] = useState<string | null>(null);
@@ -50,6 +57,58 @@ export function AIEnhancedEditor({
 
   const { paragraphs, getAnalysis, isAnalyzing, analyze: analyzeParagraph } = useAIAnalysis(value, model);
   const editorViewRef = useRef<EditorView | null>(null);
+  
+  // Find paragraph at cursor position
+  const findParagraphAtCursor = useCallback((line: number): string | null => {
+    const lines = value.split('\n');
+    const cursorLine = line - 1; // Convert to 0-based
+    
+    let currentParagraph: { startLine: number; text: string } | null = null;
+    let paragraphStartLine = 0;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trim();
+      
+      if (!trimmed && currentParagraph) {
+        // Blank line ends current paragraph
+        if (cursorLine >= paragraphStartLine && cursorLine < i) {
+          return `para-${paragraphStartLine}`;
+        }
+        currentParagraph = null;
+      } else if (trimmed) {
+        // Non-empty line - start or continue paragraph
+        if (!currentParagraph) {
+          currentParagraph = { startLine: i, text: trimmed };
+          paragraphStartLine = i;
+        } else {
+          currentParagraph.text += ' ' + trimmed;
+        }
+      }
+    }
+    
+    // Check if cursor is in the final paragraph
+    if (currentParagraph && cursorLine >= paragraphStartLine) {
+      return `para-${paragraphStartLine}`;
+    }
+    
+    return null;
+  }, [value]);
+  
+  // Track current paragraph when cursor moves
+  const handleCursorPositionChangeInternal = useCallback((position: { line: number; column: number } | null) => {
+    // Call the original callback if provided
+    if (onCursorPositionChange) {
+      onCursorPositionChange(position);
+    }
+    
+    // Update current paragraph ID when cursor moves
+    if (position && onCurrentParagraphChange) {
+      const paraId = findParagraphAtCursor(position.line);
+      onCurrentParagraphChange(paraId);
+    } else if (onCurrentParagraphChange) {
+      onCurrentParagraphChange(null);
+    }
+  }, [findParagraphAtCursor, onCursorPositionChange, onCurrentParagraphChange]);
   
   // Get paragraph start position in document (for positioning toolbar above)
   // Since useAIAnalysis doesn't track line numbers, we need to find the paragraph in the document
@@ -258,38 +317,37 @@ export function AIEnhancedEditor({
     };
   }, [getAnalysis]);
   
-  // Handle mode toggle
-  const handleModeToggle = useCallback(
-    async (paragraphId: string, newMode: ParagraphMode) => {
-      if (onModeToggle) {
-        await onModeToggle(paragraphId, newMode);
-      }
-    },
-    [onModeToggle]
-  );
-
-  // Get mode for a paragraph
-  const getMode = useCallback(
-    (paragraphId: string): ParagraphMode | undefined => {
-      return paragraphModes[paragraphId] || 'write';
-    },
-    [paragraphModes]
-  );
-
-  const getModeRef = useRef(getMode);
-  useEffect(() => {
-    getModeRef.current = getMode;
-  }, [getMode]);
 
   // Create extension once - it will use the refs which always point to latest callbacks
   const toolbarExt = useMemo(() => {
     return toolbarExtension(
       (id: string) => getParagraphStartRef.current(id),
-      (id: string) => getAnalysisRef.current(id),
-      (id: string) => getModeRef.current(id),
-      handleModeToggle
+      (id: string) => getAnalysisRef.current(id)
     );
-  }, [handleModeToggle]); // Include handleModeToggle in deps
+  }, []); // Empty deps - extension created once
+
+  // Disable selection when Think panel is open
+  const disableSelectionExt = useMemo(() => {
+    if (!thinkPanelOpen) {
+      return [];
+    }
+    return [
+      EditorView.domEventHandlers({
+        selectstart: (event) => {
+          event.preventDefault();
+          return true;
+        },
+        mousedown: (event) => {
+          // Prevent mouse selection when panel is open
+          if (event.button === 0) {
+            event.preventDefault();
+            return true;
+          }
+          return false;
+        },
+      }),
+    ];
+  }, [thinkPanelOpen]);
 
   // Track if mouse is over toolbar widget
   const isMouseOverToolbarRef = useRef(false);
@@ -308,6 +366,11 @@ export function AIEnhancedEditor({
   
   // Handle paragraph hover - update which paragraph is hovered
   const handleParagraphHover = useCallback((paragraphId: string | null) => {
+    // Don't allow hovering/selection when Think panel is open
+    if (thinkPanelOpen) {
+      return;
+    }
+
     // Clear any pending hide
     if (hideTimeoutRef.current) {
       clearTimeout(hideTimeoutRef.current);
@@ -338,8 +401,6 @@ export function AIEnhancedEditor({
             onAction: (action: AIActionType) => handleAIAction(action, paragraphId),
             isProcessing,
             processingAction: isProcessing && currentProcessing !== null ? currentProcessing.action : undefined,
-            mode: getMode(paragraphId),
-            onModeToggle: handleModeToggle,
             onMouseEnter: () => {
               isMouseOverToolbarRef.current = true;
               // Clear any pending hide
@@ -394,7 +455,7 @@ export function AIEnhancedEditor({
         }, 300);
       }
     }
-  }, [getAnalysis, handleAIAction, processingParagraph, previousAnalysis, safeDispatchToolbar, getMode, handleModeToggle]);
+  }, [getAnalysis, handleAIAction, processingParagraph, previousAnalysis, safeDispatchToolbar]);
 
   // Keep toolbar visible and update it when processing state changes
   // This ensures immediate update when processing starts and stays open throughout
@@ -426,8 +487,6 @@ export function AIEnhancedEditor({
             onAction: (action: AIActionType) => handleAIAction(action, activeParagraphId),
             isProcessing,
             processingAction: isProcessing ? processingParagraph?.action : undefined,
-            mode: getMode(activeParagraphId),
-            onModeToggle: handleModeToggle,
             onMouseEnter: () => {
               isMouseOverToolbarRef.current = true;
               // Clear any pending hide
@@ -466,7 +525,7 @@ export function AIEnhancedEditor({
         });
       }
     });
-  }, [processingParagraph, _hoveredParagraph, handleAIAction, previousAnalysis, paragraphs, value, safeDispatchToolbar, getMode, handleModeToggle]);
+  }, [processingParagraph, _hoveredParagraph, handleAIAction, previousAnalysis, paragraphs, value, safeDispatchToolbar]);
 
   // Cleanup timeouts on unmount
   useEffect(() => {
@@ -503,8 +562,8 @@ export function AIEnhancedEditor({
           value={value}
           onChange={onChange}
           onSelectionChange={onSelectionChange}
-          onCursorPositionChange={onCursorPositionChange}
-          extensions={[toolbarExt]}
+          onCursorPositionChange={handleCursorPositionChangeInternal}
+          extensions={[toolbarExt, ...disableSelectionExt]}
           onEditorViewReady={(view) => {
             editorViewRef.current = view;
           }}
@@ -521,6 +580,16 @@ export function AIEnhancedEditor({
             editorView={editorViewRef.current}
             toolbarVisible={_hoveredParagraph !== null}
             toolbarParagraphId={_hoveredParagraph}
+          />
+        </div>
+        
+        {/* Paragraph Mode Toggles Column (overlay on left, after line numbers) */}
+        <div className="absolute left-0 top-0 h-full z-20 pointer-events-none" style={{ paddingLeft: '52px' }}>
+          <ParagraphModeToggles
+            content={value}
+            editorView={editorViewRef.current}
+            openParagraphId={openParagraphId}
+            onOpenPanel={onOpenPanel || (() => {})}
           />
         </div>
       </div>

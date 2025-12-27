@@ -90,8 +90,16 @@ export function useDocumentState(documentId: string, projectId: string) {
 
       setIsSaving(true);
       try {
+        // Get current document to preserve metadata (especially paragraphModes)
+        const currentDocument = await api.documents.get(actualDocumentId);
+        
+        // Update document with content change, preserving existing metadata
         const document = await api.documents.update(actualDocumentId, {
           content: contentToSave,
+          metadata: {
+            ...currentDocument.metadata,
+            paragraphModes: paragraphModes, // Preserve current paragraph modes
+          },
           changeType,
         });
         setDocumentTitle(document.title);
@@ -104,7 +112,7 @@ export function useDocumentState(documentId: string, projectId: string) {
         setIsSaving(false);
       }
     },
-    [actualDocumentId]
+    [actualDocumentId, paragraphModes]
   );
 
   // Update content with auto-save
