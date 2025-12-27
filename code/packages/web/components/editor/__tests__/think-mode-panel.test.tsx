@@ -7,15 +7,24 @@ import { describe, it, expect, vi } from 'vitest';
 import { ThinkModePanel } from '../think-mode-panel';
 
 describe('ThinkModePanel', () => {
+  const defaultProps = {
+    isOpen: true,
+    onClose: vi.fn(),
+    paragraphId: 'para-0',
+    content: 'Test content',
+    documentId: 'test-doc-id',
+    onContentGenerated: vi.fn(),
+  };
+
   it('should not render when isOpen is false', () => {
     const { container } = render(
-      <ThinkModePanel isOpen={false} onClose={vi.fn()} />
+      <ThinkModePanel {...defaultProps} isOpen={false} />
     );
     expect(container.firstChild).toBeNull();
   });
 
   it('should render when isOpen is true', () => {
-    render(<ThinkModePanel isOpen={true} onClose={vi.fn()} />);
+    render(<ThinkModePanel {...defaultProps} />);
     
     expect(screen.getByText('Think Mode')).toBeInTheDocument();
     expect(screen.getByText('Brainstorm')).toBeInTheDocument();
@@ -25,7 +34,7 @@ describe('ThinkModePanel', () => {
 
   it('should call onClose when close button is clicked', () => {
     const onClose = vi.fn();
-    render(<ThinkModePanel isOpen={true} onClose={onClose} />);
+    render(<ThinkModePanel {...defaultProps} onClose={onClose} />);
     
     const closeButton = screen.getByTitle('Close Think Mode Panel');
     closeButton.click();
@@ -34,7 +43,7 @@ describe('ThinkModePanel', () => {
   });
 
   it('should display tab navigation', () => {
-    render(<ThinkModePanel isOpen={true} onClose={vi.fn()} />);
+    render(<ThinkModePanel {...defaultProps} />);
     
     const brainstormTab = screen.getByText('Brainstorm');
     const researchTab = screen.getByText('Research');
@@ -46,10 +55,9 @@ describe('ThinkModePanel', () => {
   });
 
   it('should display brainstorm content', () => {
-    render(<ThinkModePanel isOpen={true} onClose={vi.fn()} />);
+    render(<ThinkModePanel {...defaultProps} />);
     
-    expect(screen.getByText(/Use this space to brainstorm ideas/)).toBeInTheDocument();
-    expect(screen.getByText('Brainstorming tools coming soon...')).toBeInTheDocument();
+    expect(screen.getByText(/Start brainstorming by asking questions or sharing ideas about this block/)).toBeInTheDocument();
   });
 });
 
