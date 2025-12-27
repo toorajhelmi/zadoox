@@ -348,8 +348,8 @@ Only return an empty array if the response is just a question, acknowledgment, o
       }
 
       return ideas
-        .filter((idea: any) => idea.topic && idea.description)
-        .map((idea: any) => ({
+        .filter((idea: { topic?: unknown; description?: unknown }) => idea.topic && idea.description)
+        .map((idea: { topic: unknown; description: unknown }) => ({
           topic: String(idea.topic).substring(0, 50),
           description: String(idea.description),
         }));

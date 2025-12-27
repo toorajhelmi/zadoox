@@ -506,7 +506,7 @@ export async function aiRoutes(fastify: FastifyInstance) {
     },
     async (request: AuthenticatedRequest, reply) => {
       try {
-        const { paragraphId, message, context, chatHistory = [], existingIdeaCards = [], model } = request.body as {
+        const { message, context, chatHistory = [], existingIdeaCards = [], model } = request.body as {
           paragraphId: string;
           message: string;
           context: {
@@ -639,7 +639,7 @@ export async function aiRoutes(fastify: FastifyInstance) {
     },
     async (request: AuthenticatedRequest, reply) => {
       try {
-        const { paragraphId, ideaCard, context, mode, model } = request.body as {
+        const { ideaCard, context, mode, model } = request.body as {
           paragraphId: string;
           ideaCard: { topic: string; description: string };
           context: {
