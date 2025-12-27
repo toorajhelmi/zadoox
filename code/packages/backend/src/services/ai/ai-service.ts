@@ -126,6 +126,52 @@ export class AIService {
   }
 
   /**
+   * Brainstorm chat - conversational brainstorming
+   */
+  async brainstormChat(
+    message: string,
+    chatHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
+    context: {
+      blockContent: string;
+      sectionHeading?: string;
+      sectionContent?: string;
+    },
+    model?: AIModel
+  ): Promise<string> {
+    const provider = this.getProvider(model);
+    return provider.brainstormChat(message, chatHistory, context);
+  }
+
+  /**
+   * Extract significant ideas from assistant response
+   */
+  async extractIdeas(
+    assistantResponse: string,
+    existingIdeas: Array<{ topic: string; description: string }>,
+    model?: AIModel
+  ): Promise<Array<{ topic: string; description: string }>> {
+    const provider = this.getProvider(model);
+    return provider.extractIdeas(assistantResponse, existingIdeas);
+  }
+
+  /**
+   * Generate content from an idea card
+   */
+  async generateFromIdea(
+    idea: { topic: string; description: string },
+    context: {
+      blockContent: string;
+      sectionHeading?: string;
+      sectionContent?: string;
+    },
+    mode: 'blend' | 'replace',
+    model?: AIModel
+  ): Promise<string> {
+    const provider = this.getProvider(model);
+    return provider.generateFromIdea(idea, context, mode);
+  }
+
+  /**
    * Get available models
    */
   getAvailableModels(): AIModelInfo[] {

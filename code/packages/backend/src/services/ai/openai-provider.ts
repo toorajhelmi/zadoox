@@ -203,6 +203,210 @@ export class OpenAIProvider implements AIProvider {
     return response.choices[0]?.message?.content?.trim() || '';
   }
 
+  async brainstormChat(
+    message: string,
+    chatHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
+    context: {
+      blockContent: string;
+      sectionHeading?: string;
+      sectionContent?: string;
+    }
+  ): Promise<string> {
+    const systemPrompt = `You are a creative brainstorming assistant helping a writer develop content ideas for a document block.
+
+Your role is to:
+- Engage in natural, conversational brainstorming
+- Suggest creative approaches, angles, and ideas
+- Ask clarifying questions when needed
+- Build on previous conversation context
+- Provide thoughtful, actionable suggestions
+
+Be conversational, helpful, and creative.`;
+
+    const contextPrompt = `BLOCK TO BRAINSTORM:
+${context.blockContent}
+
+${context.sectionHeading ? `SECTION HEADING: ${context.sectionHeading}\n` : ''}${context.sectionContent ? `SECTION CONTEXT:\n${context.sectionContent}\n` : ''}`;
+
+    // Build messages array
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      { role: 'system', content: systemPrompt },
+    ];
+
+    // Only include context prompt if this is the first message (no chat history)
+    if (chatHistory.length === 0) {
+      messages.push({ role: 'user', content: contextPrompt });
+    }
+
+    // Add chat history (filter out any invalid entries)
+    const validHistory = chatHistory
+      .filter(msg => msg && msg.role && msg.content && typeof msg.content === 'string')
+      .map(msg => ({
+        role: msg.role as 'user' | 'assistant',
+        content: String(msg.content).trim(),
+      }))
+      .filter(msg => msg.content.length > 0);
+
+    messages.push(...validHistory);
+
+    // Add current message
+    messages.push({ role: 'user', content: message.trim() });
+
+    // Validate messages before sending
+    if (messages.length < 2) {
+      throw new Error('Invalid message structure: need at least system and user messages');
+    }
+
+    const response = await this.client.chat.completions.create({
+      model: this.model,
+      messages,
+      temperature: 0.8,
+    });
+
+    return response.choices[0]?.message?.content?.trim() || '';
+  }
+
+  async extractIdeas(
+    assistantResponse: string,
+    existingIdeas: Array<{ topic: string; description: string }>
+  ): Promise<Array<{ topic: string; description: string }>> {
+    const existingIdeasText = existingIdeas.length > 0
+      ? existingIdeas.map((idea, i) => `${i + 1}. Topic: ${idea.topic}\n   Description: ${idea.description}`).join('\n\n')
+      : 'None';
+
+    const prompt = `You are analyzing an AI assistant's brainstorming response to extract significant, actionable ideas.
+
+EXISTING IDEA CARDS:
+${existingIdeasText}
+
+ASSISTANT RESPONSE:
+${assistantResponse}
+
+Extract all significant ideas from the response. An idea is significant if it:
+1. Represents a distinct, actionable concept or approach that can be used to generate content
+2. ${existingIdeas.length > 0 ? 'Adds new value beyond existing ideas (can be related but should be a distinct angle, theme, or approach)' : 'Is worth capturing as a separate, actionable idea'}
+3. Is specific enough to be useful for content generation
+
+IMPORTANT: Even if ideas are related to existing ones, extract them if they represent:
+- A different angle or perspective
+- A new theme or concept
+- A distinct approach or method
+- A specific story element, character concept, or narrative direction
+
+For each idea, provide:
+- A short topic/title (max 50 chars) - be specific and descriptive
+- A brief description (1-2 sentences) - explain what the idea is about
+
+Examples of good ideas:
+- "Quantum communication story concept" - A sci-fi story about quantum technology
+- "Parallel universe warning theme" - Explore consequences of choices across realities
+- "Character-driven narrative approach" - Focus on character development over plot
+- "Opening scene with quantum lab" - Specific scene setting with physicist character
+- "Alternate reality warning conflict" - Central conflict involving parallel universe messages
+
+Return your response as a JSON object with an "ideas" array:
+{
+  "ideas": [
+    {
+      "topic": "short topic",
+      "description": "brief description"
+    }
+  ]
+}
+
+Only return an empty array if the response is just a question, acknowledgment, or doesn't contain any extractable concepts.`;
+
+    const response = await this.client.chat.completions.create({
+      model: this.model,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert at identifying and extracting significant, distinct ideas from text.',
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.3,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      return [];
+    }
+
+    try {
+      // Try to parse as JSON object first (in case it's wrapped)
+      const parsed = JSON.parse(content);
+      // Handle both { ideas: [...] } and [...] formats
+      const ideas = Array.isArray(parsed) ? parsed : (parsed.ideas || parsed.ideasArray || []);
+      
+      if (!Array.isArray(ideas)) {
+        return [];
+      }
+
+      return ideas
+        .filter((idea: any) => idea.topic && idea.description)
+        .map((idea: any) => ({
+          topic: String(idea.topic).substring(0, 50),
+          description: String(idea.description),
+        }));
+    } catch {
+      // If parsing fails, return empty array
+      return [];
+    }
+  }
+
+  async generateFromIdea(
+    idea: { topic: string; description: string },
+    context: {
+      blockContent: string;
+      sectionHeading?: string;
+      sectionContent?: string;
+    },
+    mode: 'blend' | 'replace'
+  ): Promise<string> {
+    const modeInstruction = mode === 'blend'
+      ? 'Seamlessly blend the new content with the existing content, maintaining continuity and flow.'
+      : 'Replace the existing content entirely with new content based on the idea.';
+
+    const prompt = `Generate content for the following block based on the selected idea.
+
+IDEA:
+Topic: ${idea.topic}
+Description: ${idea.description}
+
+BLOCK CONTEXT:
+${context.sectionHeading ? `Section Heading: ${context.sectionHeading}\n` : ''}${context.sectionContent ? `Section Content:\n${context.sectionContent}\n` : ''}${mode === 'blend' ? `Existing Content:\n${context.blockContent}\n` : ''}
+
+INSTRUCTIONS:
+- Generate content that implements the idea
+- Match the style and tone of the document
+- ${modeInstruction}
+- If section: Ensure content works with all paragraphs in section
+- Maintain markdown formatting
+- Provide only the generated content, no explanations`;
+
+    const response = await this.client.chat.completions.create({
+      model: this.model,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert writing assistant. Generate high-quality content based on ideas and context.',
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      temperature: 0.7,
+    });
+
+    return response.choices[0]?.message?.content?.trim() || '';
+  }
+
   getModelInfo(): AIModelInfo {
     return {
       id: this.model,

@@ -153,4 +153,56 @@ export interface CitationResearchResponse {
   query: string;
 }
 
+// Brainstorm API types
+export interface BrainstormChatRequest {
+  paragraphId: string;
+  message: string;
+  context: {
+    blockContent: string;
+    sectionHeading?: string;
+    sectionContent?: string;
+  };
+  chatHistory?: Array<{
+    id: string;
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp: string;
+  }>;
+  existingIdeaCards?: Array<{
+    id: string;
+    topic: string;
+    description: string;
+    sourceMessageId: string;
+    createdAt: string;
+  }>;
+  model?: AIModel;
+}
+
+export interface BrainstormChatResponse {
+  response: string;
+  extractedIdeas?: Array<{
+    topic: string;
+    description: string;
+  }>;
+}
+
+export interface BrainstormGenerateRequest {
+  paragraphId: string;
+  ideaCard: {
+    topic: string;
+    description: string;
+  };
+  context: {
+    blockContent: string;
+    sectionHeading?: string;
+    sectionContent?: string;
+  };
+  mode: 'blend' | 'replace';
+  model?: AIModel;
+}
+
+export interface BrainstormGenerateResponse {
+  content: string;
+}
+
 

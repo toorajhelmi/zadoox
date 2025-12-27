@@ -390,10 +390,57 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             </div>
           )}
           
-          {/* Think Mode Panel - Shows on right when opened */}
+          {/* Think Mode Panel - Shows on left when opened */}
           <ThinkModePanel 
             isOpen={thinkPanelOpen}
             onClose={handleClosePanel}
+            paragraphId={openParagraphId}
+            content={content}
+            documentId={actualDocumentId}
+            onContentGenerated={async (generatedContent, mode) => {
+              // Find the paragraph and replace/blend content
+              if (!openParagraphId) return;
+              
+              const lines = content.split('\n');
+              const match = openParagraphId.match(/^para-(\d+)$/);
+              if (!match) return;
+              
+              const startLine = parseInt(match[1], 10);
+              if (startLine < 0 || startLine >= lines.length) return;
+              
+              // Check if section
+              const isHeading = (line: string) => /^#{1,6}\s/.test(line.trim());
+              const startLineIsHeading = startLine < lines.length && isHeading(lines[startLine].trim());
+              
+              let endLine = startLine;
+              if (startLineIsHeading) {
+                endLine = startLine + 1;
+                while (endLine < lines.length) {
+                  if (isHeading(lines[endLine].trim())) break;
+                  endLine++;
+                }
+              } else {
+                while (endLine < lines.length) {
+                  const trimmed = lines[endLine].trim();
+                  if (!trimmed || isHeading(trimmed)) break;
+                  endLine++;
+                }
+              }
+              
+              const beforeLines = lines.slice(0, startLine);
+              const afterLines = lines.slice(endLine);
+              
+              let newContent: string;
+              if (mode === 'replace') {
+                newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
+              } else {
+                // Blend: the AI already blended it, so just use generated content
+                newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
+              }
+              
+              updateContent(newContent);
+              await saveDocument(newContent, 'ai-action');
+            }}
           />
           
           {(viewMode === 'preview' || viewMode === 'split') && (

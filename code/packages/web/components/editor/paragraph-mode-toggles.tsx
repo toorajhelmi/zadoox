@@ -32,39 +32,68 @@ export function ParagraphModeToggles({
   const updateTimerRef = useRef<NodeJS.Timeout | null>(null);
   const togglesContainerRef = useRef<HTMLDivElement>(null);
 
+  // Helper function to check if a line is a markdown heading
+  const isHeading = (line: string): boolean => {
+    const trimmed = line.trim();
+    return /^#{1,6}\s/.test(trimmed);
+  };
+
   // Parse paragraphs from content
+  // Sections (headings) and all content below until next heading are treated as one paragraph
   useEffect(() => {
     const lines = content.split('\n');
     const parsed: ParagraphMetadata[] = [];
-    let currentParagraph: { startLine: number; text: string } | null = null;
+    let currentParagraph: { startLine: number; endLine: number; text: string } | null = null;
 
     lines.forEach((line, index) => {
       const trimmed = line.trim();
+      const lineIsHeading = isHeading(trimmed);
       
-      if (!trimmed && currentParagraph) {
-        parsed.push({
-          id: `para-${currentParagraph.startLine}`,
-          startLine: currentParagraph.startLine,
-          endLine: index - 1,
-          text: currentParagraph.text.trim(),
-        });
-        currentParagraph = null;
+      if (lineIsHeading) {
+        // If we encounter a heading, save current paragraph (if any) and start a new section
+        if (currentParagraph) {
+          parsed.push({
+            id: `para-${currentParagraph.startLine}`,
+            startLine: currentParagraph.startLine,
+            endLine: currentParagraph.endLine,
+            text: currentParagraph.text.trim(),
+          });
+        }
+        // Start new section with this heading
+        currentParagraph = { startLine: index, endLine: index, text: trimmed };
       } else if (trimmed) {
+        // Non-heading content - add to current paragraph (or start one if none exists)
         if (!currentParagraph) {
-          currentParagraph = { startLine: index, text: trimmed };
+          currentParagraph = { startLine: index, endLine: index, text: trimmed };
         } else {
           currentParagraph.text += ' ' + trimmed;
+          currentParagraph.endLine = index;
         }
+      } else if (!trimmed && currentParagraph) {
+        // Blank line - only end paragraph if it's not a section (sections continue through blank lines)
+        // Check if current paragraph starts with a heading by checking the first line
+        const firstLine = lines[currentParagraph.startLine]?.trim() || '';
+        const currentIsHeading = isHeading(firstLine);
+        if (!currentIsHeading) {
+          // Regular paragraph ends at blank line
+          parsed.push({
+            id: `para-${currentParagraph.startLine}`,
+            startLine: currentParagraph.startLine,
+            endLine: currentParagraph.endLine,
+            text: currentParagraph.text.trim(),
+          });
+          currentParagraph = null;
+        }
+        // If it's a section, blank lines are part of the section content
       }
     });
 
     if (currentParagraph) {
-      const para: { startLine: number; text: string } = currentParagraph;
       parsed.push({
-        id: `para-${para.startLine}`,
-        startLine: para.startLine,
-        endLine: lines.length - 1,
-        text: para.text.trim(),
+        id: `para-${currentParagraph.startLine}`,
+        startLine: currentParagraph.startLine,
+        endLine: currentParagraph.endLine,
+        text: currentParagraph.text.trim(),
       });
     }
 
@@ -170,23 +199,22 @@ export function ParagraphModeToggles({
   }, [editorView, paragraphs, content, updateLinePositions]);
 
   return (
-    <div ref={togglesContainerRef} className="paragraph-mode-toggles absolute left-0 top-0 h-full w-6 pointer-events-none z-20">
+    <div ref={togglesContainerRef} className="paragraph-mode-toggles absolute right-0 top-0 h-full w-6 pointer-events-none z-20">
       {paragraphs.map((paragraph) => {
         const position = linePositions.get(paragraph.startLine);
         const lineHeight = 24;
         
         const paragraphTop = position?.top ?? paragraph.startLine * lineHeight;
-        const paragraphHeight = position?.height ?? (paragraph.endLine - paragraph.startLine + 1) * lineHeight;
         
-        // Position toggle at the bottom of the paragraph
+        // Position toggle at the top of the paragraph
         const toggleHeight = 24; // Fixed height for the toggle button
-        const topOffset = paragraphTop + paragraphHeight - toggleHeight;
+        const topOffset = paragraphTop;
 
         return (
           <div
             key={paragraph.id}
             data-paragraph-id={paragraph.id}
-            className="absolute left-0 pointer-events-auto"
+            className="absolute right-0 pointer-events-auto"
             style={{
               top: `${topOffset}px`,
               height: `${toggleHeight}px`,
@@ -196,7 +224,7 @@ export function ParagraphModeToggles({
               onClick={() => {
                 onOpenPanel(paragraph.id);
               }}
-              className={`w-6 h-full border-r border-vscode-border flex items-center justify-center hover:opacity-90 transition-all duration-200 font-bold text-sm ${
+              className={`w-6 h-full border-l border-vscode-border flex items-center justify-center hover:opacity-90 transition-all duration-200 font-bold text-sm ${
                 openParagraphId === paragraph.id
                   ? 'bg-purple-600 text-white' // Purple when panel is open for this paragraph
                   : 'bg-vscode-sidebar/50 text-vscode-text-secondary hover:bg-vscode-buttonBg' // No background when panel is closed
