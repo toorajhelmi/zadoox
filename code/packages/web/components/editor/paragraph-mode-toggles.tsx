@@ -88,12 +88,13 @@ export function ParagraphModeToggles({
       }
     });
 
-    if (currentParagraph !== null) {
+    if (currentParagraph) {
+      const para = currentParagraph as { startLine: number; endLine: number; text: string };
       parsed.push({
-        id: `para-${currentParagraph.startLine}`,
-        startLine: currentParagraph.startLine,
-        endLine: currentParagraph.endLine,
-        text: currentParagraph.text.trim(),
+        id: `para-${para.startLine}`,
+        startLine: para.startLine,
+        endLine: para.endLine,
+        text: para.text.trim(),
       });
     }
 

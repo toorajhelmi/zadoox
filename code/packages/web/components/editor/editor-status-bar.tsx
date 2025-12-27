@@ -82,12 +82,13 @@ export function EditorStatusBar({
     });
 
     // Add final paragraph if exists
-    if (currentParagraph !== null) {
+    if (currentParagraph) {
+      const para = currentParagraph as { startLine: number; endLine: number; text: string };
       paragraphNumber++;
       paragraphs.push({
-        startLine: currentParagraph.startLine,
-        endLine: currentParagraph.endLine,
-        text: currentParagraph.text.trim(),
+        startLine: para.startLine,
+        endLine: para.endLine,
+        text: para.text.trim(),
         paragraphNumber: paragraphNumber,
       });
     }

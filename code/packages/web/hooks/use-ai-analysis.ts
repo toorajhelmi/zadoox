@@ -73,10 +73,11 @@ export function useAIAnalysis(content: string, model: AIModel = 'auto') {
       }
     });
 
-    if (currentParagraph !== null) {
+    if (currentParagraph) {
+      const para: { startLine: number; text: string } = currentParagraph;
       parsed.push({
-        id: `para-${currentParagraph.startLine}`,
-        text: currentParagraph.text.trim(),
+        id: `para-${para.startLine}`,
+        text: para.text.trim(),
       });
     }
 
