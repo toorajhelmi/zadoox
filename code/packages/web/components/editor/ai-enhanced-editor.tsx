@@ -3,10 +3,11 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { CodeMirrorEditor } from './codemirror-editor';
 import { AIIndicators } from './ai-indicators';
+import { ParagraphModeToggles } from './paragraph-mode-toggles';
 import { toolbarExtension, showToolbar } from './toolbar-extension';
 import { useAIAnalysis } from '@/hooks/use-ai-analysis';
 import { api } from '@/lib/api/client';
-import type { AIActionType, AIAnalysisResponse } from '@zadoox/shared';
+import type { AIActionType, AIAnalysisResponse, ParagraphMode } from '@zadoox/shared';
 import { EditorView } from '@codemirror/view';
 
 interface AIEnhancedEditorProps {
@@ -18,6 +19,12 @@ interface AIEnhancedEditorProps {
   sidebarOpen?: boolean;
   onSaveWithType?: (content: string, changeType: 'auto-save' | 'ai-action') => Promise<void>;
   readOnly?: boolean;
+  paragraphModes?: Record<string, ParagraphMode>;
+  documentId?: string;
+  onCurrentParagraphChange?: (paragraphId: string | null) => void;
+  thinkPanelOpen?: boolean;
+  openParagraphId?: string | null;
+  onOpenPanel?: (paragraphId: string) => void;
 }
 
 /**
@@ -33,6 +40,12 @@ export function AIEnhancedEditor({
   sidebarOpen: _sidebarOpen = true,
   onSaveWithType,
   readOnly = false,
+  paragraphModes: _paragraphModes = {},
+  documentId: _documentId,
+  onCurrentParagraphChange,
+  thinkPanelOpen = false,
+  openParagraphId = null,
+  onOpenPanel,
 }: AIEnhancedEditorProps) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_hoveredParagraph, setHoveredParagraph] = useState<string | null>(null);
@@ -44,6 +57,81 @@ export function AIEnhancedEditor({
 
   const { paragraphs, getAnalysis, isAnalyzing, analyze: analyzeParagraph } = useAIAnalysis(value, model);
   const editorViewRef = useRef<EditorView | null>(null);
+  
+  // Helper function to check if a line is a markdown heading
+  const isHeading = (line: string): boolean => {
+    const trimmed = line.trim();
+    return /^#{1,6}\s/.test(trimmed);
+  };
+
+  // Find paragraph at cursor position
+  // Sections (headings) and all content below until next heading are treated as one paragraph
+  const findParagraphAtCursor = useCallback((line: number): string | null => {
+    const lines = value.split('\n');
+    const cursorLine = line - 1; // Convert to 0-based
+    
+    let currentParagraph: { startLine: number; text: string } | null = null;
+    let paragraphStartLine = 0;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trim();
+      const lineIsHeading = isHeading(trimmed);
+      
+      if (lineIsHeading) {
+        // If we encounter a heading, check if cursor was in previous paragraph
+        if (currentParagraph && cursorLine >= paragraphStartLine && cursorLine < i) {
+          return `para-${paragraphStartLine}`;
+        }
+        // Start new section with this heading
+        currentParagraph = { startLine: i, text: trimmed };
+        paragraphStartLine = i;
+      } else if (trimmed) {
+        // Non-heading content - add to current paragraph (or start one if none exists)
+        if (!currentParagraph) {
+          currentParagraph = { startLine: i, text: trimmed };
+          paragraphStartLine = i;
+        } else {
+          currentParagraph.text += ' ' + trimmed;
+        }
+      } else if (!trimmed && currentParagraph) {
+        // Blank line - only end paragraph if it's not a section
+        // Check if current paragraph starts with a heading by checking the first line
+        const firstLine = lines[paragraphStartLine]?.trim() || '';
+        const currentIsHeading = isHeading(firstLine);
+        if (!currentIsHeading) {
+          // Regular paragraph ends at blank line
+          if (cursorLine >= paragraphStartLine && cursorLine < i) {
+            return `para-${paragraphStartLine}`;
+          }
+          currentParagraph = null;
+        }
+        // If it's a section, blank lines are part of the section content
+      }
+    }
+    
+    // Check if cursor is in the final paragraph
+    if (currentParagraph && cursorLine >= paragraphStartLine) {
+      return `para-${paragraphStartLine}`;
+    }
+    
+    return null;
+  }, [value]);
+  
+  // Track current paragraph when cursor moves
+  const handleCursorPositionChangeInternal = useCallback((position: { line: number; column: number } | null) => {
+    // Call the original callback if provided
+    if (onCursorPositionChange) {
+      onCursorPositionChange(position);
+    }
+    
+    // Update current paragraph ID when cursor moves
+    if (position && onCurrentParagraphChange) {
+      const paraId = findParagraphAtCursor(position.line);
+      onCurrentParagraphChange(paraId);
+    } else if (onCurrentParagraphChange) {
+      onCurrentParagraphChange(null);
+    }
+  }, [findParagraphAtCursor, onCursorPositionChange, onCurrentParagraphChange]);
   
   // Get paragraph start position in document (for positioning toolbar above)
   // Since useAIAnalysis doesn't track line numbers, we need to find the paragraph in the document
@@ -82,7 +170,7 @@ export function AIEnhancedEditor({
     return pos;
   }, [paragraphs, value]);
   
-  // Handle AI action (defined first to avoid circular dependency)
+      // Handle AI action (defined first to avoid circular dependency)
   const handleAIAction = useCallback(
     async (action: AIActionType, paragraphId: string) => {
       const paragraph = paragraphs.find((p) => p.id === paragraphId);
@@ -110,6 +198,33 @@ export function AIEnhancedEditor({
       setProcessingParagraph({ id: paragraphId, action });
       
       try {
+        // Extract start line to check if this is a section
+        const startLineMatch = paragraphId.match(/^para-(\d+)$/);
+        const startLine = startLineMatch ? parseInt(startLineMatch[1], 10) : -1;
+        const lines = value.split('\n');
+        const isSection = startLine >= 0 && startLine < lines.length && isHeading(lines[startLine].trim());
+        
+        // For sections, extract only the content (excluding the heading) to send to AI
+        let textToProcess = paragraph.text;
+        let sectionHeading: string | null = null;
+        
+        if (isSection && startLine >= 0 && startLine < lines.length) {
+          sectionHeading = lines[startLine];
+          // Remove heading from text - paragraph.text is "heading content", so we need to extract just content
+          // The paragraph.text starts with the heading, so we need to find where it ends
+          const headingText = lines[startLine].trim();
+          if (textToProcess.startsWith(headingText)) {
+            // Remove heading and any following space
+            textToProcess = textToProcess.substring(headingText.length).trim();
+          } else {
+            // Fallback: try to extract content after first space (if heading is "# intro", text might be "# intro content")
+            const firstSpaceIndex = textToProcess.indexOf(' ', headingText.indexOf(' ') + 1);
+            if (firstSpaceIndex > 0) {
+              textToProcess = textToProcess.substring(firstSpaceIndex).trim();
+            }
+          }
+        }
+
         // Add timeout to prevent hanging (30 seconds)
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => {
@@ -119,7 +234,7 @@ export function AIEnhancedEditor({
 
         const response = await Promise.race([
           api.ai.action({
-            text: paragraph.text,
+            text: textToProcess,
             action,
             model,
           }),
@@ -130,27 +245,52 @@ export function AIEnhancedEditor({
           throw new Error('Invalid response from AI service: missing result');
         }
 
-        // Extract start line from paragraph ID (format: para-{startLine})
-        const startLineMatch = paragraphId.match(/^para-(\d+)$/);
-        if (!startLineMatch) {
-          throw new Error(`Invalid paragraph ID format: ${paragraphId}`);
-        }
-
-        const startLine = parseInt(startLineMatch[1], 10);
-        const lines = value.split('\n');
-
+        // Use the startLine and lines we already extracted above
         if (startLine < 0 || startLine >= lines.length) {
           throw new Error(`Invalid start line: ${startLine} (document has ${lines.length} lines)`);
         }
 
-        // Find the paragraph boundaries: from startLine to the next empty line (exclusive)
+        // Find the paragraph boundaries using the same logic as parsing
+        // Sections (headings) and all content below until next heading are treated as one unit
         let endLine = startLine;
-        while (endLine < lines.length && lines[endLine].trim().length > 0) {
-          endLine++;
+        
+        // Check if start line is a heading
+        const startLineIsHeading = startLine < lines.length && isHeading(lines[startLine].trim());
+        
+        if (startLineIsHeading) {
+          // For headings, include all following lines until next heading (sections continue through blank lines)
+          endLine = startLine + 1;
+          while (endLine < lines.length) {
+            const trimmed = lines[endLine].trim();
+            if (isHeading(trimmed)) {
+              // Next heading starts a new section - don't include it
+              break;
+            }
+            endLine++;
+          }
+        } else {
+          // For regular paragraphs, find until next empty line or heading
+          while (endLine < lines.length) {
+            const trimmed = lines[endLine].trim();
+            if (!trimmed) {
+              // Blank line ends paragraph
+              break;
+            }
+            if (isHeading(trimmed)) {
+              // Heading starts new section - don't include it
+              break;
+            }
+            endLine++;
+          }
         }
 
         // Split the improved text into lines
-        const improvedLines = response.result.split('\n');
+        let improvedLines = response.result.split('\n');
+
+        // If this is a section (heading), prepend the original heading
+        if (isSection && sectionHeading !== null) {
+          improvedLines = [sectionHeading, ...improvedLines];
+        }
 
         // Replace the paragraph lines with the improved lines
         const beforeLines = lines.slice(0, startLine);
@@ -252,6 +392,7 @@ export function AIEnhancedEditor({
     };
   }, [getAnalysis]);
   
+
   // Create extension once - it will use the refs which always point to latest callbacks
   const toolbarExt = useMemo(() => {
     return toolbarExtension(
@@ -259,6 +400,29 @@ export function AIEnhancedEditor({
       (id: string) => getAnalysisRef.current(id)
     );
   }, []); // Empty deps - extension created once
+
+  // Disable selection when Think panel is open
+  const disableSelectionExt = useMemo(() => {
+    if (!thinkPanelOpen) {
+      return [];
+    }
+    return [
+      EditorView.domEventHandlers({
+        selectstart: (event) => {
+          event.preventDefault();
+          return true;
+        },
+        mousedown: (event) => {
+          // Prevent mouse selection when panel is open
+          if (event.button === 0) {
+            event.preventDefault();
+            return true;
+          }
+          return false;
+        },
+      }),
+    ];
+  }, [thinkPanelOpen]);
 
   // Track if mouse is over toolbar widget
   const isMouseOverToolbarRef = useRef(false);
@@ -277,6 +441,11 @@ export function AIEnhancedEditor({
   
   // Handle paragraph hover - update which paragraph is hovered
   const handleParagraphHover = useCallback((paragraphId: string | null) => {
+    // Don't allow hovering/selection when Think panel is open
+    if (thinkPanelOpen) {
+      return;
+    }
+
     // Clear any pending hide
     if (hideTimeoutRef.current) {
       clearTimeout(hideTimeoutRef.current);
@@ -468,8 +637,8 @@ export function AIEnhancedEditor({
           value={value}
           onChange={onChange}
           onSelectionChange={onSelectionChange}
-          onCursorPositionChange={onCursorPositionChange}
-          extensions={[toolbarExt]}
+          onCursorPositionChange={handleCursorPositionChangeInternal}
+          extensions={[toolbarExt, ...disableSelectionExt]}
           onEditorViewReady={(view) => {
             editorViewRef.current = view;
           }}
@@ -486,6 +655,16 @@ export function AIEnhancedEditor({
             editorView={editorViewRef.current}
             toolbarVisible={_hoveredParagraph !== null}
             toolbarParagraphId={_hoveredParagraph}
+          />
+        </div>
+        
+        {/* Paragraph Mode Toggles Column (overlay on right) */}
+        <div className="absolute right-0 top-0 h-full z-20 pointer-events-none">
+          <ParagraphModeToggles
+            content={value}
+            editorView={editorViewRef.current}
+            openParagraphId={openParagraphId}
+            onOpenPanel={onOpenPanel || (() => {})}
           />
         </div>
       </div>

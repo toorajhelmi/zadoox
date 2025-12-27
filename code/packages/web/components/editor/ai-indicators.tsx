@@ -47,41 +47,69 @@ export function AIIndicators({
   // If toolbar is visible, only show that paragraph's indicator
   const activeParagraphId = toolbarVisible ? toolbarParagraphId : hoveredParagraph;
 
+  // Helper function to check if a line is a markdown heading
+  const isHeading = (line: string): boolean => {
+    const trimmed = line.trim();
+    return /^#{1,6}\s/.test(trimmed);
+  };
+
   // Parse content into paragraphs
+  // Sections (headings) and all content below until next heading are treated as one paragraph
   useEffect(() => {
     const lines = content.split('\n');
     const parsed: ParagraphMetadata[] = [];
-    let currentParagraph: { startLine: number; text: string } | null = null;
+    let currentParagraph: { startLine: number; endLine: number; text: string } | null = null;
 
     lines.forEach((line, index) => {
       const trimmed = line.trim();
+      const lineIsHeading = isHeading(trimmed);
       
-      // Empty line ends current paragraph
-      if (!trimmed && currentParagraph) {
-        parsed.push({
-          id: `para-${currentParagraph.startLine}`,
-          startLine: currentParagraph.startLine,
-          endLine: index - 1,
-          text: currentParagraph.text.trim(),
-        });
-        currentParagraph = null;
+      if (lineIsHeading) {
+        // If we encounter a heading, save current paragraph (if any) and start a new section
+        if (currentParagraph) {
+          parsed.push({
+            id: `para-${currentParagraph.startLine}`,
+            startLine: currentParagraph.startLine,
+            endLine: currentParagraph.endLine,
+            text: currentParagraph.text.trim(),
+          });
+        }
+        // Start new section with this heading
+        currentParagraph = { startLine: index, endLine: index, text: trimmed };
       } else if (trimmed) {
-        // Start new paragraph or continue current
+        // Non-heading content - add to current paragraph (or start one if none exists)
         if (!currentParagraph) {
-          currentParagraph = { startLine: index, text: trimmed };
+          currentParagraph = { startLine: index, endLine: index, text: trimmed };
         } else {
           currentParagraph.text += ' ' + trimmed;
+          currentParagraph.endLine = index;
         }
+      } else if (!trimmed && currentParagraph) {
+        // Blank line - only end paragraph if it's not a section (sections continue through blank lines)
+        // Check if current paragraph starts with a heading by checking the first line
+        const firstLine = lines[currentParagraph.startLine]?.trim() || '';
+        const currentIsHeading = isHeading(firstLine);
+        if (!currentIsHeading) {
+          // Regular paragraph ends at blank line
+          parsed.push({
+            id: `para-${currentParagraph.startLine}`,
+            startLine: currentParagraph.startLine,
+            endLine: currentParagraph.endLine,
+            text: currentParagraph.text.trim(),
+          });
+          currentParagraph = null;
+        }
+        // If it's a section, blank lines are part of the section content
       }
     });
 
     // Add final paragraph if exists
     if (currentParagraph) {
-      const para: { startLine: number; text: string } = currentParagraph;
+      const para = currentParagraph as { startLine: number; endLine: number; text: string };
       parsed.push({
         id: `para-${para.startLine}`,
         startLine: para.startLine,
-        endLine: lines.length - 1,
+        endLine: para.endLine,
         text: para.text.trim(),
       });
     }

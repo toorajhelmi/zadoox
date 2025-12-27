@@ -22,7 +22,14 @@ export function useAIAnalysis(content: string, model: AIModel = 'auto') {
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const analyzingParagraphsRef = useRef<Set<string>>(new Set());
 
+  // Helper function to check if a line is a markdown heading
+  const isHeading = (line: string): boolean => {
+    const trimmed = line.trim();
+    return /^#{1,6}\s/.test(trimmed);
+  };
+
   // Parse content into paragraphs
+  // Sections (headings) and all content below until next heading are treated as one paragraph
   const parseParagraphs = useCallback((text: string): Array<{ id: string; text: string }> => {
     const lines = text.split('\n');
     const parsed: Array<{ id: string; text: string }> = [];
@@ -30,19 +37,39 @@ export function useAIAnalysis(content: string, model: AIModel = 'auto') {
 
     lines.forEach((line, index) => {
       const trimmed = line.trim();
+      const lineIsHeading = isHeading(trimmed);
       
-      if (!trimmed && currentParagraph) {
-        parsed.push({
-          id: `para-${currentParagraph.startLine}`,
-          text: currentParagraph.text.trim(),
-        });
-        currentParagraph = null;
+      if (lineIsHeading) {
+        // If we encounter a heading, save current paragraph (if any) and start a new section
+        if (currentParagraph) {
+          parsed.push({
+            id: `para-${currentParagraph.startLine}`,
+            text: currentParagraph.text.trim(),
+          });
+        }
+        // Start new section with this heading
+        currentParagraph = { startLine: index, text: trimmed };
       } else if (trimmed) {
+        // Non-heading content - add to current paragraph (or start one if none exists)
         if (!currentParagraph) {
           currentParagraph = { startLine: index, text: trimmed };
         } else {
           currentParagraph.text += ' ' + trimmed;
         }
+      } else if (!trimmed && currentParagraph) {
+        // Blank line - only end paragraph if it's not a section (sections continue through blank lines)
+        // Check if current paragraph starts with a heading by checking the first line
+        const firstLine = lines[currentParagraph.startLine]?.trim() || '';
+        const currentIsHeading = isHeading(firstLine);
+        if (!currentIsHeading) {
+          // Regular paragraph ends at blank line
+          parsed.push({
+            id: `para-${currentParagraph.startLine}`,
+            text: currentParagraph.text.trim(),
+          });
+          currentParagraph = null;
+        }
+        // If it's a section, blank lines are part of the section content
       }
     });
 

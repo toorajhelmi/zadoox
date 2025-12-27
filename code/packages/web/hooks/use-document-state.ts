@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/client';
+import type { ParagraphMode } from '@zadoox/shared';
 
 const AUTO_SAVE_DELAY = 2000; // 2 seconds after last edit
 
@@ -13,6 +14,7 @@ export function useDocumentState(documentId: string, projectId: string) {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [actualDocumentId, setActualDocumentId] = useState<string>(documentId);
+  const [paragraphModes, setParagraphModes] = useState<Record<string, ParagraphMode>>({});
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load document content (or create "Untitled Document" if project has no documents)
@@ -47,6 +49,7 @@ export function useDocumentState(documentId: string, projectId: string) {
           setContent(document.content || '');
           setDocumentTitle(document.title);
           setLastSaved(new Date(document.updatedAt));
+          setParagraphModes(document.metadata?.paragraphModes || {});
           setIsLoading(false);
           return;
         }
@@ -58,6 +61,7 @@ export function useDocumentState(documentId: string, projectId: string) {
           setContent(document.content || '');
           setDocumentTitle(document.title);
           setLastSaved(new Date(document.updatedAt));
+          setParagraphModes(document.metadata?.paragraphModes || {});
           setIsLoading(false);
         } catch (error) {
           console.error('Failed to load document:', error);
@@ -86,12 +90,21 @@ export function useDocumentState(documentId: string, projectId: string) {
 
       setIsSaving(true);
       try {
+        // Get current document to preserve metadata (especially paragraphModes)
+        const currentDocument = await api.documents.get(actualDocumentId);
+        
+        // Update document with content change, preserving existing metadata
         const document = await api.documents.update(actualDocumentId, {
           content: contentToSave,
+          metadata: {
+            ...currentDocument.metadata,
+            paragraphModes: paragraphModes, // Preserve current paragraph modes
+          },
           changeType,
         });
         setDocumentTitle(document.title);
         setLastSaved(new Date(document.updatedAt));
+        setParagraphModes(document.metadata?.paragraphModes || {});
       } catch (error) {
         console.error('Failed to save document:', error);
         // Don't update lastSaved on error - user will see "Not saved" status
@@ -99,7 +112,7 @@ export function useDocumentState(documentId: string, projectId: string) {
         setIsSaving(false);
       }
     },
-    [actualDocumentId]
+    [actualDocumentId, paragraphModes]
   );
 
   // Update content with auto-save
@@ -139,6 +152,47 @@ export function useDocumentState(documentId: string, projectId: string) {
     };
   }, []);
 
+  // Handle mode toggle
+  const handleModeToggle = useCallback(
+    async (paragraphId: string, newMode: ParagraphMode) => {
+      if (!actualDocumentId || actualDocumentId === 'default') {
+        return;
+      }
+
+      // Update local state immediately for responsive UI
+      setParagraphModes(prev => ({
+        ...prev,
+        [paragraphId]: newMode,
+      }));
+
+      // Get current document to preserve existing metadata
+      try {
+        const currentDocument = await api.documents.get(actualDocumentId);
+        const updatedModes = {
+          ...(currentDocument.metadata?.paragraphModes || {}),
+          [paragraphId]: newMode,
+        };
+
+        // Update document metadata
+        await api.documents.update(actualDocumentId, {
+          metadata: {
+            ...currentDocument.metadata,
+            paragraphModes: updatedModes,
+          },
+        });
+      } catch (error) {
+        console.error('Failed to update paragraph mode:', error);
+        // Revert local state on error
+        setParagraphModes(prev => {
+          const next = { ...prev };
+          delete next[paragraphId];
+          return next;
+        });
+      }
+    },
+    [actualDocumentId]
+  );
+
   return {
     content,
     documentTitle,
@@ -148,6 +202,8 @@ export function useDocumentState(documentId: string, projectId: string) {
     lastSaved,
     isLoading,
     documentId: actualDocumentId,
+    paragraphModes,
+    handleModeToggle,
     saveDocument: async (contentToSave: string, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
       await saveDocument(contentToSave, changeType);
     },

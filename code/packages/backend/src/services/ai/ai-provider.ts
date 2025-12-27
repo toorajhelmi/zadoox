@@ -40,6 +40,40 @@ export interface AIProvider {
   suggestCompletion(text: string, context?: string): Promise<string>;
 
   /**
+   * Brainstorm chat - conversational brainstorming
+   */
+  brainstormChat(
+    message: string,
+    chatHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
+    context: {
+      blockContent: string;
+      sectionHeading?: string;
+      sectionContent?: string;
+    }
+  ): Promise<string>;
+
+  /**
+   * Extract significant ideas from assistant response
+   */
+  extractIdeas(
+    assistantResponse: string,
+    existingIdeas: Array<{ topic: string; description: string }>
+  ): Promise<Array<{ topic: string; description: string }>>;
+
+  /**
+   * Generate content from an idea card
+   */
+  generateFromIdea(
+    idea: { topic: string; description: string },
+    context: {
+      blockContent: string;
+      sectionHeading?: string;
+      sectionContent?: string;
+    },
+    mode: 'blend' | 'replace'
+  ): Promise<string>;
+
+  /**
    * Get model information
    */
   getModelInfo(): AIModelInfo;

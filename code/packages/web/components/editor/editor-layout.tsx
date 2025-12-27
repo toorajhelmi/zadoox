@@ -7,6 +7,7 @@ import { EditorStatusBar } from './editor-status-bar';
 import { AIEnhancedEditor } from './ai-enhanced-editor';
 import { MarkdownPreview } from './markdown-preview';
 import { FormattingToolbar } from './formatting-toolbar';
+import { ThinkModePanel } from './think-mode-panel';
 import { useDocumentState } from '@/hooks/use-document-state';
 import { api } from '@/lib/api/client';
 import type { FormatType } from './floating-format-menu';
@@ -21,14 +22,31 @@ type ViewMode = 'edit' | 'preview' | 'split';
 type SidebarTab = 'outline' | 'history';
 
 export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
-  const { content, documentTitle, updateContent, setContentWithoutSave, isSaving, lastSaved, documentId: actualDocumentId, saveDocument } = useDocumentState(documentId, projectId);
+  const { content, documentTitle, updateContent, setContentWithoutSave, isSaving, lastSaved, documentId: actualDocumentId, saveDocument, paragraphModes, handleModeToggle: handleModeToggleFromHook } = useDocumentState(documentId, projectId);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('outline');
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
   const [latestVersion, setLatestVersion] = useState<number | null>(null);
   const [cursorPosition, setCursorPosition] = useState<{ line: number; column: number } | null>(null);
+  const [thinkPanelOpen, setThinkPanelOpen] = useState(false);
+  const [openParagraphId, setOpenParagraphId] = useState<string | null>(null);
   const currentSelectionRef = useRef<{ from: number; to: number; text: string } | null>(null);
+
+  // Handle opening panel for a paragraph
+  const handleOpenPanel = useCallback((paragraphId: string) => {
+    setThinkPanelOpen(true);
+    setOpenParagraphId(paragraphId);
+    // Ensure paragraph is in Think mode
+    handleModeToggleFromHook(paragraphId, 'think');
+  }, [handleModeToggleFromHook]);
+
+  // Handle closing panel
+  const handleClosePanel = useCallback(() => {
+    setThinkPanelOpen(false);
+    setOpenParagraphId(null);
+  }, []);
+
 
   // Load version metadata to determine latest version
   useEffect(() => {
@@ -109,15 +127,16 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     setCursorPosition(position);
   }, []);
 
-  // Handle keyboard shortcuts (Ctrl+S / Cmd+S for immediate auto-save)
+  // Handle keyboard shortcuts (Ctrl+S / Cmd+S for immediate auto-save, Ctrl+T / Cmd+T for mode toggle)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't allow save if viewing an older version
-      // Allow save if selectedVersion === null (latest) or selectedVersion === latestVersion
+      // Don't allow shortcuts if viewing an older version
+      // Allow shortcuts if selectedVersion === null (latest) or selectedVersion === latestVersion
       if (selectedVersion !== null && latestVersion !== null && selectedVersion !== latestVersion) {
-        return; // Don't allow saving older versions
+        return; // Don't allow shortcuts for older versions
       }
       
+      // Ctrl+S / Cmd+S for immediate auto-save
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         // Trigger immediate auto-save by calling saveDocument directly
@@ -125,11 +144,54 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           saveDocument(content, 'auto-save');
         }
       }
+      
+      // Ctrl+T / Cmd+T to open Think panel for paragraph at cursor
+      if ((e.ctrlKey || e.metaKey) && e.key === 't') {
+        e.preventDefault();
+        // Find paragraph at cursor position
+        if (cursorPosition && handleOpenPanel) {
+          const lines = content.split('\n');
+          const cursorLine = cursorPosition.line - 1; // Convert to 0-based
+          
+          // Find which paragraph contains this line
+          let currentParagraph: { startLine: number; text: string } | null = null;
+          let paragraphStartLine = 0;
+          
+          for (let i = 0; i < lines.length; i++) {
+            const trimmed = lines[i].trim();
+            
+            if (!trimmed && currentParagraph) {
+              // Blank line ends current paragraph
+              if (cursorLine >= paragraphStartLine && cursorLine < i) {
+                // Cursor is in this paragraph
+                const paragraphId = `para-${paragraphStartLine}`;
+                handleOpenPanel(paragraphId);
+                return;
+              }
+              currentParagraph = null;
+            } else if (trimmed) {
+              // Non-empty line - start or continue paragraph
+              if (!currentParagraph) {
+                currentParagraph = { startLine: i, text: trimmed };
+                paragraphStartLine = i;
+              } else {
+                currentParagraph.text += ' ' + trimmed;
+              }
+            }
+          }
+          
+          // Check if cursor is in the final paragraph
+          if (currentParagraph && cursorLine >= paragraphStartLine) {
+            const paragraphId = `para-${paragraphStartLine}`;
+            handleOpenPanel(paragraphId);
+          }
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [content, saveDocument, selectedVersion, latestVersion]);
+  }, [content, saveDocument, selectedVersion, latestVersion, cursorPosition, handleOpenPanel]);
 
   // Handle formatting from toolbar
   const handleFormat = useCallback((format: FormatType) => {
@@ -291,9 +353,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         />
 
         {/* Editor/Preview */}
-        <div className="flex-1 overflow-hidden flex">
+        <div className="flex-1 overflow-hidden flex relative">
           {(viewMode === 'edit' || viewMode === 'split') && (
-            <div className={viewMode === 'split' ? 'flex-1 border-r border-vscode-border overflow-hidden' : 'flex-1 overflow-hidden'}>
+            <div className={viewMode === 'split' ? 'flex-1 border-r border-vscode-border overflow-hidden relative' : 'flex-1 overflow-hidden relative'}>
               <AIEnhancedEditor
                 value={content}
                 onChange={handleContentChange}
@@ -301,7 +363,16 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 onCursorPositionChange={handleCursorPositionChange}
                 model="auto"
                 sidebarOpen={sidebarOpen}
+                paragraphModes={paragraphModes}
+                documentId={actualDocumentId}
+                thinkPanelOpen={thinkPanelOpen}
+                openParagraphId={openParagraphId}
+                onOpenPanel={handleOpenPanel}
                 readOnly={(() => {
+                  // Disable editing when Think panel is open
+                  if (thinkPanelOpen) {
+                    return true;
+                  }
                   // Handle undefined/null latestVersion and ensure it's a valid number
                   let safeLatestVersion: number | null = null;
                   if (latestVersion !== undefined && latestVersion !== null && !isNaN(Number(latestVersion))) {
@@ -318,6 +389,60 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               />
             </div>
           )}
+          
+          {/* Think Mode Panel - Shows on left when opened */}
+          <ThinkModePanel 
+            isOpen={thinkPanelOpen}
+            onClose={handleClosePanel}
+            paragraphId={openParagraphId}
+            content={content}
+            documentId={actualDocumentId}
+            onContentGenerated={async (generatedContent, mode) => {
+              // Find the paragraph and replace/blend content
+              if (!openParagraphId) return;
+              
+              const lines = content.split('\n');
+              const match = openParagraphId.match(/^para-(\d+)$/);
+              if (!match) return;
+              
+              const startLine = parseInt(match[1], 10);
+              if (startLine < 0 || startLine >= lines.length) return;
+              
+              // Check if section
+              const isHeading = (line: string) => /^#{1,6}\s/.test(line.trim());
+              const startLineIsHeading = startLine < lines.length && isHeading(lines[startLine].trim());
+              
+              let endLine = startLine;
+              if (startLineIsHeading) {
+                endLine = startLine + 1;
+                while (endLine < lines.length) {
+                  if (isHeading(lines[endLine].trim())) break;
+                  endLine++;
+                }
+              } else {
+                while (endLine < lines.length) {
+                  const trimmed = lines[endLine].trim();
+                  if (!trimmed || isHeading(trimmed)) break;
+                  endLine++;
+                }
+              }
+              
+              const beforeLines = lines.slice(0, startLine);
+              const afterLines = lines.slice(endLine);
+              
+              let newContent: string;
+              if (mode === 'replace') {
+                newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
+              } else {
+                // Blend: the AI already blended it, so just use generated content
+                newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
+              }
+              
+              updateContent(newContent);
+              await saveDocument(newContent, 'ai-action');
+            }}
+          />
+          
           {(viewMode === 'preview' || viewMode === 'split') && (
             <div className={viewMode === 'split' ? 'flex-1 overflow-auto' : 'flex-1'}>
               <MarkdownPreview content={content} />

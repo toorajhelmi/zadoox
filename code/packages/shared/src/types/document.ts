@@ -17,10 +17,47 @@ export interface Document {
   authorId: string;
 }
 
+export type ParagraphMode = 'write' | 'think';
+
 export interface DocumentMetadata {
   chapterNumber?: number;
   type: DocumentType;
   order?: number;
+  paragraphModes?: Record<string, ParagraphMode>; // paragraphId -> mode mapping
+  brainstormingSessions?: Record<string, BrainstormingSession>; // paragraphId -> session mapping
+}
+
+/**
+ * Brainstorming session for a paragraph/section
+ */
+export interface BrainstormingSession {
+  paragraphId: string; // e.g., "para-0" or "para-5"
+  messages: ChatMessage[]; // Full chat history
+  ideaCards: IdeaCard[]; // Auto-extracted significant ideas
+  createdAt: string; // ISO date string
+  updatedAt: string; // ISO date string
+}
+
+/**
+ * Chat message in a brainstorming session
+ */
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string; // ISO date string
+  ideaCardIds?: string[]; // Links to idea cards extracted from this message
+}
+
+/**
+ * Idea card extracted from brainstorming conversation
+ */
+export interface IdeaCard {
+  id: string;
+  topic: string; // Short title/topic (e.g., "Focus on user benefits")
+  description: string; // Expanded description/explanation
+  sourceMessageId: string; // Which message generated this idea
+  createdAt: string; // ISO date string
 }
 
 export interface CreateDocumentInput {

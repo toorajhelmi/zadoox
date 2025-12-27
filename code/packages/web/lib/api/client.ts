@@ -19,6 +19,10 @@ import type {
   AIModelInfo,
   DocumentVersion,
   VersionMetadata,
+  BrainstormChatRequest,
+  BrainstormChatResponse,
+  BrainstormGenerateRequest,
+  BrainstormGenerateResponse,
 } from '@zadoox/shared';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
@@ -221,6 +225,30 @@ export const api = {
         throw new ApiError('Failed to get AI suggestion', 'SUGGESTION_FAILED', 500);
       }
       return response.data;
+    },
+
+    brainstorm: {
+      chat: async (request: BrainstormChatRequest): Promise<BrainstormChatResponse> => {
+        const response = await fetchApi<BrainstormChatResponse>('/ai/brainstorm/chat', {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+        if (!response.data) {
+          throw new ApiError('Failed to process brainstorm chat', 'BRAINSTORM_CHAT_FAILED', 500);
+        }
+        return response.data;
+      },
+
+      generate: async (request: BrainstormGenerateRequest): Promise<BrainstormGenerateResponse> => {
+        const response = await fetchApi<BrainstormGenerateResponse>('/ai/brainstorm/generate', {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+        if (!response.data) {
+          throw new ApiError('Failed to generate content from idea', 'BRAINSTORM_GENERATE_FAILED', 500);
+        }
+        return response.data;
+      },
     },
   },
 

@@ -177,13 +177,14 @@ export function ParagraphToolbar({
             >
               Improve
             </button>
-            <button
+            {/* Expand button hidden - functionality not working yet */}
+            {/* <button
               onClick={() => onAction('expand')}
               className="px-3 py-1 text-xs bg-vscode-buttonBg hover:bg-vscode-buttonHoverBg text-vscode-buttonText rounded border border-vscode-border transition-colors"
               title="Expand this paragraph"
             >
               Expand
-            </button>
+            </button> */}
             <button
               onClick={() => onAction('clarify')}
               className="px-3 py-1 text-xs bg-vscode-buttonBg hover:bg-vscode-buttonHoverBg text-vscode-buttonText rounded border border-vscode-border transition-colors"

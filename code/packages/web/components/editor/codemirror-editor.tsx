@@ -347,7 +347,7 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange, onCursorP
           basicSetup={{
             lineNumbers: false, // Disable default line numbers, use custom
             highlightActiveLine: true,
-            foldGutter: true,
+            foldGutter: false, // Disable fold gutter (expander icon) for sections
             dropCursor: false,
             allowMultipleSelections: false,
           }}
