@@ -177,4 +177,189 @@ describe('useDocumentState - Core Functionality', () => {
     expect(api.documents.update).not.toHaveBeenCalled();
     expect(result.current.content).toBe('New content without save');
   });
+
+  describe('handleModeToggle', () => {
+    it('should update paragraph mode locally', async () => {
+      const mockDocument: Document = {
+        id: 'doc-1',
+        projectId: 'project-1',
+        title: 'Test Document',
+        content: 'Test content',
+        metadata: { type: 'standalone' },
+        createdAt: new Date('2024-01-01'),
+        updatedAt: new Date('2024-01-02'),
+      };
+
+      vi.mocked(api.documents.get).mockResolvedValueOnce(mockDocument);
+      vi.mocked(api.documents.get).mockResolvedValueOnce(mockDocument);
+      vi.mocked(api.documents.update).mockResolvedValueOnce({
+        ...mockDocument,
+        metadata: {
+          ...mockDocument.metadata,
+          paragraphModes: { 'para-0': 'think' },
+        },
+      });
+
+      const { result } = renderHook(() => useDocumentState('doc-1', 'project-1'));
+
+      await waitFor(
+        () => {
+          expect(result.current.isLoading).toBe(false);
+        },
+        { timeout: 10000 }
+      );
+
+      act(() => {
+        result.current.handleModeToggle('para-0', 'think');
+      });
+
+      await waitFor(() => {
+        expect(result.current.paragraphModes['para-0']).toBe('think');
+      });
+    });
+
+    it('should persist paragraph mode to document metadata', async () => {
+      const mockDocument: Document = {
+        id: 'doc-1',
+        projectId: 'project-1',
+        title: 'Test Document',
+        content: 'Test content',
+        metadata: { type: 'standalone' },
+        createdAt: new Date('2024-01-01'),
+        updatedAt: new Date('2024-01-02'),
+      };
+
+      vi.mocked(api.documents.get).mockResolvedValueOnce(mockDocument);
+      vi.mocked(api.documents.get).mockResolvedValueOnce(mockDocument);
+      vi.mocked(api.documents.update).mockResolvedValueOnce({
+        ...mockDocument,
+        metadata: {
+          ...mockDocument.metadata,
+          paragraphModes: { 'para-0': 'think' },
+        },
+      });
+
+      const { result } = renderHook(() => useDocumentState('doc-1', 'project-1'));
+
+      await waitFor(
+        () => {
+          expect(result.current.isLoading).toBe(false);
+        },
+        { timeout: 10000 }
+      );
+
+      act(() => {
+        result.current.handleModeToggle('para-0', 'think');
+      });
+
+      await waitFor(() => {
+        expect(api.documents.update).toHaveBeenCalledWith(
+          'doc-1',
+          expect.objectContaining({
+            metadata: expect.objectContaining({
+              paragraphModes: { 'para-0': 'think' },
+            }),
+          })
+        );
+      });
+    });
+
+    it('should handle mode toggle for multiple paragraphs', async () => {
+      const mockDocument: Document = {
+        id: 'doc-1',
+        projectId: 'project-1',
+        title: 'Test Document',
+        content: 'First paragraph\n\nSecond paragraph',
+        metadata: { type: 'standalone' },
+        createdAt: new Date('2024-01-01'),
+        updatedAt: new Date('2024-01-02'),
+      };
+
+      vi.mocked(api.documents.get).mockResolvedValue(mockDocument);
+      vi.mocked(api.documents.update).mockResolvedValue(mockDocument);
+
+      const { result } = renderHook(() => useDocumentState('doc-1', 'project-1'));
+
+      await waitFor(
+        () => {
+          expect(result.current.isLoading).toBe(false);
+        },
+        { timeout: 10000 }
+      );
+
+      act(() => {
+        result.current.handleModeToggle('para-0', 'think');
+      });
+
+      await waitFor(() => {
+        expect(result.current.paragraphModes['para-0']).toBe('think');
+      });
+
+      act(() => {
+        result.current.handleModeToggle('para-2', 'think');
+      });
+
+      await waitFor(() => {
+        expect(result.current.paragraphModes['para-0']).toBe('think');
+        expect(result.current.paragraphModes['para-2']).toBe('think');
+      });
+    });
+
+    it('should revert local state on API error', async () => {
+      const mockDocument: Document = {
+        id: 'doc-1',
+        projectId: 'project-1',
+        title: 'Test Document',
+        content: 'Test content',
+        metadata: { type: 'standalone' },
+        createdAt: new Date('2024-01-01'),
+        updatedAt: new Date('2024-01-02'),
+      };
+
+      vi.mocked(api.documents.get).mockResolvedValueOnce(mockDocument);
+      vi.mocked(api.documents.get).mockResolvedValueOnce(mockDocument);
+      vi.mocked(api.documents.update).mockRejectedValueOnce(new Error('API Error'));
+
+      const { result } = renderHook(() => useDocumentState('doc-1', 'project-1'));
+
+      await waitFor(
+        () => {
+          expect(result.current.isLoading).toBe(false);
+        },
+        { timeout: 10000 }
+      );
+
+      act(() => {
+        result.current.handleModeToggle('para-0', 'think');
+      });
+
+      // Initially should be set
+      await waitFor(() => {
+        expect(result.current.paragraphModes['para-0']).toBe('think');
+      });
+
+      // After error, should be reverted
+      await waitFor(() => {
+        expect(result.current.paragraphModes['para-0']).toBeUndefined();
+      }, { timeout: 5000 });
+    });
+
+    it('should not update mode when documentId is "default"', async () => {
+      const { result } = renderHook(() => useDocumentState('default', 'project-1'));
+
+      await waitFor(
+        () => {
+          expect(result.current.isLoading).toBe(false);
+        },
+        { timeout: 10000 }
+      );
+
+      act(() => {
+        result.current.handleModeToggle('para-0', 'think');
+      });
+
+      // Should not call API
+      expect(api.documents.update).not.toHaveBeenCalled();
+    });
+  });
 });
