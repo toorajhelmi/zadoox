@@ -106,7 +106,7 @@ describe('BrainstormTab', () => {
 
     render(<BrainstormTab {...defaultProps} />);
     
-    const textarea = screen.getByPlaceholderText('Ask anything...');
+    const textarea = screen.getByPlaceholderText('Share your thoughts or ask questions...');
     fireEvent.change(textarea, { target: { value: 'Test message' } });
     
     const sendButton = screen.getByTitle('Send message');
@@ -131,7 +131,7 @@ describe('BrainstormTab', () => {
   it('should show arrow icon when input has text', () => {
     render(<BrainstormTab {...defaultProps} />);
     
-    const textarea = screen.getByPlaceholderText('Ask anything...');
+    const textarea = screen.getByPlaceholderText('Share your thoughts or ask questions...');
     fireEvent.change(textarea, { target: { value: 'Test' } });
     
     const button = screen.getByTitle('Send message');
@@ -308,10 +308,27 @@ describe('BrainstormTab', () => {
           timestamp: new Date().toISOString(),
         },
       ],
-      ideaCards: [],
+      ideaCards: [
+        {
+          id: 'idea-1',
+          topic: 'Test Idea',
+          description: 'Test description',
+          createdAt: new Date().toISOString(),
+        },
+      ],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+
+    vi.mocked(api.documents.get).mockResolvedValue({
+      id: 'test-doc-id',
+      metadata: {
+        brainstormingSessions: {
+          'para-0': initialSession,
+        },
+      },
+    } as any);
+    vi.mocked(api.documents.update).mockResolvedValue({} as any);
 
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
 
@@ -340,7 +357,7 @@ describe('BrainstormTab', () => {
 
     render(<BrainstormTab {...defaultProps} />);
     
-    const textarea = screen.getByPlaceholderText('Ask anything...');
+    const textarea = screen.getByPlaceholderText('Share your thoughts or ask questions...');
     fireEvent.change(textarea, { target: { value: 'Test message' } });
     
     const sendButton = screen.getByTitle('Send message');

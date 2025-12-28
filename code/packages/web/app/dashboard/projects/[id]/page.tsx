@@ -88,6 +88,12 @@ export default function ProjectDetailPage() {
             </div>
             <div className="flex items-center gap-3">
               <button
+                onClick={() => router.push(`/dashboard/projects/${projectId}/settings`)}
+                className="px-4 py-2 bg-[#3e3e42] hover:bg-[#464647] text-white rounded text-sm font-medium transition-colors"
+              >
+                Settings
+              </button>
+              <button
                 onClick={handleEdit}
                 className="px-4 py-2 bg-[#007acc] hover:bg-[#1a8cd8] text-white rounded text-sm font-medium transition-colors"
               >

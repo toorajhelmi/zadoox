@@ -42,10 +42,10 @@ export function useAIAnalysis(content: string, model: AIModel = 'auto') {
       if (lineIsHeading) {
         // If we encounter a heading, save current paragraph (if any) and start a new section
         if (currentParagraph) {
-          parsed.push({
-            id: `para-${currentParagraph.startLine}`,
-            text: currentParagraph.text.trim(),
-          });
+        parsed.push({
+          id: `para-${currentParagraph.startLine}`,
+          text: currentParagraph.text.trim(),
+        });
         }
         // Start new section with this heading
         currentParagraph = { startLine: index, text: trimmed };

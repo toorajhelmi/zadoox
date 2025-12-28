@@ -25,6 +25,8 @@ export interface DocumentMetadata {
   order?: number;
   paragraphModes?: Record<string, ParagraphMode>; // paragraphId -> mode mapping
   brainstormingSessions?: Record<string, BrainstormingSession>; // paragraphId -> session mapping
+  researchSessions?: Record<string, ResearchSession>; // paragraphId -> session mapping
+  insertedSources?: ResearchSource[]; // All sources that have been inserted into the document
 }
 
 /**
@@ -58,6 +60,36 @@ export interface IdeaCard {
   description: string; // Expanded description/explanation
   sourceMessageId: string; // Which message generated this idea
   createdAt: string; // ISO date string
+}
+
+/**
+ * Research session for a paragraph/section
+ */
+export interface ResearchSession {
+  paragraphId: string; // e.g., "para-0" or "para-5"
+  messages: ChatMessage[]; // Full chat history
+  sources: ResearchSource[]; // Discovered sources
+  createdAt: string; // ISO date string
+  updatedAt: string; // ISO date string
+}
+
+/**
+ * Research source discovered during research session
+ */
+export interface ResearchSource {
+  id: string;
+  title: string;
+  authors?: string[];
+  venue?: string; // Journal, conference, website, etc.
+  year?: number;
+  url?: string;
+  summary?: string; // AI-generated summary
+  citation?: string; // Formatted citation based on project settings
+  sourceType: 'academic' | 'web'; // Type of source
+  relevanceScore?: number; // AI-assigned relevance score
+  citationContext?: string; // 3-7 words from the block content that appear immediately before where the citation should be inserted
+  createdAt: string; // ISO date string
+  sourceMessageId: string; // Which message discovered this source
 }
 
 export interface CreateDocumentInput {
