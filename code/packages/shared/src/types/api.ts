@@ -205,6 +205,22 @@ export interface BrainstormGenerateResponse {
   content: string;
 }
 
+export interface DraftTransformRequest {
+  draftText: string;
+  paragraphId: string;
+  context: {
+    blockContent: string;
+    sectionHeading?: string;
+    sectionContent?: string;
+  };
+  mode?: 'blend' | 'replace';
+  model?: AIModel;
+}
+
+export interface DraftTransformResponse {
+  content: string;
+}
+
 // Research API types
 export interface ResearchRequest {
   paragraphId: string;
@@ -214,18 +230,24 @@ export interface ResearchRequest {
     sectionHeading?: string;
     sectionContent?: string;
   };
-  documentStyle: 'academic' | 'whitepaper' | 'technical-docs' | 'blog' | 'other';
+  documentStyle?: 'academic' | 'whitepaper' | 'technical-docs' | 'blog' | 'other';
   sourceType?: 'academic' | 'web';
-  chatHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  chatHistory?: Array<{
+    id: string;
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp: string;
+  }>;
   existingSources?: Array<{
     id: string;
     title: string;
     url?: string;
   }>;
-  model?: 'openai' | 'auto';
+  model?: AIModel;
 }
 
 export interface ResearchResponse {
+  response: string;
   sources: Array<{
     title: string;
     authors?: string[];
@@ -234,10 +256,8 @@ export interface ResearchResponse {
     url?: string;
     summary: string;
     sourceType: 'academic' | 'web';
-    relevanceScore: number;
-    citationContext?: string; // 3-7 words from the block content that appear immediately before where the citation should be inserted
+    relevanceScore?: number;
+    citationContext?: string;
   }>;
-  response: string; // AI assistant response
 }
-
 

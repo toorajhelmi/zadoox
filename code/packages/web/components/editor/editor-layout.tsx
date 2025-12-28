@@ -11,75 +11,6 @@ import { ThinkModePanel } from './think-mode-panel';
 import { useDocumentState } from '@/hooks/use-document-state';
 import { api } from '@/lib/api/client';
 import type { FormatType } from './floating-format-menu';
-import type { ResearchSource, CitationFormat } from '@zadoox/shared';
-
-// Generate references section based on citation format
-function generateReferencesSection(sources: ResearchSource[], citationFormat: CitationFormat): string {
-  let references = '## References\n\n';
-  
-  sources.forEach((source, index) => {
-    let citation = '';
-    switch (citationFormat) {
-      case 'apa':
-        if (source.authors && source.authors.length > 0) {
-          citation = `${source.authors.join(', ')} (${source.year || 'n.d.'}). ${source.title}.`;
-          if (source.venue) citation += ` ${source.venue}.`;
-        } else {
-          citation = `${source.title} (${source.year || 'n.d.'}).`;
-        }
-        break;
-      case 'mla':
-        if (source.authors && source.authors.length > 0) {
-          citation = `${source.authors.join(', ')}. "${source.title}."`;
-          if (source.venue) citation += ` ${source.venue},`;
-          if (source.year) citation += ` ${source.year}.`;
-        } else {
-          citation = `"${source.title}."`;
-          if (source.venue) citation += ` ${source.venue},`;
-          if (source.year) citation += ` ${source.year}.`;
-        }
-        break;
-      case 'chicago':
-        if (source.authors && source.authors.length > 0) {
-          citation = `${source.authors.join(', ')}. ${source.year || 'n.d.'}. "${source.title}."`;
-          if (source.venue) citation += ` ${source.venue}.`;
-        } else {
-          citation = `${source.year || 'n.d.'}. "${source.title}."`;
-          if (source.venue) citation += ` ${source.venue}.`;
-        }
-        break;
-      case 'ieee':
-      case 'numbered':
-        citation = `[${index + 1}] `;
-        if (source.authors && source.authors.length > 0) {
-          citation += `${source.authors.join(', ')}, "${source.title},"`;
-        } else {
-          citation += `"${source.title},"`;
-        }
-        if (source.venue) citation += ` ${source.venue},`;
-        if (source.year) citation += ` ${source.year}.`;
-        break;
-      case 'footnote':
-        if (source.authors && source.authors.length > 0) {
-          citation = `${source.authors.join(', ')}, ${source.title}`;
-          if (source.venue) citation += ` (${source.venue})`;
-          if (source.year) citation += ` (${source.year})`;
-        } else {
-          citation = source.title;
-          if (source.venue) citation += ` (${source.venue})`;
-          if (source.year) citation += ` (${source.year})`;
-        }
-        break;
-      default:
-        citation = source.title;
-        if (source.authors) citation += `, ${source.authors.join(', ')}`;
-        if (source.year) citation += ` (${source.year})`;
-    }
-    references += `${citation}\n`;
-  });
-  
-  return references;
-}
 
 interface EditorLayoutProps {
   projectId: string;
@@ -100,25 +31,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [cursorPosition, setCursorPosition] = useState<{ line: number; column: number } | null>(null);
   const [thinkPanelOpen, setThinkPanelOpen] = useState(false);
   const [openParagraphId, setOpenParagraphId] = useState<string | null>(null);
-  const [citationFormat, setCitationFormat] = useState<CitationFormat>('numbered');
-  const [isGeneratingContent, setIsGeneratingContent] = useState(false);
   const currentSelectionRef = useRef<{ from: number; to: number; text: string } | null>(null);
-
-  // Load project settings for citation format
-  useEffect(() => {
-    async function loadProjectSettings() {
-      try {
-        const project = await api.projects.get(projectId);
-        setCitationFormat(project.settings.citationFormat || 'numbered');
-      } catch (error) {
-        console.error('Failed to load project settings:', error);
-      }
-    }
-
-    if (projectId) {
-      loadProjectSettings();
-    }
-  }, [projectId]);
 
   // Handle opening panel for a paragraph
   const handleOpenPanel = useCallback((paragraphId: string) => {
@@ -456,10 +369,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 openParagraphId={openParagraphId}
                 onOpenPanel={handleOpenPanel}
                 readOnly={(() => {
-                  // Disable editing when generating content
-                  if (isGeneratingContent) {
-                    return true;
-                  }
                   // Disable editing when Think panel is open
                   if (thinkPanelOpen) {
                     return true;
@@ -488,311 +397,59 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             paragraphId={openParagraphId}
             content={content}
             documentId={actualDocumentId}
-            projectId={projectId}
-            onGeneratingChange={(isGenerating: boolean) => {
-              setIsGeneratingContent(isGenerating);
-            }}
-            onContentGenerated={async (generatedContent, mode, sources) => {
-              try {
-                if (mode === 'citation' || mode === 'summary') {
-                  // Get all existing sources from document metadata
-                  const document = await api.documents.get(actualDocumentId);
-                  const existingSources = (document.metadata?.insertedSources || []) as ResearchSource[];
-                
-                // For citations, number them based on all sources (existing + new)
-                let citationText = generatedContent;
-                if (mode === 'citation' && sources && sources.length > 0 && (citationFormat === 'numbered' || citationFormat === 'ieee')) {
-                  // Replace [?] placeholders with correct numbers
-                  const allSources = [...existingSources];
-                  const citations: string[] = [];
-                  
-                  sources.forEach((source) => {
-                    // Check if source already exists
-                    const existingIndex = allSources.findIndex(s => s.id === source.id);
-                    if (existingIndex >= 0) {
-                      citations.push(`[${existingIndex + 1}]`);
-                    } else {
-                      // New source - add to list and use new number
-                      allSources.push(source);
-                      citations.push(`[${allSources.length}]`);
-                    }
-                  });
-                  
-                  citationText = citations.join(', ');
-                }
-                
-                // For citations, use LLM to find relevant positions in the block
-                let newContent = content;
-                
-                if (mode === 'citation' && sources && sources.length > 0) {
-                  // Get block content for finding citation positions
-                  if (!openParagraphId) {
-                    return;
-                  }
-                  const lines = content.split('\n');
-                  const match = openParagraphId.match(/^para-(\d+)$/);
-                  if (!match) {
-                    return;
-                  }
-                  const startLine = parseInt(match[1], 10);
-                  if (startLine < 0 || startLine >= lines.length) {
-                    return;
-                  }
-                  
-                  const isHeading = (line: string) => /^#{1,6}\s/.test(line.trim());
-                  let endLine = startLine;
-                  if (isHeading(lines[startLine].trim())) {
-                    endLine = startLine + 1;
-                    while (endLine < lines.length) {
-                      if (isHeading(lines[endLine].trim())) break;
-                      endLine++;
-                    }
-                  } else {
-                    while (endLine < lines.length) {
-                      const trimmed = lines[endLine].trim();
-                      if (!trimmed || isHeading(trimmed)) break;
-                      endLine++;
-                    }
-                  }
-                  
-                  const blockLines = lines.slice(startLine, endLine);
-                  const blockContent = blockLines.join('\n');
-                  
-                  // Create a map of sourceId -> citation number
-                  // First, determine all sources (existing + new) and assign numbers
-                  const allSourcesForNumbering = [...existingSources];
-                  const citationMap = new Map<string, string>();
-                  
-                  sources.forEach((source) => {
-                    const existingIndex = allSourcesForNumbering.findIndex(s => s.id === source.id);
-                    if (existingIndex >= 0) {
-                      // Source already exists - use existing number
-                      citationMap.set(source.id, `[${existingIndex + 1}]`);
-                    } else {
-                      // New source - add to list and use new number
-                      allSourcesForNumbering.push(source);
-                      citationMap.set(source.id, `[${allSourcesForNumbering.length}]`);
-                    }
-                  });
-                  
-                  // Use citation context from sources to find insertion locations
-                  // Search for the context words in the block content to locate where to insert citations
-                  const findCitationPosition = (text: string, context: string | undefined): number => {
-                    if (!context || !context.trim()) {
-                      // Fallback: use end of block if context is missing
-                      return text.trim().length;
-                    }
-                    
-                    const contextTrimmed = context.trim();
-                    // Try exact match first (case-sensitive)
-                    let index = text.indexOf(contextTrimmed);
-                    if (index !== -1) {
-                      // Found the context - return position after it (where citation should go)
-                      return index + contextTrimmed.length;
-                    }
-                    
-                    // Try case-insensitive match
-                    const lowerText = text.toLowerCase();
-                    const lowerContext = contextTrimmed.toLowerCase();
-                    index = lowerText.indexOf(lowerContext);
-                    if (index !== -1) {
-                      return index + contextTrimmed.length;
-                    }
-                    
-                    // Try matching just the last few words of the context
-                    const contextWords = contextTrimmed.split(/\s+/);
-                    if (contextWords.length > 3) {
-                      const lastWords = contextWords.slice(-3).join(' ');
-                      index = lowerText.indexOf(lastWords.toLowerCase());
-                      if (index !== -1) {
-                        // Find the end of the last word
-                        const fullMatch = text.substring(index, index + lastWords.length);
-                        return index + fullMatch.length;
-                      }
-                    }
-                    
-                    // Fallback: use end of block
-                    console.warn('Could not find citation context in block:', {
-                      context: contextTrimmed,
-                      blockPreview: text.substring(0, 100),
-                    });
-                    return text.trim().length;
-                  };
-                  
-                  const sourcesWithPositions = sources
-                    .map(s => {
-                      const position = findCitationPosition(blockContent, s.citationContext);
-                      return {
-                        sourceId: s.id,
-                        position,
-                        citationContext: s.citationContext,
-                      };
-                    })
-                    .sort((a, b) => b.position - a.position); // Sort descending to insert from end to start
-                  
-                  // Insert citations at found positions
-                  let modifiedBlock = blockContent;
-                  for (const pos of sourcesWithPositions) {
-                    const citation = citationMap.get(pos.sourceId);
-                    if (!citation) {
-                      continue;
-                    }
-                    
-                    // Position should always be valid at this point
-                    if (pos.position >= 0 && pos.position <= modifiedBlock.length) {
-                      const before = modifiedBlock.slice(0, pos.position);
-                      const after = modifiedBlock.slice(pos.position);
-                      // Insert citation with space before it (unless already after space/punctuation)
-                      const needsSpace = pos.position > 0 && !/\s$/.test(before) && !/[.,;:!?)\]}]$/.test(before);
-                      modifiedBlock = before + (needsSpace ? ' ' : '') + citation + after;
-                    } else {
-                      // Safety fallback: insert at end if position is out of bounds
-                      console.warn('Citation position out of bounds, inserting at end:', {
-                        sourceId: pos.sourceId,
-                        position: pos.position,
-                        blockLength: modifiedBlock.length,
-                      });
-                      modifiedBlock = modifiedBlock.trim() + ' ' + citation;
-                    }
-                  }
-                  
-                  // Replace block in content
-                  const beforeBlock = lines.slice(0, startLine);
-                  const afterBlock = lines.slice(endLine);
-                  newContent = [...beforeBlock, modifiedBlock, ...afterBlock].join('\n');
-                } else {
-                  // For summaries, insert at end of paragraph
-                  if (!openParagraphId) return;
-                  const lines = content.split('\n');
-                  const match = openParagraphId.match(/^para-(\d+)$/);
-                  if (!match) return;
-                  const startLine = parseInt(match[1], 10);
-                  if (startLine < 0 || startLine >= lines.length) return;
-                  
-                  const isHeading = (line: string) => /^#{1,6}\s/.test(line.trim());
-                  let endLine = startLine;
-                  if (isHeading(lines[startLine].trim())) {
-                    endLine = startLine + 1;
-                    while (endLine < lines.length) {
-                      if (isHeading(lines[endLine].trim())) break;
-                      endLine++;
-                    }
-                  } else {
-                    while (endLine < lines.length) {
-                      const trimmed = lines[endLine].trim();
-                      if (!trimmed || isHeading(trimmed)) break;
-                      endLine++;
-                    }
-                  }
-                  const beforeLines = lines.slice(0, endLine);
-                  const afterLines = lines.slice(endLine);
-                  newContent = [...beforeLines, citationText, ...afterLines].join('\n');
-                }
-                
-                // Update document metadata with new sources
-                // Initialize updatedSources outside the if block so it's available for saving
-                const updatedSources = sources && sources.length > 0
-                  ? (() => {
-                      const updated = [...existingSources];
-                      sources.forEach((source) => {
-                        if (!updated.find(s => s.id === source.id)) {
-                          updated.push(source);
-                        }
-                      });
-                      return updated;
-                    })()
-                  : existingSources;
-                
-                if (sources && sources.length > 0) {
-                  // Add/update references section
-                  const hasReferences = newContent.includes('## References') || newContent.includes('## Bibliography');
-                  
-                  if (!hasReferences) {
-                    // Add new references section at the end
-                    const referencesSection = generateReferencesSection(updatedSources, citationFormat);
-                    newContent = newContent + '\n\n' + referencesSection;
-                  } else {
-                    // Regenerate entire references section with all sources
-                    const refMatch = newContent.match(/(## References|## Bibliography)([\s\S]*)$/);
-                    if (refMatch) {
-                      const beforeRefs = newContent.slice(0, refMatch.index);
-                      const referencesSection = generateReferencesSection(updatedSources, citationFormat);
-                      const refsText = referencesSection.split('\n').slice(2).join('\n'); // Skip "## References\n\n"
-                      newContent = beforeRefs + '## References\n\n' + refsText;
-                    }
-                  }
-                }
-                
-                updateContent(newContent);
-                
-                // Save document with updated metadata including insertedSources
-                if (sources && sources.length > 0) {
-                  const updatedMetadata = {
-                    ...document.metadata,
-                    insertedSources: updatedSources,
-                  };
-                  const updatePayload = {
-                    content: newContent,
-                    metadata: updatedMetadata,
-                    changeType: 'ai-action' as const,
-                  };
-                  await api.documents.update(actualDocumentId, updatePayload);
-                } else {
-                  await saveDocument(newContent, 'ai-action');
+            onContentGenerated={async (generatedContent, mode) => {
+              // Find the paragraph and replace/blend content
+              if (!openParagraphId) return;
+              
+              const lines = content.split('\n');
+              const match = openParagraphId.match(/^para-(\d+)$/);
+              if (!match) return;
+              
+              const startLine = parseInt(match[1], 10);
+              if (startLine < 0 || startLine >= lines.length) return;
+              
+              // Check if section
+              const isHeading = (line: string) => /^#{1,6}\s/.test(line.trim());
+              const startLineIsHeading = startLine < lines.length && isHeading(lines[startLine].trim());
+              
+              let endLine = startLine;
+              if (startLineIsHeading) {
+                endLine = startLine + 1;
+                while (endLine < lines.length) {
+                  if (isHeading(lines[endLine].trim())) break;
+                  endLine++;
                 }
               } else {
-                // Find the paragraph and replace/blend content
-                if (!openParagraphId) return;
-                
-                const lines = content.split('\n');
-                const match = openParagraphId.match(/^para-(\d+)$/);
-                if (!match) return;
-                
-                const startLine = parseInt(match[1], 10);
-                if (startLine < 0 || startLine >= lines.length) return;
-                
-                // Check if section
-                const isHeading = (line: string) => /^#{1,6}\s/.test(line.trim());
-                const startLineIsHeading = startLine < lines.length && isHeading(lines[startLine].trim());
-                
-                let endLine = startLine;
-                if (startLineIsHeading) {
-                  endLine = startLine + 1;
-                  while (endLine < lines.length) {
-                    if (isHeading(lines[endLine].trim())) break;
-                    endLine++;
-                  }
-                } else {
-                  while (endLine < lines.length) {
-                    const trimmed = lines[endLine].trim();
-                    if (!trimmed || isHeading(trimmed)) break;
-                    endLine++;
-                  }
+                while (endLine < lines.length) {
+                  const trimmed = lines[endLine].trim();
+                  if (!trimmed || isHeading(trimmed)) break;
+                  endLine++;
                 }
-                
-                const beforeLines = lines.slice(0, startLine);
-                const afterLines = lines.slice(endLine);
-                
-                let newContent: string;
-                if (mode === 'replace') {
-                  newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
-                } else if (mode === 'extend') {
+              }
+              
+              const beforeLines = lines.slice(0, startLine);
+              const afterLines = lines.slice(endLine); // endLine is exclusive (first line after block)
+              
+              let newContent: string;
+              if (mode === 'replace' || mode === 'extend') {
+                // Replace: use generated content directly
+                // Extend: append generated content (handled in frontend)
+                if (mode === 'extend') {
                   // Extend: append generated content to the existing block content
-                  const currentBlockContent = lines.slice(startLine, endLine + 1).join('\n');
+                  const currentBlockContent = lines.slice(startLine, endLine).join('\n');
                   newContent = [...beforeLines, currentBlockContent + '\n\n' + generatedContent, ...afterLines].join('\n');
                 } else {
-                  // Blend: the AI already blended it, so just use generated content
                   newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
                 }
-                
-                updateContent(newContent);
-                await saveDocument(newContent, 'ai-action');
+              } else {
+                // Blend: the AI already returned the complete blended content (existing + new)
+                // So we replace the entire block with the blended result
+                newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
               }
-            } catch (error) {
-              console.error('Error in content generation:', error);
-              throw error;
-            }
-          }}
+              
+              updateContent(newContent);
+              await saveDocument(newContent, 'ai-action');
+            }}
           />
           
           {(viewMode === 'preview' || viewMode === 'split') && (

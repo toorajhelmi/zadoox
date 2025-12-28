@@ -106,7 +106,7 @@ describe('BrainstormTab', () => {
 
     render(<BrainstormTab {...defaultProps} />);
     
-    const textarea = screen.getByPlaceholderText('Share your thoughts or ask questions...');
+    const textarea = screen.getByPlaceholderText('Ask anything...');
     fireEvent.change(textarea, { target: { value: 'Test message' } });
     
     const sendButton = screen.getByTitle('Send message');
@@ -131,7 +131,7 @@ describe('BrainstormTab', () => {
   it('should show arrow icon when input has text', () => {
     render(<BrainstormTab {...defaultProps} />);
     
-    const textarea = screen.getByPlaceholderText('Share your thoughts or ask questions...');
+    const textarea = screen.getByPlaceholderText('Ask anything...');
     fireEvent.change(textarea, { target: { value: 'Test' } });
     
     const button = screen.getByTitle('Send message');
@@ -357,7 +357,7 @@ describe('BrainstormTab', () => {
 
     render(<BrainstormTab {...defaultProps} />);
     
-    const textarea = screen.getByPlaceholderText('Share your thoughts or ask questions...');
+    const textarea = screen.getByPlaceholderText('Ask anything...');
     fireEvent.change(textarea, { target: { value: 'Test message' } });
     
     const sendButton = screen.getByTitle('Send message');

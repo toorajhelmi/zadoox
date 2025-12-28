@@ -369,8 +369,8 @@ Only return an empty array if the response is just a question, acknowledgment, o
     mode: 'blend' | 'replace'
   ): Promise<string> {
     const modeInstruction = mode === 'blend'
-      ? 'Seamlessly blend the new content with the existing content, maintaining continuity and flow.'
-      : 'Replace the existing content entirely with new content based on the idea.';
+      ? `CRITICAL: Seamlessly blend the new content based on the idea with the existing content below. You must include BOTH the existing content AND the new content, integrated smoothly. Return the COMPLETE blended result, not just the new content.`
+      : 'Replace the existing content entirely with new content based on the idea. Return only the new content.';
 
     const prompt = `Generate content for the following block based on the selected idea.
 
@@ -379,7 +379,7 @@ Topic: ${idea.topic}
 Description: ${idea.description}
 
 BLOCK CONTEXT:
-${context.sectionHeading ? `Section Heading: ${context.sectionHeading}\n` : ''}${context.sectionContent ? `Section Content:\n${context.sectionContent}\n` : ''}${mode === 'blend' ? `Existing Content:\n${context.blockContent}\n` : ''}
+${context.sectionHeading ? `Section Heading: ${context.sectionHeading}\n` : ''}${context.sectionContent ? `Section Content:\n${context.sectionContent}\n` : ''}${mode === 'blend' ? `EXISTING CONTENT (must be preserved and blended with new content):\n${context.blockContent}\n` : ''}
 
 INSTRUCTIONS:
 - Generate content that implements the idea
@@ -387,7 +387,7 @@ INSTRUCTIONS:
 - ${modeInstruction}
 - If section: Ensure content works with all paragraphs in section
 - Maintain markdown formatting
-- Provide only the generated content, no explanations`;
+- Provide only the ${mode === 'blend' ? 'complete blended content' : 'generated content'}, no explanations`;
 
     const response = await this.client.chat.completions.create({
       model: this.model,
@@ -407,305 +407,56 @@ INSTRUCTIONS:
     return response.choices[0]?.message?.content?.trim() || '';
   }
 
-  async researchChat(
-    query: string,
-    chatHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
+  async transformDraft(
+    draftText: string,
     context: {
       blockContent: string;
       sectionHeading?: string;
       sectionContent?: string;
     },
-    documentStyle: 'academic' | 'whitepaper' | 'technical-docs' | 'blog' | 'other',
-    existingSources: Array<{ id: string; title: string; url?: string }>,
-    sourceType?: 'academic' | 'web'
-  ): Promise<{
-    response: string;
-    sources: Array<{
-      title: string;
-      authors?: string[];
-      venue?: string;
-      year?: number;
-      url?: string;
-      summary: string;
-      sourceType: 'academic' | 'web';
-      relevanceScore: number;
-    }>;
-  }> {
-    const sourceTypeFilter = sourceType || 'all';
-    
-    const systemPrompt = `You are a research assistant helping find relevant sources for a document.
+    mode: 'blend' | 'replace' = 'replace'
+  ): Promise<string> {
+    const modeInstruction = mode === 'blend'
+      ? `CRITICAL: Blend the transformed draft content with the existing content below. You must include BOTH the existing content AND the transformed draft content, integrated smoothly. Return the COMPLETE blended result, not just the transformed draft.`
+      : 'Transform the draft text into polished, professional content. Replace the existing content entirely if present.';
 
-CRITICAL REQUIREMENTS - NO HALLUCINATION:
-- You MUST only suggest REAL, ACTUAL sources that exist
-- ALL URLs MUST be real, valid links - NEVER use placeholder URLs like "https://example.com"
-- ALL author names MUST be real people - NEVER make up author names
-- ALL titles MUST be real publication titles - NEVER invent titles
-- If you do not know a real URL for a source, OMIT the URL field entirely - DO NOT make one up
-- If you do not know real authors, OMIT the authors field - DO NOT invent author names
-- Only suggest sources you are confident are real and verifiable
+    const prompt = `Transform the following draft text into polished, well-written content suitable for a document.
 
-Your role is to:
-- Find and suggest relevant, credible, REAL sources based on the user's query
-- Consider the document style and source type filter when suggesting sources
-- Provide accurate summaries of sources
-- Avoid suggesting sources that are already in the existing sources list
-- Be conversational and helpful
+DRAFT TEXT TO TRANSFORM:
+${draftText}
 
-Source types:
-- Academic/Journal/Conference: Peer-reviewed journals, academic conferences, research papers
-- All: Any relevant source type
+BLOCK CONTEXT:
+${context.sectionHeading ? `Section Heading: ${context.sectionHeading}\n` : ''}${context.sectionContent ? `Section Content:\n${context.sectionContent}\n` : ''}${mode === 'blend' && context.blockContent.trim() ? `EXISTING CONTENT (must be preserved and blended with transformed draft):\n${context.blockContent}\n` : context.blockContent.trim() ? `Existing Block Content:\n${context.blockContent}\n` : ''}
 
-Current filter: ${sourceTypeFilter === 'academic' ? 'Journal/Conference' : 'All Sources'}`;
+INSTRUCTIONS:
+- Transform the draft text into polished, professional content
+- Improve grammar, clarity, and flow
+- Maintain the core meaning and ideas from the draft
+- Match the style and tone appropriate for the document context
+- Ensure proper formatting and structure
+- Remove any obvious errors, typos, or inconsistencies
+- Make it ready for publication
+- Preserve important details and information from the draft
+- Use markdown formatting where appropriate
+- ${modeInstruction}
+- Provide only the ${mode === 'blend' ? 'complete blended content' : 'transformed content'}, no explanations or meta-commentary`;
 
-    const contextPrompt = `BLOCK TO RESEARCH:
-${context.blockContent}
-
-${context.sectionHeading ? `SECTION HEADING: ${context.sectionHeading}\n` : ''}${context.sectionContent ? `SECTION CONTEXT:\n${context.sectionContent}\n` : ''}DOCUMENT STYLE: ${documentStyle}
-
-${existingSources.length > 0 ? `EXISTING SOURCES (do not suggest duplicates):\n${existingSources.map(s => `- ${s.title}${s.url ? ` (${s.url})` : ''}`).join('\n')}\n` : ''}`;
-
-    // Build messages array
-    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-      { role: 'system', content: systemPrompt },
-    ];
-
-    // Only include context prompt if this is the first message (no chat history)
-    if (chatHistory.length === 0) {
-      messages.push({ role: 'user', content: contextPrompt });
-    }
-
-    // Add chat history (filter out any invalid entries)
-    const validHistory = chatHistory
-      .filter(msg => msg && msg.role && msg.content && typeof msg.content === 'string')
-      .map(msg => ({
-        role: msg.role as 'user' | 'assistant',
-        content: String(msg.content).trim(),
-      }))
-      .filter(msg => msg.content.length > 0);
-
-    messages.push(...validHistory);
-
-    // Add current query
-    messages.push({ role: 'user', content: query.trim() });
-
-    // Get assistant response
     const response = await this.client.chat.completions.create({
       model: this.model,
-      messages,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert writing editor. Transform rough draft text into polished, publication-ready content while preserving the original meaning and ideas.',
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
       temperature: 0.7,
     });
 
-    const assistantResponse = response.choices[0]?.message?.content?.trim() || '';
-
-    // Now extract sources from the response
-    // For now, we'll use AI to extract and format sources
-    // TODO: Replace with actual API calls (Google Scholar, web search, etc.)
-    const sourcesPrompt = `Based on the following research query and assistant response, extract and format relevant sources.
-
-QUERY: ${query}
-DOCUMENT STYLE: ${documentStyle}
-ASSISTANT RESPONSE: ${assistantResponse}
-
-${existingSources.length > 0 ? `EXISTING SOURCES (do not duplicate):\n${existingSources.map(s => `- ${s.title}`).join('\n')}\n` : ''}
-
-CRITICAL: Extract ONLY REAL sources - NO HALLUCINATION:
-- ALL sources MUST be real, existing publications
-- ALL URLs MUST be valid, working links - NEVER use placeholder URLs
-- ALL authors MUST be real people - NEVER invent author names
-- If you don't know a real URL, OMIT the url field - DO NOT make one up
-- If you don't know real authors, OMIT the authors field - DO NOT invent names
-
-Extract 3-5 relevant, REAL sources. For each source, provide:
-- title: Full title (MUST be a real publication title)
-- authors: Array of REAL author names (ONLY if you know them - omit if unknown, NEVER invent)
-- venue: Journal, conference, website, or publication name (MUST be real)
-- year: Publication year (if known)
-- url: Source URL (ONLY if you know a REAL, valid URL - NEVER use placeholder URLs. If you don't have a real URL, omit this field entirely)
-- summary: 1-2 sentence summary of the source's relevance
-- sourceType: "${sourceTypeFilter === 'academic' ? 'academic' : 'web'}" (academic for Journal/Conference, web for other sources)
-- relevanceScore: Number 0-100 indicating relevance
-
-CRITICAL: For each source, you MUST find a position in the block content where this citation should be inserted. The position should be the character index (0-based) where the citation should be placed.
-
-RULES FOR FINDING CITATION LOCATION:
-1. Analyze the block content carefully to find text that relates to the source's topic, summary, or content
-2. Look for sentences or phrases that discuss concepts, findings, or topics mentioned in the source's summary
-3. The citation should be placed at the END of the relevant sentence or phrase (after the period, comma, or end of the phrase)
-4. If you find multiple relevant locations, choose the MOST RELEVANT one (highest semantic match)
-5. If you cannot find a semantically relevant location, place it at the end of the last sentence in the block
-6. For citationContext, provide 3-7 words that appear IMMEDIATELY BEFORE where the citation should be inserted
-7. The citationContext should be exact words from the block content (case-sensitive match)
-
-BLOCK CONTENT:
-${context.blockContent}
-
-Return as JSON object with "sources" array, where each source includes a "citationContext" field:
-{
-  "sources": [
-    {
-      "title": "Source Title",
-      "authors": ["Author Name"],
-      "venue": "Journal/Conference/Website",
-      "year": 2024,
-      "url": "https://example.com/source",
-      "summary": "Brief summary",
-      "sourceType": "academic",
-      "relevanceScore": 85,
-      "citationContext": "probabilities. Physical systems are"
-    }
-  ]
-}
-
-The citationContext MUST be:
-- A string containing 3-7 words from the block content that appear immediately before where the citation should be inserted
-- Exact words from the block (case-sensitive, including punctuation)
-- If the citation should go at the end of a sentence, include the period: e.g., "probabilities."
-- If the citation should go after a comma, include the comma: e.g., "wavefunction, a"
-- NEVER empty or null
-
-Only include sources that are relevant and credible. If no good sources can be extracted, return {"sources": []}.`;
-
-    const sourcesResponse = await this.client.chat.completions.create({
-      model: this.model,
-      messages: [
-        { role: 'system', content: 'You are a source extraction assistant. Extract and format research sources from text.' },
-        { role: 'user', content: sourcesPrompt },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.3,
-    });
-
-    let sources: Array<{
-      title: string;
-      authors?: string[];
-      venue?: string;
-      year?: number;
-      url?: string;
-      summary: string;
-      sourceType: 'academic' | 'web';
-      relevanceScore: number;
-      citationContext?: string;
-    }> = [];
-
-    try {
-      const sourcesData = JSON.parse(sourcesResponse.choices[0]?.message?.content || '{}');
-      if (sourcesData.sources && Array.isArray(sourcesData.sources)) {
-        sources = sourcesData.sources
-          .filter((source: unknown): source is Record<string, unknown> => 
-            typeof source === 'object' && source !== null && 'title' in source && 'summary' in source
-          )
-          .map((source: Record<string, unknown>) => {
-            // Extract citationContext (3-7 words before citation location)
-            const citationContext = source.citationContext ? String(source.citationContext).trim() : undefined;
-            const titleStr = String(source.title || '');
-            const urlStr = source.url ? String(source.url) : undefined;
-            
-            if (!citationContext) {
-              console.warn('Source missing citationContext:', {
-                title: titleStr.substring(0, 50),
-              });
-            }
-            
-            return {
-              title: titleStr.substring(0, 200),
-              authors: source.authors && Array.isArray(source.authors) ? source.authors.map((a: unknown) => String(a)) : undefined,
-              venue: source.venue ? String(source.venue).substring(0, 100) : undefined,
-              year: source.year ? Number(source.year) : undefined,
-              url: urlStr && !urlStr.includes('example.com') ? urlStr : undefined,
-              summary: String(source.summary).substring(0, 500),
-              sourceType: (source.sourceType === 'academic' || source.sourceType === 'web')
-                ? source.sourceType
-                : 'web',
-              relevanceScore: source.relevanceScore ? Math.max(0, Math.min(100, Number(source.relevanceScore))) : 50,
-              citationContext, // 3-7 words from block content before citation location
-            };
-          });
-      }
-    } catch (error) {
-      console.error('Failed to parse sources from AI response:', error);
-    }
-
-    return {
-      response: assistantResponse,
-      sources,
-    };
-  }
-
-  async findCitationPositions(
-    blockContent: string,
-    sources: Array<{
-      id: string;
-      title: string;
-      authors?: string[];
-      summary: string;
-    }>
-  ): Promise<Array<{
-    sourceId: string;
-    position: number | null;
-    relevantText?: string;
-  }>> {
-    const prompt = `You are analyzing a text block to find the best positions to insert citations for research sources.
-
-Text block:
-${blockContent}
-
-Sources to cite:
-${sources.map((s, i) => `${i + 1}. ${s.title}${s.authors ? ` by ${s.authors.join(', ')}` : ''}\n   Summary: ${s.summary}`).join('\n\n')}
-
-For each source, find the most relevant sentence or phrase in the text block where this citation should be inserted. If no relevant text is found for a source, return null for that position.
-
-Return a JSON object with this structure:
-{
-  "positions": [
-    {
-      "sourceId": "<source id>",
-      "position": <character position in text (0-based), or null if no relevant text>,
-      "relevantText": "<the sentence or phrase where citation should be inserted, if position is not null>"
-    }
-  ]
-}
-
-The position should be the character index where the citation should be inserted (typically at the end of the relevant sentence or phrase). If you cannot find relevant text for a source, set position to null.
-
-Provide only valid JSON, no additional text.`;
-
-    try {
-      const response = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an expert at analyzing academic and technical writing to find appropriate citation positions. Return only valid JSON.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.3,
-      });
-
-      const content = response.choices[0]?.message?.content || '{}';
-      const data = JSON.parse(content);
-      
-      if (data.positions && Array.isArray(data.positions)) {
-        return data.positions.map((p: unknown) => {
-          const pos = p as Record<string, unknown>;
-          return {
-            sourceId: String(pos.sourceId || ''),
-            position: pos.position !== null && pos.position !== undefined ? Number(pos.position) : null,
-            relevantText: pos.relevantText ? String(pos.relevantText) : undefined,
-          };
-        });
-      }
-
-      return sources.map(s => ({ sourceId: s.id, position: null }));
-    } catch (error) {
-      console.error('Failed to find citation positions:', error);
-      // Return null positions for all sources on error
-      return sources.map(s => ({ sourceId: s.id, position: null }));
-    }
+    return response.choices[0]?.message?.content?.trim() || '';
   }
 
   getModelInfo(): AIModelInfo {

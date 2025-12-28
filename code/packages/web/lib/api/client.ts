@@ -23,6 +23,8 @@ import type {
   BrainstormChatResponse,
   BrainstormGenerateRequest,
   BrainstormGenerateResponse,
+  DraftTransformRequest,
+  DraftTransformResponse,
   ResearchRequest,
   ResearchResponse,
 } from '@zadoox/shared';
@@ -98,10 +100,6 @@ async function fetchApi<T>(
   }
 
   if (!response.ok || !data.success) {
-    // Log validation error details for debugging
-    if (data.error?.code === 'VALIDATION_ERROR' && data.error?.details) {
-      console.error('Validation error details:', JSON.stringify(data.error.details, null, 2));
-    }
     throw new ApiError(
       data.error?.message || 'API request failed',
       data.error?.code || 'UNKNOWN_ERROR',
@@ -257,6 +255,19 @@ export const api = {
       },
     },
 
+    draft: {
+      transform: async (request: DraftTransformRequest): Promise<DraftTransformResponse> => {
+        const response = await fetchApi<DraftTransformResponse>('/ai/draft/transform', {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+        if (!response.data) {
+          throw new ApiError('Failed to transform draft', 'DRAFT_TRANSFORM_FAILED', 500);
+        }
+        return response.data;
+      },
+    },
+
     research: {
       chat: async (request: ResearchRequest): Promise<ResearchResponse> => {
         const response = await fetchApi<ResearchResponse>('/ai/research/chat', {
@@ -265,16 +276,6 @@ export const api = {
         });
         if (!response.data) {
           throw new ApiError('Failed to process research chat', 'RESEARCH_CHAT_FAILED', 500);
-        }
-        return response.data;
-      },
-      findCitationPositions: async (blockContent: string, sources: Array<{ id: string; title: string; authors?: string[]; summary: string }>): Promise<Array<{ sourceId: string; position: number | null; relevantText?: string }>> => {
-        const response = await fetchApi<Array<{ sourceId: string; position: number | null; relevantText?: string }>>('/ai/research/find-citation-positions', {
-          method: 'POST',
-          body: JSON.stringify({ blockContent, sources }),
-        });
-        if (!response.data) {
-          throw new ApiError('Failed to find citation positions', 'FIND_CITATION_POSITIONS_FAILED', 500);
         }
         return response.data;
       },

@@ -532,60 +532,114 @@ This phase implements delta-based document versioning to efficiently track docum
 ---
 
 ### Phase 7.7: Write/Think Mode Toggle & Think Mode UI 🧠
-**Status**: Not Started
+**Status**: ✅ COMPLETED
 
-This phase adds the ability to toggle each paragraph section between "write" and "think" modes, providing a non-textual tab-based UI for brainstorming, research, and connecting fragments when in think mode.
+This phase adds the ability to toggle each paragraph section between "write" and "think" modes, providing a tab-based UI for brainstorming, research, and draft transformation when in think mode.
 
 #### Write/Think Toggle:
-- [ ] **Paragraph mode toggle**:
-  - [ ] Toggle button/indicator per paragraph (write ↔ think)
-  - [ ] Visual indicator showing current mode (icon or badge)
-  - [ ] Mode state persisted per paragraph (stored in document metadata)
-  - [ ] Keyboard shortcut to toggle mode (e.g., Ctrl+T / Cmd+T)
+- [x] **Paragraph mode toggle**:
+  - [x] Toggle button ("T" button) per paragraph/section (top-right position)
+  - [x] Visual indicator showing current mode
+  - [x] Mode state persisted per paragraph (stored in document metadata)
+  - [x] Sections and headings treated as single blocks with their content
 
-#### Think Mode UI (Non-textual Tab-based Interface):
-- [ ] **Tab-based interface** (replaces text editor when in think mode):
-  - [ ] Tab navigation system
-  - [ ] Multiple tabs for different think features
-  - [ ] Smooth transitions between write and think modes
+#### Think Mode UI (Tab-based Interface):
+- [x] **Tab-based interface** (left-side panel):
+  - [x] Tab navigation system (Brainstorm, Research, Draft)
+  - [x] Resizable panel (width persisted to localStorage)
+  - [x] Black background with dark gray borders
+  - [x] Smooth transitions between write and think modes
+  - [x] Auto-hide panel after content generation
 
-- [ ] **Brainstorming Tab**:
-  - [ ] Visual brainstorming tools (mind maps, idea clusters)
-  - [ ] Quick idea capture (bullet points, sticky notes)
-  - [ ] Idea organization and grouping
-  - [ ] Connect ideas visually
-  - [ ] Export ideas to text when switching back to write mode
+- [x] **Brainstorming Tab**:
+  - [x] Chat-based brainstorming interface (Cursor-style command bar)
+  - [x] Multi-line text input with auto-resize
+  - [x] Dynamic controls bar (mic icon when empty, arrow icon when text present)
+  - [x] Chat message display (user and assistant messages)
+  - [x] AI-powered idea extraction (extracts all significant ideas from chat)
+  - [x] Idea cards display (expandable cards with horizontal separators)
+  - [x] Idea cards area limited to 25% of chat height with scrollbar
+  - [x] Reset brainstorming session functionality
+  - [x] Content generation from ideas (Blend, Replace, Add/Extend modes)
+  - [x] Progress indicators and loading overlays for content generation
+  - [x] Quick command buttons ("What are key points?", "Generate ideas", "Explore angles", "Suggest topics")
+  - [x] Session persistence in document metadata
 
-- [ ] **Research Tab**:
-  - [ ] Research notes and findings
-  - [ ] Source collection and organization
-  - [ ] Citation suggestions and management
-  - [ ] Link to external sources
-  - [ ] Research fragments that can be connected to text
+- [x] **Research Tab**:
+  - [x] Chat-based research interface (split view: chat left, results right)
+  - [x] Multi-select source type dropdown (All Sources, Journal/Conference)
+  - [x] Source type preselection based on project settings
+  - [x] Research source cards with citation information
+  - [x] Checkboxes for source selection
+  - [x] Insert Citation and Insert Summary buttons (fixed at bottom of results)
+  - [x] Citation insertion with LLM-determined placement (citationContext-based)
+  - [x] References section automatically generated at end of document
+  - [x] Citation formatting based on project settings (APA, MLA, Chicago, IEEE, numbered, footnote)
+  - [x] Reset research session functionality
+  - [x] Session persistence in document metadata
+  - [x] Quick command buttons ("Find references", "Find recent")
+  - [x] Clickable citations in markdown preview (anchor links to references)
 
-- [ ] **Fragments Tab**:
-  - [ ] View and manage text fragments
-  - [ ] Connect fragments into related text
-  - [ ] Fragment organization and tagging
-  - [ ] Merge fragments into paragraphs
-  - [ ] Fragment relationships visualization
+- [x] **Draft Tab**:
+  - [x] Text area for pasting/entering notes or draft text
+  - [x] AI transformation with blend/replace modes
+  - [x] Preview of transformed content
+  - [x] Content insertion options (Blend, Replace, Add/Extend)
+  - [x] Progress indicators and loading overlays for content generation
+  - [x] Session persistence (if needed for future features)
 
-- [ ] **Integration with Write Mode**:
-  - [ ] Convert think mode content to text when switching to write
-  - [ ] Preserve think mode data when switching modes
-  - [ ] Seamless transition between modes
-  - [ ] Think mode content visible in write mode as references
+#### Integration with Write Mode:
+- [x] **Content Generation**:
+  - [x] Blend mode: AI combines existing content with new content seamlessly
+  - [x] Replace mode: AI replaces existing content entirely
+  - [x] Extend/Add mode: Frontend appends generated content to existing block
+  - [x] Content generation creates document versions (changeType: 'ai-action')
+  - [x] Editor becomes read-only during content generation (with overlay)
+  - [x] Panel auto-closes after content generation
+
+- [x] **State Management**:
+  - [x] Think mode state persisted per paragraph in document metadata
+  - [x] Brainstorming sessions persisted in document metadata
+  - [x] Research sessions persisted in document metadata
+  - [x] Inserted sources tracked in document metadata for citation numbering
+  - [x] Sessions preserved even if block is deleted
+
+- [x] **Editor Integration**:
+  - [x] Think panel positioned on left side (resizable)
+  - [x] Editor remains visible when panel is open
+  - [x] Editor becomes read-only during content generation
+  - [x] Proper paragraph/block identification for context-aware AI operations
 
 **Deliverables**:
-- ✅ Write/think toggle functionality per paragraph
-- ✅ Think mode UI with tab-based interface
-- ✅ Brainstorming tools and features
-- ✅ Research management interface
-- ✅ Fragment connection and organization
-- ✅ Mode state persistence
+- ✅ Write/think toggle functionality per paragraph ("T" buttons)
+- ✅ Think mode UI with tab-based interface (left-side panel)
+- ✅ Brainstorming tab with chat, idea extraction, and content generation
+- ✅ Research tab with source collection, citation insertion, and reference management
+- ✅ Draft tab for transforming notes/draft text into polished content
+- ✅ Mode state persistence (per paragraph in document metadata)
+- ✅ Session persistence (brainstorming, research sessions in document metadata)
 - ✅ Smooth transitions between modes
+- ✅ Progress indicators and loading overlays for all content generation operations
+- ✅ Project settings integration (document style, citation format)
 
-**Note**: This feature enables a unique workflow where users can switch between writing text and thinking/brainstorming for each paragraph, providing a more structured approach to content creation.
+**Completed**:
+- Backend AI service methods for brainstorming (chat, extract ideas, generate from idea)
+- Backend AI service methods for research (research chat with citation context)
+- Backend AI service methods for draft transformation (transform draft with blend/replace modes)
+- Frontend Think Mode panel with three tabs (Brainstorm, Research, Draft)
+- Paragraph mode toggles ("T" buttons) positioned top-right of each paragraph/section
+- Content generation with three modes (Blend, Replace, Extend/Add)
+- Citation insertion with LLM-determined placement and automatic references section
+- All sessions persisted in document metadata
+- Progress indicators and loading overlays for better UX
+- Editor read-only state during content generation
+
+**Next Steps** (Future Enhancements):
+- Add keyboard shortcut to toggle mode (Ctrl+T / Cmd+T)
+- Enhance brainstorming with visual tools (mind maps, idea clusters)
+- Add fragment management features
+- Add citation library management
+- Add advanced research filters and sorting
 
 ---
 

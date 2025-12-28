@@ -138,9 +138,12 @@ export function ResearchTab({
     try {
       const chatHistory = updatedMessages
         .filter(msg => msg.role === 'assistant' || msg.role === 'user')
+        .slice(0, -1) // Exclude current message
         .map(msg => ({
+          id: msg.id,
           role: msg.role,
           content: msg.content,
+          timestamp: msg.timestamp,
         }));
 
       const existingSources = sources.map(src => ({
@@ -159,7 +162,7 @@ export function ResearchTab({
         },
         documentStyle,
         sourceType: sourceTypeFilter === 'all' ? undefined : (sourceTypeFilter === 'academic' ? 'academic' : undefined),
-        chatHistory: chatHistory.slice(0, -1), // Exclude current message
+        chatHistory,
         existingSources,
       });
 
