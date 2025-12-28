@@ -624,7 +624,6 @@ export function AIEnhancedEditor({
   // Handle indicator click
   const handleIndicatorClick = useCallback((paragraphId: string, state: string) => {
     // Could open a detailed view or perform action
-    console.log('Indicator clicked:', paragraphId, state);
   }, []);
 
   // Get current paragraph analysis (for future use)

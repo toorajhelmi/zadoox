@@ -47,10 +47,6 @@ function getParagraphInfo(paragraphId: string | null, content: string): {
     return { blockContent: '' };
   }
   
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'think-mode-panel.tsx:45',message:'Extracting block content for research',data:{paragraphId,startLine,contentLength:content.length,firstLine:lines[startLine]?.substring(0,50)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-  // #endregion
-
   // Check if this is a section (starts with heading)
   const startLineIsHeading = isHeading(lines[startLine].trim());
   
@@ -80,10 +76,6 @@ function getParagraphInfo(paragraphId: string | null, content: string): {
   }
 
   const blockContent = lines.slice(startLine, endLine).join('\n');
-  
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'think-mode-panel.tsx:82',message:'Block content extracted for research',data:{paragraphId,startLine,endLine,blockContentLength:blockContent.length,blockContentPreview:blockContent.substring(0,200),isHeading:startLineIsHeading},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-  // #endregion
   
   if (startLineIsHeading) {
     const sectionHeading = lines[startLine];

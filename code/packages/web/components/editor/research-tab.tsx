@@ -233,12 +233,6 @@ export function ResearchTab({
     const selectedSources = sources.filter(src => selectedSourceIds.has(src.id));
     if (selectedSources.length === 0) return;
 
-    console.log('Insert Citation - selectedSources:', selectedSources.map(s => ({
-      id: s.id,
-      title: s.title.substring(0, 50),
-      citationContext: s.citationContext?.substring(0, 50),
-    })));
-
     // Format citations based on citationFormat
     // For numbered formats, we'll let the backend handle numbering based on all sources in document
     const citations = selectedSources.map((source) => {

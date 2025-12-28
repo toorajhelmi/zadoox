@@ -485,20 +485,11 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             documentId={actualDocumentId}
             projectId={projectId}
             onContentGenerated={async (generatedContent, mode, sources) => {
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:489',message:'onContentGenerated called',data:{mode,generatedContentLength:generatedContent?.length,sourcesCount:sources?.length,openParagraphId,contentLength:content.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
-              // #endregion
               try {
                 if (mode === 'citation' || mode === 'summary') {
                   // Get all existing sources from document metadata
-                  // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:493',message:'Fetching document for existing sources',data:{documentId:actualDocumentId},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
-                  // #endregion
                   const document = await api.documents.get(actualDocumentId);
                   const existingSources = (document.metadata?.insertedSources || []) as ResearchSource[];
-                  // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:495',message:'Document fetched',data:{existingSourcesCount:existingSources.length,mode},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
-                  // #endregion
                 
                 // For citations, number them based on all sources (existing + new)
                 let citationText = generatedContent;
@@ -527,28 +518,16 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 
                 if (mode === 'citation' && sources && sources.length > 0) {
                   // Get block content for finding citation positions
-                  // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:521',message:'Starting citation insertion',data:{openParagraphId,sourcesCount:sources.length,contentLength:content.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
-                  // #endregion
                   if (!openParagraphId) {
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:524',message:'No openParagraphId, returning early',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
-                    // #endregion
                     return;
                   }
                   const lines = content.split('\n');
                   const match = openParagraphId.match(/^para-(\d+)$/);
                   if (!match) {
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:527',message:'Invalid paragraphId format',data:{openParagraphId},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
-                    // #endregion
                     return;
                   }
                   const startLine = parseInt(match[1], 10);
                   if (startLine < 0 || startLine >= lines.length) {
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:530',message:'startLine out of bounds',data:{startLine,linesLength:lines.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
-                    // #endregion
                     return;
                   }
                   
@@ -570,9 +549,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                   
                   const blockLines = lines.slice(startLine, endLine);
                   const blockContent = blockLines.join('\n');
-                  
-                  // #region agent log
-                  // #endregion
                   
                   // Create a map of sourceId -> citation number
                   // First, determine all sources (existing + new) and assign numbers
@@ -646,28 +622,11 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                     })
                     .sort((a, b) => b.position - a.position); // Sort descending to insert from end to start
                   
-                  console.log('Citation insertion:', {
-                    blockContent: blockContent.substring(0, 100),
-                    blockLength: blockContent.length,
-                    sourcesWithPositions: sourcesWithPositions.map(p => ({ 
-                      sourceId: p.sourceId, 
-                      position: p.position,
-                      context: p.citationContext?.substring(0, 30),
-                    })),
-                    citationMap: Array.from(citationMap.entries()),
-                  });
-                  
                   // Insert citations at found positions
                   let modifiedBlock = blockContent;
-                  // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:601',message:'Starting citation insertion loop',data:{sourcesWithPositionsCount:sourcesWithPositions.length,initialBlockLength:blockContent.length,sourcesWithPositions:sourcesWithPositions.map(p=>({sourceId:p.sourceId,position:p.position,context:p.citationContext?.substring(0,30)}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
-                  // #endregion
                   for (const pos of sourcesWithPositions) {
                     const citation = citationMap.get(pos.sourceId);
                     if (!citation) {
-                      // #region agent log
-                      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:605',message:'No citation found for sourceId',data:{sourceId:pos.sourceId},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
-                      // #endregion
                       continue;
                     }
                     
@@ -678,14 +637,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                       // Insert citation with space before it (unless already after space/punctuation)
                       const needsSpace = pos.position > 0 && !/\s$/.test(before) && !/[.,;:!?)\]}]$/.test(before);
                       modifiedBlock = before + (needsSpace ? ' ' : '') + citation + after;
-                      // #region agent log
-                      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:612',message:'Citation inserted',data:{sourceId:pos.sourceId,position:pos.position,citation,modifiedBlockLength:modifiedBlock.length,context:pos.citationContext?.substring(0,30)},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
-                      // #endregion
                     } else {
                       // Safety fallback: insert at end if position is out of bounds
-                      // #region agent log
-                      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:619',message:'Citation position out of bounds, using fallback',data:{sourceId:pos.sourceId,position:pos.position,blockLength:modifiedBlock.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
-                      // #endregion
                       console.warn('Citation position out of bounds, inserting at end:', {
                         sourceId: pos.sourceId,
                         position: pos.position,
@@ -699,9 +652,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                   const beforeBlock = lines.slice(0, startLine);
                   const afterBlock = lines.slice(endLine);
                   newContent = [...beforeBlock, modifiedBlock, ...afterBlock].join('\n');
-                  // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:627',message:'Block replaced in content',data:{beforeBlockLength:beforeBlock.length,afterBlockLength:afterBlock.length,modifiedBlockLength:modifiedBlock.length,newContentLength:newContent.length,originalContentLength:content.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
-                  // #endregion
                 } else {
                   // For summaries, insert at end of paragraph
                   if (!openParagraphId) return;
@@ -765,9 +715,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                   }
                 }
                 
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:687',message:'Calling updateContent',data:{newContentLength:newContent.length,originalContentLength:content.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
-                // #endregion
                 updateContent(newContent);
                 
                 // Save document with updated metadata including insertedSources
@@ -781,17 +728,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                     metadata: updatedMetadata,
                     changeType: 'ai-action' as const,
                   };
-                  // #region agent log
-                  // #endregion
-                  console.log('Updating document with payload:', JSON.stringify(updatePayload, null, 2).substring(0, 1000));
                   await api.documents.update(actualDocumentId, updatePayload);
-                  // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:702',message:'Document saved successfully',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
-                  // #endregion
                 } else {
-                  // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:704',message:'Saving document without metadata update',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
-                  // #endregion
                   await saveDocument(newContent, 'ai-action');
                 }
               } else {
@@ -839,9 +777,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 await saveDocument(newContent, 'ai-action');
               }
             } catch (error) {
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:707',message:'Error in content generation',data:{error:error instanceof Error?error.message:String(error),mode},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
-              // #endregion
               console.error('Error in content generation:', error);
               throw error;
             }
