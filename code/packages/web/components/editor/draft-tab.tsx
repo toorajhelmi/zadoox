@@ -103,7 +103,6 @@ export function DraftTab({
 
     if (hasExistingContent) {
       // Show blend/replace dialog
-      setPendingMode('blend');
       setShowBlendReplaceDialog(true);
     } else {
       // No existing content, just replace
