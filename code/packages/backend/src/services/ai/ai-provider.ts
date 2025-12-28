@@ -74,6 +74,19 @@ export interface AIProvider {
   ): Promise<string>;
 
   /**
+   * Transform draft text into polished content
+   */
+  transformDraft(
+    draftText: string,
+    context: {
+      blockContent: string;
+      sectionHeading?: string;
+      sectionContent?: string;
+    },
+    mode: 'blend' | 'replace'
+  ): Promise<string>;
+
+  /**
    * Get model information
    */
   getModelInfo(): AIModelInfo;

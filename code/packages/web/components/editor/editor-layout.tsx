@@ -428,13 +428,22 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               }
               
               const beforeLines = lines.slice(0, startLine);
-              const afterLines = lines.slice(endLine);
+              const afterLines = lines.slice(endLine); // endLine is exclusive (first line after block)
               
               let newContent: string;
-              if (mode === 'replace') {
-                newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
+              if (mode === 'replace' || mode === 'extend') {
+                // Replace: use generated content directly
+                // Extend: append generated content (handled in frontend)
+                if (mode === 'extend') {
+                  // Extend: append generated content to the existing block content
+                  const currentBlockContent = lines.slice(startLine, endLine).join('\n');
+                  newContent = [...beforeLines, currentBlockContent + '\n\n' + generatedContent, ...afterLines].join('\n');
+                } else {
+                  newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
+                }
               } else {
-                // Blend: the AI already blended it, so just use generated content
+                // Blend: the AI already returned the complete blended content (existing + new)
+                // So we replace the entire block with the blended result
                 newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
               }
               

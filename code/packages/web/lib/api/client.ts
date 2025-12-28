@@ -23,6 +23,8 @@ import type {
   BrainstormChatResponse,
   BrainstormGenerateRequest,
   BrainstormGenerateResponse,
+  DraftTransformRequest,
+  DraftTransformResponse,
 } from '@zadoox/shared';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
@@ -246,6 +248,19 @@ export const api = {
         });
         if (!response.data) {
           throw new ApiError('Failed to generate content from idea', 'BRAINSTORM_GENERATE_FAILED', 500);
+        }
+        return response.data;
+      },
+    },
+
+    draft: {
+      transform: async (request: DraftTransformRequest): Promise<DraftTransformResponse> => {
+        const response = await fetchApi<DraftTransformResponse>('/ai/draft/transform', {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+        if (!response.data) {
+          throw new ApiError('Failed to transform draft', 'DRAFT_TRANSFORM_FAILED', 500);
         }
         return response.data;
       },

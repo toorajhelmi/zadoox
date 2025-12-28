@@ -22,10 +22,11 @@ interface BrainstormTabProps {
   sectionHeading?: string;
   sectionContent?: string;
   documentId: string;
-  onContentGenerated: (content: string, mode: 'blend' | 'replace') => void;
+  onContentGenerated: (content: string, mode: 'blend' | 'replace' | 'extend') => void;
   onSessionUpdate?: (session: BrainstormingSession) => void;
   initialSession?: BrainstormingSession | null;
   onReset?: () => void;
+  onGeneratingChange?: (isGenerating: boolean) => void;
 }
 
 export function BrainstormTab({
@@ -38,6 +39,7 @@ export function BrainstormTab({
   onSessionUpdate,
   initialSession,
   onReset,
+  onGeneratingChange,
 }: BrainstormTabProps) {
   const [messages, setMessages] = useState<ChatMessageType[]>(initialSession?.messages || []);
   const [ideaCards, setIdeaCards] = useState<IdeaCardType[]>(initialSession?.ideaCards || []);
@@ -231,9 +233,12 @@ export function BrainstormTab({
     }
   }, [blockContent]);
 
-  const generateContent = useCallback(async (idea: IdeaCardType, mode: 'blend' | 'replace') => {
+  const generateContent = useCallback(async (idea: IdeaCardType, mode: 'blend' | 'replace' | 'extend') => {
     try {
       setIsLoading(true);
+      if (onGeneratingChange) {
+        onGeneratingChange(true);
+      }
       const response = await api.ai.brainstorm.generate({
         paragraphId,
         ideaCard: {
@@ -245,7 +250,7 @@ export function BrainstormTab({
           sectionHeading,
           sectionContent,
         },
-        mode,
+        mode: mode === 'extend' ? 'replace' : mode, // extend handled in frontend
       });
 
       onContentGenerated(response.content, mode);
@@ -254,10 +259,13 @@ export function BrainstormTab({
     } catch (error) {
       console.error('Failed to generate content:', error);
       alert(`Failed to generate content: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (onGeneratingChange) {
+        onGeneratingChange(false);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [paragraphId, blockContent, sectionHeading, sectionContent, onContentGenerated]);
+  }, [paragraphId, blockContent, sectionHeading, sectionContent, onContentGenerated, onGeneratingChange]);
 
   return (
     <div className="flex flex-col h-full bg-black">
@@ -423,6 +431,16 @@ export function BrainstormTab({
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading Overlay - Only show when generating content (not just thinking in chat) */}
+      {isLoading && !showBlendReplaceDialog && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60]">
+          <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 flex flex-col items-center gap-4 min-w-[200px]">
+            <div className="w-8 h-8 border-4 border-gray-600 border-t-vscode-blue rounded-full animate-spin" />
+            <div className="text-sm text-gray-400">Generating content...</div>
           </div>
         </div>
       )}

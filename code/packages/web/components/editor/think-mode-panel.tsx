@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { BrainstormTab } from './brainstorm-tab';
+import { DraftTab } from './draft-tab';
 import { api } from '@/lib/api/client';
 import type { BrainstormingSession } from '@zadoox/shared';
 
@@ -15,7 +16,7 @@ interface ThinkModePanelProps {
   paragraphId: string | null;
   content: string;
   documentId: string;
-  onContentGenerated: (content: string, mode: 'blend' | 'replace') => void;
+  onContentGenerated: (content: string, mode: 'blend' | 'replace' | 'extend') => void;
 }
 
 // Helper to check if a line is a markdown heading
@@ -182,10 +183,14 @@ export function ThinkModePanel({
     setSession(updatedSession);
   };
 
-  const handleContentGenerated = (generatedContent: string, mode: 'blend' | 'replace') => {
+  const handleContentGenerated = (generatedContent: string, mode: 'blend' | 'replace' | 'extend') => {
     onContentGenerated(generatedContent, mode);
     // Auto-close the panel after content is generated
     onClose();
+  };
+
+  const handleDraftContentGenerated = (generatedContent: string, mode: 'blend' | 'replace' | 'extend') => {
+    handleContentGenerated(generatedContent, mode);
   };
 
   const handleReset = () => {
@@ -277,11 +282,14 @@ export function ThinkModePanel({
           </div>
         )}
         {activeTab === 'draft' && (
-          <div className="flex-1 overflow-y-auto p-4 bg-black">
-            <div className="text-xs text-gray-400 text-center py-8">
-              Draft features coming soon...
-            </div>
-          </div>
+          <DraftTab
+            paragraphId={paragraphId}
+            blockContent={paragraphInfo.blockContent}
+            sectionHeading={paragraphInfo.sectionHeading}
+            sectionContent={paragraphInfo.sectionContent}
+            documentId={documentId}
+            onContentGenerated={handleDraftContentGenerated}
+          />
         )}
       </div>
     </div>

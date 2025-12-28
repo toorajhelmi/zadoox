@@ -369,8 +369,8 @@ Only return an empty array if the response is just a question, acknowledgment, o
     mode: 'blend' | 'replace'
   ): Promise<string> {
     const modeInstruction = mode === 'blend'
-      ? 'Seamlessly blend the new content with the existing content, maintaining continuity and flow.'
-      : 'Replace the existing content entirely with new content based on the idea.';
+      ? `CRITICAL: Seamlessly blend the new content based on the idea with the existing content below. You must include BOTH the existing content AND the new content, integrated smoothly. Return the COMPLETE blended result, not just the new content.`
+      : 'Replace the existing content entirely with new content based on the idea. Return only the new content.';
 
     const prompt = `Generate content for the following block based on the selected idea.
 
@@ -379,7 +379,7 @@ Topic: ${idea.topic}
 Description: ${idea.description}
 
 BLOCK CONTEXT:
-${context.sectionHeading ? `Section Heading: ${context.sectionHeading}\n` : ''}${context.sectionContent ? `Section Content:\n${context.sectionContent}\n` : ''}${mode === 'blend' ? `Existing Content:\n${context.blockContent}\n` : ''}
+${context.sectionHeading ? `Section Heading: ${context.sectionHeading}\n` : ''}${context.sectionContent ? `Section Content:\n${context.sectionContent}\n` : ''}${mode === 'blend' ? `EXISTING CONTENT (must be preserved and blended with new content):\n${context.blockContent}\n` : ''}
 
 INSTRUCTIONS:
 - Generate content that implements the idea
@@ -387,7 +387,7 @@ INSTRUCTIONS:
 - ${modeInstruction}
 - If section: Ensure content works with all paragraphs in section
 - Maintain markdown formatting
-- Provide only the generated content, no explanations`;
+- Provide only the ${mode === 'blend' ? 'complete blended content' : 'generated content'}, no explanations`;
 
     const response = await this.client.chat.completions.create({
       model: this.model,
@@ -395,6 +395,58 @@ INSTRUCTIONS:
         {
           role: 'system',
           content: 'You are an expert writing assistant. Generate high-quality content based on ideas and context.',
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      temperature: 0.7,
+    });
+
+    return response.choices[0]?.message?.content?.trim() || '';
+  }
+
+  async transformDraft(
+    draftText: string,
+    context: {
+      blockContent: string;
+      sectionHeading?: string;
+      sectionContent?: string;
+    },
+    mode: 'blend' | 'replace' = 'replace'
+  ): Promise<string> {
+    const modeInstruction = mode === 'blend'
+      ? `CRITICAL: Blend the transformed draft content with the existing content below. You must include BOTH the existing content AND the transformed draft content, integrated smoothly. Return the COMPLETE blended result, not just the transformed draft.`
+      : 'Transform the draft text into polished, professional content. Replace the existing content entirely if present.';
+
+    const prompt = `Transform the following draft text into polished, well-written content suitable for a document.
+
+DRAFT TEXT TO TRANSFORM:
+${draftText}
+
+BLOCK CONTEXT:
+${context.sectionHeading ? `Section Heading: ${context.sectionHeading}\n` : ''}${context.sectionContent ? `Section Content:\n${context.sectionContent}\n` : ''}${mode === 'blend' && context.blockContent.trim() ? `EXISTING CONTENT (must be preserved and blended with transformed draft):\n${context.blockContent}\n` : context.blockContent.trim() ? `Existing Block Content:\n${context.blockContent}\n` : ''}
+
+INSTRUCTIONS:
+- Transform the draft text into polished, professional content
+- Improve grammar, clarity, and flow
+- Maintain the core meaning and ideas from the draft
+- Match the style and tone appropriate for the document context
+- Ensure proper formatting and structure
+- Remove any obvious errors, typos, or inconsistencies
+- Make it ready for publication
+- Preserve important details and information from the draft
+- Use markdown formatting where appropriate
+- ${modeInstruction}
+- Provide only the ${mode === 'blend' ? 'complete blended content' : 'transformed content'}, no explanations or meta-commentary`;
+
+    const response = await this.client.chat.completions.create({
+      model: this.model,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert writing editor. Transform rough draft text into polished, publication-ready content while preserving the original meaning and ideas.',
         },
         {
           role: 'user',

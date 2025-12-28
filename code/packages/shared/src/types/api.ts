@@ -205,4 +205,19 @@ export interface BrainstormGenerateResponse {
   content: string;
 }
 
+export interface DraftTransformRequest {
+  draftText: string;
+  paragraphId: string;
+  context: {
+    blockContent: string;
+    sectionHeading?: string;
+    sectionContent?: string;
+  };
+  mode?: 'blend' | 'replace';
+  model?: AIModel;
+}
+
+export interface DraftTransformResponse {
+  content: string;
+}
 

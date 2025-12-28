@@ -172,6 +172,23 @@ export class AIService {
   }
 
   /**
+   * Transform draft text into polished content
+   */
+  async transformDraft(
+    draftText: string,
+    context: {
+      blockContent: string;
+      sectionHeading?: string;
+      sectionContent?: string;
+    },
+    mode: 'blend' | 'replace' = 'replace',
+    model?: AIModel
+  ): Promise<string> {
+    const provider = this.getProvider(model);
+    return provider.transformDraft(draftText, context, mode);
+  }
+
+  /**
    * Get available models
    */
   getAvailableModels(): AIModelInfo[] {
