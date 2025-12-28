@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { BrainstormTab } from './brainstorm-tab';
 import { ResearchTab } from './research-tab';
 import { api } from '@/lib/api/client';
-import type { BrainstormingSession, ResearchSession, DocumentStyle, CitationFormat } from '@zadoox/shared';
+import type { BrainstormingSession, ResearchSession, DocumentStyle, CitationFormat, ResearchSource } from '@zadoox/shared';
 
 const DEFAULT_WIDTH = 320; // 80 * 4 (w-80 = 320px)
 const MIN_WIDTH = 240;
