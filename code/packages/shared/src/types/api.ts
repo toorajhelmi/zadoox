@@ -215,7 +215,7 @@ export interface ResearchRequest {
     sectionContent?: string;
   };
   documentStyle: 'academic' | 'whitepaper' | 'technical-docs' | 'blog' | 'other';
-  sourceType?: 'academic' | 'web' | 'publication';
+  sourceType?: 'academic' | 'web';
   chatHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
   existingSources?: Array<{
     id: string;

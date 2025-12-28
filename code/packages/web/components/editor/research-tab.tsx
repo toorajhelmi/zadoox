@@ -299,12 +299,11 @@ export function ResearchTab({
 
     try {
       const currentDocument = await api.documents.get(documentId);
+      const currentSessions = currentDocument.metadata.researchSessions || {};
+      const { [paragraphId]: _, ...remainingSessions } = currentSessions;
       const updatedMetadata = {
         ...currentDocument.metadata,
-        researchSessions: {
-          ...(currentDocument.metadata.researchSessions || {}),
-          [paragraphId]: undefined,
-        },
+        researchSessions: remainingSessions,
       };
       await api.documents.update(documentId, {
         metadata: updatedMetadata,

@@ -779,7 +779,9 @@ export async function aiRoutes(fastify: FastifyInstance) {
     },
     async (request: AuthenticatedRequest, reply) => {
       try {
-        const { query, context, documentStyle, sourceType, chatHistory = [], existingSources = [], model } = request.body as ResearchRequest;
+        const { query, context, documentStyle, sourceType: rawSourceType, chatHistory = [], existingSources = [], model } = request.body as ResearchRequest;
+        // Filter sourceType to only valid values
+        const sourceType = rawSourceType === 'academic' || rawSourceType === 'web' ? rawSourceType : undefined;
 
         if (!query || !query.trim()) {
           const response: ApiResponse<null> = {

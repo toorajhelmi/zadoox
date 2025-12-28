@@ -575,7 +575,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                   const blockContent = blockLines.join('\n');
                   
                   // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:548',message:'Block extracted for citation',data:{startLine,endLine,blockContentLength:blockContent.length,blockContentPreview:blockContent.substring(0,100),sourcesCount:sources.length,sourcesWithPositions:sources.map(s=>({id:s.id,title:s.title?.substring(0,50),citationPosition:s.citationPosition}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
                   // #endregion
                   
                   // Create a map of sourceId -> citation number
@@ -786,7 +785,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                     changeType: 'ai-action' as const,
                   };
                   // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:695',message:'Saving document with metadata',data:{documentId:actualDocumentId,updatedSourcesCount:updatedSources.length,metadataKeys:Object.keys(updatedMetadata),insertedSourcesSample:updatedSources.slice(0,1).map(s=>({id:s.id,title:s.title?.substring(0,50),citationPosition:s.citationPosition})),payloadPreview:JSON.stringify(updatePayload).substring(0,500)},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
                   // #endregion
                   console.log('Updating document with payload:', JSON.stringify(updatePayload, null, 2).substring(0, 1000));
                   await api.documents.update(actualDocumentId, updatePayload);

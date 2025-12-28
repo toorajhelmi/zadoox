@@ -179,7 +179,7 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
 
   // Handle citation link clicks
   useEffect(() => {
-    const handleCitationClick = (e: MouseEvent) => {
+    const handleCitationClick = (e: Event) => {
       const target = e.target as HTMLElement;
       const citationLink = target.closest('.citation-link') as HTMLAnchorElement;
       
@@ -205,9 +205,9 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
 
     const container = document.querySelector('.markdown-content');
     if (container) {
-      container.addEventListener('click', handleCitationClick);
+      container.addEventListener('click', handleCitationClick as EventListener);
       return () => {
-        container.removeEventListener('click', handleCitationClick);
+        container.removeEventListener('click', handleCitationClick as EventListener);
       };
     }
   }, [html]);
