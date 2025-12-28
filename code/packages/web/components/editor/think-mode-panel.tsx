@@ -101,7 +101,7 @@ export function ThinkModePanel({
   documentId,
   onContentGenerated,
 }: ThinkModePanelProps) {
-  const [activeTab, setActiveTab] = useState<'brainstorm' | 'research' | 'fragments'>('brainstorm');
+  const [activeTab, setActiveTab] = useState<'brainstorm' | 'research' | 'draft'>('brainstorm');
   const [session, setSession] = useState<BrainstormingSession | null>(null);
   const [width, setWidth] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -243,14 +243,14 @@ export function ThinkModePanel({
           Research
         </button>
         <button
-          onClick={() => setActiveTab('fragments')}
+          onClick={() => setActiveTab('draft')}
           className={`px-3 py-2 text-xs transition-colors ${
-            activeTab === 'fragments'
+            activeTab === 'draft'
               ? 'bg-gray-800 text-white border-b-2 border-vscode-blue'
               : 'text-gray-400 hover:text-white hover:bg-gray-800'
           }`}
         >
-          Fragments
+          Draft
         </button>
       </div>
 
@@ -276,10 +276,10 @@ export function ThinkModePanel({
             </div>
           </div>
         )}
-        {activeTab === 'fragments' && (
+        {activeTab === 'draft' && (
           <div className="flex-1 overflow-y-auto p-4 bg-black">
             <div className="text-xs text-gray-400 text-center py-8">
-              Fragments features coming soon...
+              Draft features coming soon...
             </div>
           </div>
         )}

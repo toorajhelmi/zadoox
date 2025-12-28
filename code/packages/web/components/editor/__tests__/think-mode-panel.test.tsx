@@ -29,7 +29,7 @@ describe('ThinkModePanel', () => {
     expect(screen.getByText('Think Mode')).toBeInTheDocument();
     expect(screen.getByText('Brainstorm')).toBeInTheDocument();
     expect(screen.getByText('Research')).toBeInTheDocument();
-    expect(screen.getByText('Fragments')).toBeInTheDocument();
+    expect(screen.getByText('Draft')).toBeInTheDocument();
   });
 
   it('should call onClose when close button is clicked', () => {
@@ -47,11 +47,11 @@ describe('ThinkModePanel', () => {
     
     const brainstormTab = screen.getByText('Brainstorm');
     const researchTab = screen.getByText('Research');
-    const fragmentsTab = screen.getByText('Fragments');
+    const draftTab = screen.getByText('Draft');
     
     expect(brainstormTab).toBeInTheDocument();
     expect(researchTab).toBeInTheDocument();
-    expect(fragmentsTab).toBeInTheDocument();
+    expect(draftTab).toBeInTheDocument();
   });
 
   it('should display brainstorm content', () => {
