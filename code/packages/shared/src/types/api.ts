@@ -221,3 +221,43 @@ export interface DraftTransformResponse {
   content: string;
 }
 
+// Research API types
+export interface ResearchRequest {
+  paragraphId: string;
+  query: string;
+  context: {
+    blockContent: string;
+    sectionHeading?: string;
+    sectionContent?: string;
+  };
+  documentStyle?: 'academic' | 'whitepaper' | 'technical-docs' | 'blog' | 'other';
+  sourceType?: 'academic' | 'web';
+  chatHistory?: Array<{
+    id: string;
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp: string;
+  }>;
+  existingSources?: Array<{
+    id: string;
+    title: string;
+    url?: string;
+  }>;
+  model?: AIModel;
+}
+
+export interface ResearchResponse {
+  response: string;
+  sources: Array<{
+    title: string;
+    authors?: string[];
+    venue?: string;
+    year?: number;
+    url?: string;
+    summary: string;
+    sourceType: 'academic' | 'web';
+    relevanceScore?: number;
+    citationContext?: string;
+  }>;
+}
+

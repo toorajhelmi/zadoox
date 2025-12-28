@@ -25,6 +25,8 @@ import type {
   BrainstormGenerateResponse,
   DraftTransformRequest,
   DraftTransformResponse,
+  ResearchRequest,
+  ResearchResponse,
 } from '@zadoox/shared';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
@@ -261,6 +263,19 @@ export const api = {
         });
         if (!response.data) {
           throw new ApiError('Failed to transform draft', 'DRAFT_TRANSFORM_FAILED', 500);
+        }
+        return response.data;
+      },
+    },
+
+    research: {
+      chat: async (request: ResearchRequest): Promise<ResearchResponse> => {
+        const response = await fetchApi<ResearchResponse>('/ai/research/chat', {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+        if (!response.data) {
+          throw new ApiError('Failed to process research chat', 'RESEARCH_CHAT_FAILED', 500);
         }
         return response.data;
       },

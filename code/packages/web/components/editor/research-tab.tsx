@@ -171,7 +171,7 @@ export function ResearchTab({
       };
 
       // Add new sources with IDs
-      const newSources: ResearchSource[] = response.sources.map((source) => {
+      const newSources: ResearchSource[] = response.sources.map((source: any) => {
         // Extract citationContext from API response
         const citationContext = source.citationContext ? String(source.citationContext).trim() : undefined;
         
