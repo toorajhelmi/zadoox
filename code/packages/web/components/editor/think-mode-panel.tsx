@@ -17,7 +17,7 @@ interface ThinkModePanelProps {
   content: string;
   documentId: string;
   projectId: string;
-  onContentGenerated: (content: string, mode: 'blend' | 'replace' | 'citation' | 'summary', sources?: any[]) => void;
+  onContentGenerated: (content: string, mode: 'blend' | 'replace' | 'citation' | 'summary', sources?: ResearchSource[]) => void;
 }
 
 // Helper to check if a line is a markdown heading
@@ -239,7 +239,7 @@ export function ThinkModePanel({
     setSession(updatedSession);
   };
 
-  const handleContentGenerated = (generatedContent: string, mode: 'blend' | 'replace' | 'citation' | 'summary', sources?: any[]) => {
+  const handleContentGenerated = (generatedContent: string, mode: 'blend' | 'replace' | 'citation' | 'summary', sources?: ResearchSource[]) => {
     onContentGenerated(generatedContent, mode, sources);
     // Auto-close the panel after content is generated
     if (mode === 'blend' || mode === 'replace' || mode === 'citation' || mode === 'summary') {

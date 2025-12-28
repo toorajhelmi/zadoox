@@ -676,7 +676,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                       const before = modifiedBlock.slice(0, pos.position);
                       const after = modifiedBlock.slice(pos.position);
                       // Insert citation with space before it (unless already after space/punctuation)
-                      const needsSpace = pos.position > 0 && !/\s$/.test(before) && !/[\.,;:!?)\]}]$/.test(before);
+                      const needsSpace = pos.position > 0 && !/\s$/.test(before) && !/[.,;:!?)\]}]$/.test(before);
                       modifiedBlock = before + (needsSpace ? ' ' : '') + citation + after;
                       // #region agent log
                       fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:612',message:'Citation inserted',data:{sourceId:pos.sourceId,position:pos.position,citation,modifiedBlockLength:modifiedBlock.length,context:pos.citationContext?.substring(0,30)},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
