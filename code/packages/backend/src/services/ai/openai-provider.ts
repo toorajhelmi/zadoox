@@ -589,37 +589,29 @@ Only include sources that are relevant and credible. If no good sources can be e
 
     try {
       const sourcesData = JSON.parse(sourcesResponse.choices[0]?.message?.content || '{}');
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'openai-provider.ts:575',message:'LLM response parsed',data:{sourcesCount:sourcesData.sources?.length||0,blockContentLength:context.blockContent.length,blockContentPreview:context.blockContent.substring(0,200)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
       if (sourcesData.sources && Array.isArray(sourcesData.sources)) {
         sources = sourcesData.sources
-          .filter((source: any) => source.title && source.summary)
-          .map((source: any) => {
+          .filter((source: unknown): source is Record<string, unknown> => 
+            typeof source === 'object' && source !== null && 'title' in source && 'summary' in source
+          )
+          .map((source: Record<string, unknown>) => {
             // Extract citationContext (3-7 words before citation location)
             const citationContext = source.citationContext ? String(source.citationContext).trim() : undefined;
+            const titleStr = String(source.title || '');
+            const urlStr = source.url ? String(source.url) : undefined;
             
             if (!citationContext) {
               console.warn('Source missing citationContext:', {
-                title: source.title?.substring(0, 50),
+                title: titleStr.substring(0, 50),
               });
             }
             
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'openai-provider.ts:595',message:'Source citationContext extracted',data:{title:source.title?.substring(0,50),citationContext,blockLength:context.blockContent.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-            // #endregion
-            console.log('Extracted source with citationContext:', {
-              title: source.title?.substring(0, 50),
-              citationContext,
-              blockLength: context.blockContent.length,
-            });
-            
             return {
-              title: String(source.title).substring(0, 200),
-              authors: source.authors && Array.isArray(source.authors) ? source.authors.map((a: any) => String(a)) : undefined,
+              title: titleStr.substring(0, 200),
+              authors: source.authors && Array.isArray(source.authors) ? source.authors.map((a: unknown) => String(a)) : undefined,
               venue: source.venue ? String(source.venue).substring(0, 100) : undefined,
               year: source.year ? Number(source.year) : undefined,
-              url: source.url && !source.url.includes('example.com') ? String(source.url) : undefined,
+              url: urlStr && !urlStr.includes('example.com') ? urlStr : undefined,
               summary: String(source.summary).substring(0, 500),
               sourceType: (source.sourceType === 'academic' || source.sourceType === 'web')
                 ? source.sourceType
@@ -698,11 +690,14 @@ Provide only valid JSON, no additional text.`;
       const data = JSON.parse(content);
       
       if (data.positions && Array.isArray(data.positions)) {
-        return data.positions.map((p: any) => ({
-          sourceId: String(p.sourceId || ''),
-          position: p.position !== null && p.position !== undefined ? Number(p.position) : null,
-          relevantText: p.relevantText ? String(p.relevantText) : undefined,
-        }));
+        return data.positions.map((p: unknown) => {
+          const pos = p as Record<string, unknown>;
+          return {
+            sourceId: String(pos.sourceId || ''),
+            position: pos.position !== null && pos.position !== undefined ? Number(pos.position) : null,
+            relevantText: pos.relevantText ? String(pos.relevantText) : undefined,
+          };
+        });
       }
 
       return sources.map(s => ({ sourceId: s.id, position: null }));
