@@ -622,7 +622,7 @@ export function AIEnhancedEditor({
   }, []);
 
   // Handle indicator click
-  const handleIndicatorClick = useCallback((paragraphId: string, state: string) => {
+  const handleIndicatorClick = useCallback((_paragraphId: string, _state: string) => {
     // Could open a detailed view or perform action
   }, []);
 
