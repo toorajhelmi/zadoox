@@ -101,6 +101,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [thinkPanelOpen, setThinkPanelOpen] = useState(false);
   const [openParagraphId, setOpenParagraphId] = useState<string | null>(null);
   const [citationFormat, setCitationFormat] = useState<CitationFormat>('numbered');
+  const [isGeneratingContent, setIsGeneratingContent] = useState(false);
   const currentSelectionRef = useRef<{ from: number; to: number; text: string } | null>(null);
 
   // Load project settings for citation format
@@ -455,6 +456,10 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 openParagraphId={openParagraphId}
                 onOpenPanel={handleOpenPanel}
                 readOnly={(() => {
+                  // Disable editing when generating content
+                  if (isGeneratingContent) {
+                    return true;
+                  }
                   // Disable editing when Think panel is open
                   if (thinkPanelOpen) {
                     return true;
@@ -484,6 +489,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             content={content}
             documentId={actualDocumentId}
             projectId={projectId}
+            onGeneratingChange={(isGenerating: boolean) => {
+              setIsGeneratingContent(isGenerating);
+            }}
             onContentGenerated={async (generatedContent, mode, sources) => {
               try {
                 if (mode === 'citation' || mode === 'summary') {
@@ -768,6 +776,10 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 let newContent: string;
                 if (mode === 'replace') {
                   newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
+                } else if (mode === 'extend') {
+                  // Extend: append generated content to the existing block content
+                  const currentBlockContent = lines.slice(startLine, endLine + 1).join('\n');
+                  newContent = [...beforeLines, currentBlockContent + '\n\n' + generatedContent, ...afterLines].join('\n');
                 } else {
                   // Blend: the AI already blended it, so just use generated content
                   newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');

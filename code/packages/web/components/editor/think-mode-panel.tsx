@@ -17,7 +17,8 @@ interface ThinkModePanelProps {
   content: string;
   documentId: string;
   projectId: string;
-  onContentGenerated: (content: string, mode: 'blend' | 'replace' | 'citation' | 'summary', sources?: ResearchSource[]) => void;
+  onContentGenerated: (content: string, mode: 'blend' | 'replace' | 'extend' | 'citation' | 'summary', sources?: ResearchSource[]) => void;
+  onGeneratingChange?: (isGenerating: boolean) => void;
 }
 
 // Helper to check if a line is a markdown heading
@@ -103,6 +104,7 @@ export function ThinkModePanel({
   documentId,
   projectId,
   onContentGenerated,
+  onGeneratingChange,
 }: ThinkModePanelProps) {
   const [activeTab, setActiveTab] = useState<'brainstorm' | 'research' | 'fragments'>('brainstorm');
   const [session, setSession] = useState<BrainstormingSession | null>(null);
@@ -231,10 +233,10 @@ export function ThinkModePanel({
     setSession(updatedSession);
   };
 
-  const handleContentGenerated = (generatedContent: string, mode: 'blend' | 'replace' | 'citation' | 'summary', sources?: ResearchSource[]) => {
+  const handleContentGenerated = (generatedContent: string, mode: 'blend' | 'replace' | 'extend' | 'citation' | 'summary', sources?: ResearchSource[]) => {
     onContentGenerated(generatedContent, mode, sources);
     // Auto-close the panel after content is generated
-    if (mode === 'blend' || mode === 'replace' || mode === 'citation' || mode === 'summary') {
+    if (mode === 'blend' || mode === 'replace' || mode === 'extend' || mode === 'citation' || mode === 'summary') {
       onClose();
     }
   };
@@ -327,6 +329,7 @@ export function ThinkModePanel({
             onSessionUpdate={handleSessionUpdate}
             initialSession={session}
             onReset={handleReset}
+            onGeneratingChange={onGeneratingChange}
           />
         )}
         {activeTab === 'research' && (

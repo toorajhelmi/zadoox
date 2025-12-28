@@ -22,10 +22,11 @@ interface BrainstormTabProps {
   sectionHeading?: string;
   sectionContent?: string;
   documentId: string;
-  onContentGenerated: (content: string, mode: 'blend' | 'replace') => void;
+  onContentGenerated: (content: string, mode: 'blend' | 'replace' | 'extend') => void;
   onSessionUpdate?: (session: BrainstormingSession) => void;
   initialSession?: BrainstormingSession | null;
   onReset?: () => void;
+  onGeneratingChange?: (isGenerating: boolean) => void;
 }
 
 export function BrainstormTab({
@@ -38,6 +39,7 @@ export function BrainstormTab({
   onSessionUpdate,
   initialSession,
   onReset,
+  onGeneratingChange,
 }: BrainstormTabProps) {
   const [messages, setMessages] = useState<ChatMessageType[]>(initialSession?.messages || []);
   const [ideaCards, setIdeaCards] = useState<IdeaCardType[]>(initialSession?.ideaCards || []);
@@ -46,7 +48,6 @@ export function BrainstormTab({
   const [showBlendReplaceDialog, setShowBlendReplaceDialog] = useState(false);
   const [pendingIdea, setPendingIdea] = useState<IdeaCardType | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const chatContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-scroll to bottom when messages change
@@ -231,9 +232,17 @@ export function BrainstormTab({
     }
   }, [blockContent]);
 
-  const generateContent = useCallback(async (idea: IdeaCardType, mode: 'blend' | 'replace') => {
+  const generateContent = useCallback(async (idea: IdeaCardType, mode: 'blend' | 'replace' | 'extend') => {
+    // Close dialog immediately
+    setShowBlendReplaceDialog(false);
+    setPendingIdea(null);
+    setIsLoading(true);
+    onGeneratingChange?.(true);
+    
     try {
-      setIsLoading(true);
+      // For 'extend', we still call the backend with 'replace' mode
+      // The backend generates content, and we'll append it in the frontend
+      const backendMode = mode === 'extend' ? 'replace' : mode;
       const response = await api.ai.brainstorm.generate({
         paragraphId,
         ideaCard: {
@@ -245,146 +254,157 @@ export function BrainstormTab({
           sectionHeading,
           sectionContent,
         },
-        mode,
+        mode: backendMode,
       });
 
       onContentGenerated(response.content, mode);
-      setShowBlendReplaceDialog(false);
-      setPendingIdea(null);
     } catch (error) {
       console.error('Failed to generate content:', error);
       alert(`Failed to generate content: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsLoading(false);
+      onGeneratingChange?.(false);
     }
-  }, [paragraphId, blockContent, sectionHeading, sectionContent, onContentGenerated]);
+  }, [paragraphId, blockContent, sectionHeading, sectionContent, onContentGenerated, onGeneratingChange]);
 
   return (
     <div className="flex flex-col h-full bg-black">
-      {/* Idea Cards Section */}
-      {ideaCards.length > 0 && (
-        <div className="border-b border-gray-800 bg-black" style={{ maxHeight: '25%', display: 'flex', flexDirection: 'column' }}>
-          {/* Fixed Header with Reset Button */}
-          <div className="flex items-center justify-end p-3 pb-2 flex-shrink-0">
-            <button
-              onClick={handleReset}
-              className="text-xs text-gray-500 hover:text-gray-400 transition-colors"
-              title="Reset brainstorming session"
-            >
-              Reset
-            </button>
-          </div>
-          {/* Scrollable Idea Cards */}
-          <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-0 idea-cards-scroll">
-            {ideaCards.map((idea, index) => (
-              <div key={idea.id}>
-                <IdeaCard
-                  idea={idea}
-                  onDelete={handleDeleteIdea}
-                  onUse={handleUseIdea}
-                />
-                {index < ideaCards.length - 1 && (
-                  <div className="border-b border-gray-800 my-2" />
-                )}
+      {/* Split View: Chat Left, Ideas Right */}
+      <div className="flex-1 flex overflow-hidden min-w-0">
+        {/* Left Side: Chat */}
+        <div className="flex-1 flex flex-col border-r border-gray-800 min-w-0">
+          {/* Chat Messages */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-2 min-w-0">
+            {messages.length === 0 ? (
+              <div className="text-xs text-gray-400 text-center py-8">
+                Start brainstorming by asking questions or sharing ideas about this block.
               </div>
-            ))}
+            ) : (
+              <>
+                {messages.map((message) => (
+                  <ChatMessage key={message.id} message={message} />
+                ))}
+                {isLoading && (
+                  <div className="text-xs text-gray-400 text-center py-2">
+                    Thinking...
+                  </div>
+                )}
+                {!isLoading && messages.length > 0 && messages[messages.length - 1].role === 'assistant' && ideaCards.length > 0 && (
+                  <div className="text-xs text-gray-400 text-center py-2">
+                    Ideas are shown on the right. Click "Use" on an idea to generate content.
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </>
+            )}
+          </div>
+
+          {/* Quick Commands */}
+          <div className="border-t border-gray-800 bg-black px-2 pt-2 pb-1 flex-shrink-0">
+            <div className="flex flex-wrap gap-1">
+              {['What are key points?', 'Generate ideas', 'Explore angles', 'Suggest topics'].map((cmd) => (
+                <button
+                  key={cmd}
+                  type="button"
+                  onClick={() => {
+                    setInputValue(cmd);
+                    // Auto-focus textarea after setting value
+                    setTimeout(() => {
+                      textareaRef.current?.focus();
+                    }, 0);
+                  }}
+                  className="text-xs px-2 py-1 bg-gray-900 hover:bg-gray-800 text-gray-400 hover:text-gray-300 rounded border border-gray-800 transition-colors"
+                >
+                  {cmd}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Input Area */}
+          <div className="border-t border-gray-800 bg-black p-2">
+            <div className="border border-gray-800 rounded-lg bg-gray-950">
+              <div className="relative">
+                <textarea
+                  ref={textareaRef}
+                  value={inputValue}
+                  onChange={(e) => {
+                    setInputValue(e.target.value);
+                    // Auto-resize textarea
+                    const textarea = e.target;
+                    textarea.style.height = 'auto';
+                    textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                      // Reset textarea height after sending
+                      if (textareaRef.current) {
+                        textareaRef.current.style.height = 'auto';
+                      }
+                    }
+                  }}
+                  placeholder="Share your thoughts or ask questions..."
+                  className="w-full bg-transparent text-xs text-gray-400 p-3 pr-12 resize-none focus:outline-none"
+                  rows={1}
+                  style={{ minHeight: '40px', maxHeight: '120px' }}
+                />
+                <button
+                  onClick={handleSendMessage}
+                  disabled={!inputValue.trim() || isLoading}
+                  className="absolute right-2 bottom-2 p-2 bg-vscode-blue hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center"
+                  title={inputValue.trim() ? 'Send message' : 'Start conversation'}
+                >
+                  {inputValue.trim() ? (
+                    <ArrowRightIcon className="w-4 h-4" />
+                  ) : (
+                    <MicIcon className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      )}
 
-      {/* Chat Messages Section */}
-      <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-2 bg-black">
-        {messages.length === 0 && (
-          <div className="text-xs text-gray-400 text-center py-8">
-            Start brainstorming by asking questions or sharing ideas about this block.
-          </div>
-        )}
-        {messages.length > 0 && ideaCards.length === 0 && (
-          <div className="flex justify-end mb-2 px-4">
-            <button
-              onClick={handleReset}
-              className="text-xs text-gray-500 hover:text-gray-400 transition-colors"
-              title="Reset brainstorming session"
-            >
-              Reset
-            </button>
-          </div>
-        )}
-        {messages.map(message => (
-          <ChatMessage key={message.id} message={message} />
-        ))}
-        {isLoading && (
-          <div className="flex justify-start mb-4">
-            <div className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2">
-              <div className="text-xs text-gray-400">Thinking...</div>
+        {/* Right Side: Idea Cards */}
+        <div className="flex-1 flex flex-col bg-black min-w-0">
+          {/* Header with Reset */}
+          <div className="flex items-center justify-between p-3 border-b border-gray-800 flex-shrink-0">
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+              Idea Cards ({ideaCards.length})
             </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input Area - Command Bar Style */}
-      <div className="bg-black p-2 mt-2">
-        <div className="rounded-lg bg-gray-950 border border-gray-800">
-          {/* Text Input Area */}
-          <div className="px-4 pt-4 pb-3">
-            <textarea
-              ref={textareaRef}
-              value={inputValue}
-              onChange={(e) => {
-                setInputValue(e.target.value);
-                // Auto-resize textarea
-                const textarea = e.target;
-                textarea.style.height = 'auto';
-                textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendMessage();
-                  // Reset textarea height after sending
-                  if (textareaRef.current) {
-                    textareaRef.current.style.height = 'auto';
-                  }
-                }
-              }}
-              placeholder="Ask anything..."
-              rows={1}
-              className="w-full text-xs bg-transparent text-gray-400 placeholder-gray-500 focus:outline-none resize-none overflow-y-auto"
-              disabled={isLoading}
-              style={{ minHeight: '20px', maxHeight: '200px' }}
-            />
-          </div>
-          
-          {/* Bottom Controls Bar */}
-          <div className="flex items-center justify-between px-4 pb-3 pt-2 border-t border-gray-900">
-            {/* Left side - Controls */}
-            <div className="flex items-center gap-3">
-              {/* Placeholder for future controls like Agent, Auto, etc. */}
-            </div>
-            
-            {/* Right side - Action icons */}
-            <div className="flex items-center gap-2">
-              {isLoading && (
-                <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
-              )}
+            {ideaCards.length > 0 && (
               <button
-                onClick={handleSendMessage}
-                disabled={isLoading}
-                className={`p-1.5 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center ${
-                  inputValue.trim()
-                    ? 'bg-vscode-blue hover:bg-blue-600 text-white'
-                    : 'bg-gray-800 hover:bg-gray-700 text-white'
-                }`}
-                title={inputValue.trim() ? "Send message" : "Start conversation"}
+                onClick={handleReset}
+                className="text-xs text-gray-500 hover:text-gray-400 transition-colors"
+                title="Reset brainstorming session"
               >
-                {inputValue.trim() ? (
-                  <ArrowRightIcon className="w-4 h-4" />
-                ) : (
-                  <MicIcon className="w-4 h-4" />
-                )}
+                Reset
               </button>
-            </div>
+            )}
+          </div>
+
+          {/* Idea Cards List */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-visible-on-overflow">
+            {ideaCards.length === 0 ? (
+              <div className="text-xs text-gray-400 text-center py-8">
+                No ideas yet. Start a conversation to generate ideas.
+              </div>
+            ) : (
+              ideaCards.map((idea, index) => (
+                <div
+                  key={idea.id}
+                  className={index < ideaCards.length - 1 ? 'border-b border-gray-800 pb-3' : ''}
+                >
+                  <IdeaCard
+                    idea={idea}
+                    onDelete={handleDeleteIdea}
+                    onUse={handleUseIdea}
+                  />
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -413,6 +433,13 @@ export function BrainstormTab({
                 Replace
               </button>
               <button
+                onClick={() => generateContent(pendingIdea, 'extend')}
+                disabled={isLoading}
+                className="flex-1 px-3 py-2 text-sm bg-gray-800 hover:bg-gray-700 text-white rounded border border-gray-700 transition-colors disabled:opacity-50"
+              >
+                Add
+              </button>
+              <button
                 onClick={() => {
                   setShowBlendReplaceDialog(false);
                   setPendingIdea(null);
@@ -423,6 +450,16 @@ export function BrainstormTab({
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading Overlay - Only show when generating content (not just thinking in chat) */}
+      {isLoading && !showBlendReplaceDialog && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60]">
+          <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 flex flex-col items-center gap-4 min-w-[200px]">
+            <div className="w-8 h-8 border-4 border-gray-600 border-t-vscode-blue rounded-full animate-spin" />
+            <div className="text-sm text-gray-400">Generating content...</div>
           </div>
         </div>
       )}
