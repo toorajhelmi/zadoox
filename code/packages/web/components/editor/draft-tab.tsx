@@ -8,7 +8,7 @@ interface DraftTabProps {
   blockContent: string;
   sectionHeading?: string;
   sectionContent?: string;
-  documentId: string;
+  documentId?: string; // Optional, not currently used but may be needed for future features
   onContentGenerated: (content: string, mode: 'blend' | 'replace' | 'extend') => void;
   onGeneratingChange?: (isGenerating: boolean) => void;
 }
@@ -18,7 +18,7 @@ export function DraftTab({
   blockContent,
   sectionHeading,
   sectionContent,
-  documentId,
+  documentId: _documentId, // Prefixed with _ to indicate intentionally unused
   onContentGenerated,
   onGeneratingChange,
 }: DraftTabProps) {
@@ -26,7 +26,6 @@ export function DraftTab({
   const [transformedContent, setTransformedContent] = useState<string | null>(null);
   const [isTransforming, setIsTransforming] = useState(false);
   const [showBlendReplaceDialog, setShowBlendReplaceDialog] = useState(false);
-  const [pendingMode, setPendingMode] = useState<'blend' | 'replace' | 'extend'>('blend');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleTransform = useCallback(async () => {
