@@ -229,7 +229,18 @@ export class VersionService {
   async reconstructVersion(documentId: string, versionNumber: number): Promise<string> {
     const version = await this.getVersion(documentId, versionNumber);
     if (!version) {
-      throw new Error(`Version ${versionNumber} not found for document ${documentId}`);
+      // If version doesn't exist, try to get content from document table (for backward compatibility)
+      const { data: docData, error: docError } = await this.supabase
+        .from('documents')
+        .select('content')
+        .eq('id', documentId)
+        .single();
+      
+      if (docError || !docData) {
+        throw new Error(`Version ${versionNumber} not found for document ${documentId} and document content unavailable`);
+      }
+      
+      return docData.content || '';
     }
 
     // If it's a snapshot, return it directly
@@ -239,6 +250,18 @@ export class VersionService {
 
     // Otherwise, reconstruct from base snapshot + deltas
     if (!version.snapshotBaseVersion || !version.contentDelta) {
+      // Fallback: if version 1 is malformed, try to get content from document table
+      if (versionNumber === 1) {
+        const { data: docData, error: docError } = await this.supabase
+          .from('documents')
+          .select('content')
+          .eq('id', documentId)
+          .single();
+        
+        if (!docError && docData) {
+          return docData.content || '';
+        }
+      }
       throw new Error(`Invalid version data for version ${versionNumber}`);
     }
 

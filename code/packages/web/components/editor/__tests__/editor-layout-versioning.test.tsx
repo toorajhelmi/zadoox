@@ -20,6 +20,14 @@ vi.mock('@/lib/api/client', () => ({
       list: vi.fn(),
       reconstruct: vi.fn(),
     },
+    projects: {
+      get: vi.fn().mockResolvedValue({
+        settings: {
+          citationFormat: 'numbered',
+          documentStyle: 'other',
+        },
+      }),
+    },
   },
 }));
 

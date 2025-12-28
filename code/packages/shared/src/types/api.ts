@@ -205,4 +205,39 @@ export interface BrainstormGenerateResponse {
   content: string;
 }
 
+// Research API types
+export interface ResearchRequest {
+  paragraphId: string;
+  query: string;
+  context: {
+    blockContent: string;
+    sectionHeading?: string;
+    sectionContent?: string;
+  };
+  documentStyle: 'academic' | 'whitepaper' | 'technical-docs' | 'blog' | 'other';
+  sourceType?: 'academic' | 'web';
+  chatHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  existingSources?: Array<{
+    id: string;
+    title: string;
+    url?: string;
+  }>;
+  model?: 'openai' | 'auto';
+}
+
+export interface ResearchResponse {
+  sources: Array<{
+    title: string;
+    authors?: string[];
+    venue?: string;
+    year?: number;
+    url?: string;
+    summary: string;
+    sourceType: 'academic' | 'web';
+    relevanceScore: number;
+    citationContext?: string; // 3-7 words from the block content that appear immediately before where the citation should be inserted
+  }>;
+  response: string; // AI assistant response
+}
+
 

@@ -14,6 +14,8 @@ import {
   AISuggestResponse,
   AIModelInfo,
   ApiResponse,
+  ResearchRequest,
+  ResearchResponse,
 } from '@zadoox/shared';
 import { schemas, security } from '../../config/schemas.js';
 
@@ -680,6 +682,268 @@ export async function aiRoutes(fastify: FastifyInstance) {
           error: {
             code: 'INTERNAL_ERROR',
             message: errorMessage,
+          },
+        };
+        return reply.status(500).send(response);
+      }
+    }
+  );
+
+  /**
+   * POST /api/v1/ai/research/chat
+   * Research chat endpoint
+   */
+  fastify.post(
+    '/ai/research/chat',
+    {
+      schema: {
+        description: 'Research chat - find and summarize relevant sources for document blocks',
+        tags: ['AI'],
+        security,
+        body: {
+          type: 'object',
+          required: ['paragraphId', 'query', 'context', 'documentStyle'],
+          properties: {
+            paragraphId: { type: 'string' },
+            query: { type: 'string' },
+            context: {
+              type: 'object',
+              required: ['blockContent'],
+              properties: {
+                blockContent: { type: 'string' },
+                sectionHeading: { type: 'string' },
+                sectionContent: { type: 'string' },
+              },
+            },
+            documentStyle: { type: 'string', enum: ['academic', 'whitepaper', 'technical-docs', 'blog', 'other'] },
+            sourceType: { type: 'string', enum: ['academic', 'web'] },
+            chatHistory: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  role: { type: 'string', enum: ['user', 'assistant'] },
+                  content: { type: 'string' },
+                },
+              },
+            },
+            existingSources: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  title: { type: 'string' },
+                  url: { type: 'string' },
+                },
+              },
+            },
+            model: { type: 'string', enum: ['openai', 'auto'] },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              data: {
+                type: 'object',
+                properties: {
+                  response: { type: 'string' },
+                  sources: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        title: { type: 'string' },
+                        authors: { type: 'array', items: { type: 'string' } },
+                        venue: { type: 'string' },
+                        year: { type: 'number' },
+                        url: { type: 'string' },
+                        summary: { type: 'string' },
+                        sourceType: { type: 'string', enum: ['academic', 'web'] },
+                        relevanceScore: { type: 'number' },
+                        citationContext: { type: 'string' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            required: ['success'],
+          },
+          400: schemas.ApiResponse,
+          500: schemas.ApiResponse,
+        },
+      },
+    },
+    async (request: AuthenticatedRequest, reply) => {
+      try {
+        const { query, context, documentStyle, sourceType: rawSourceType, chatHistory = [], existingSources = [], model } = request.body as ResearchRequest;
+        // Filter sourceType to only valid values
+        const sourceType = rawSourceType === 'academic' || rawSourceType === 'web' ? rawSourceType : undefined;
+
+        if (!query || !query.trim()) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Query is required',
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        // Validate chat history
+        const validHistory = chatHistory
+          .filter(msg => msg && msg.role && msg.content && typeof msg.content === 'string')
+          .map(msg => ({
+            role: msg.role as 'user' | 'assistant',
+            content: String(msg.content).trim(),
+          }))
+          .filter(msg => msg.content.length > 0);
+
+        // Validate existing sources
+        const validSources = existingSources
+          .filter(src => src && src.id && src.title)
+          .map(src => ({
+            id: String(src.id),
+            title: String(src.title),
+            url: src.url ? String(src.url) : undefined,
+          }));
+
+        const service = getAIService();
+        const result = await service.researchChat(
+          query.trim(),
+          validHistory,
+          context,
+          documentStyle,
+          validSources,
+          model,
+          sourceType
+        );
+
+        const response: ApiResponse<ResearchResponse> = {
+          success: true,
+          data: result,
+        };
+        return reply.send(response);
+      } catch (error: unknown) {
+        fastify.log.error(error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to process research chat';
+        const response: ApiResponse<null> = {
+          success: false,
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: errorMessage,
+          },
+        };
+        return reply.status(500).send(response);
+      }
+    }
+  );
+
+  /**
+   * POST /api/v1/ai/research/find-citation-positions
+   * Find relevant positions in text for inserting citations
+   */
+  fastify.post(
+    '/ai/research/find-citation-positions',
+    {
+      schema: {
+        description: 'Find relevant positions in text block for inserting citations',
+        tags: ['AI'],
+        security,
+        body: {
+          type: 'object',
+          required: ['blockContent', 'sources'],
+          properties: {
+            blockContent: { type: 'string' },
+            sources: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: ['id', 'title', 'summary'],
+                properties: {
+                  id: { type: 'string' },
+                  title: { type: 'string' },
+                  authors: { type: 'array', items: { type: 'string' } },
+                  summary: { type: 'string' },
+                },
+              },
+            },
+            model: { type: 'string', enum: ['openai', 'auto'] },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              data: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    sourceId: { type: 'string' },
+                    position: { type: ['number', 'null'] },
+                    relevantText: { type: 'string' },
+                  },
+                },
+              },
+            },
+            required: ['success'],
+          },
+          400: schemas.ApiResponse,
+          500: schemas.ApiResponse,
+        },
+      },
+    },
+    async (request: AuthenticatedRequest, reply) => {
+      try {
+        const { blockContent, sources, model } = request.body as {
+          blockContent: string;
+          sources: Array<{ id: string; title: string; authors?: string[]; summary: string }>;
+          model?: 'openai' | 'auto';
+        };
+
+        if (!blockContent || !blockContent.trim()) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Block content is required',
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        if (!sources || !Array.isArray(sources) || sources.length === 0) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Sources array is required and must not be empty',
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        const aiService = getAIService();
+        const positions = await aiService.findCitationPositions(blockContent, sources, model);
+
+        const response: ApiResponse<typeof positions> = {
+          success: true,
+          data: positions,
+        };
+        return reply.send(response);
+      } catch (error) {
+        console.error('Error finding citation positions:', error);
+        const response: ApiResponse<null> = {
+          success: false,
+          error: {
+            code: 'FIND_CITATION_POSITIONS_FAILED',
+            message: error instanceof Error ? error.message : 'Failed to find citation positions',
           },
         };
         return reply.status(500).send(response);
