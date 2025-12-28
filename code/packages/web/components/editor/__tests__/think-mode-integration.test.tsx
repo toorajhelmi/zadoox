@@ -15,6 +15,14 @@ vi.mock('@/lib/api/client', () => ({
       getMetadata: vi.fn(),
       list: vi.fn(),
     },
+    projects: {
+      get: vi.fn().mockResolvedValue({
+        settings: {
+          citationFormat: 'numbered',
+          documentStyle: 'other',
+        },
+      }),
+    },
   },
 }));
 

@@ -172,7 +172,7 @@ export function AIEnhancedEditor({
     return pos;
   }, [paragraphs, value]);
   
-      // Handle AI action (defined first to avoid circular dependency)
+  // Handle AI action (defined first to avoid circular dependency)
   const handleAIAction = useCallback(
     async (action: AIActionType, paragraphId: string) => {
       const paragraph = paragraphs.find((p) => p.id === paragraphId);
@@ -194,7 +194,7 @@ export function AIEnhancedEditor({
       // Ensure toolbar stays open by setting hovered paragraph BEFORE setting processing state
       // This prevents the toolbar from disappearing when button is clicked
       setHoveredParagraph(paragraphId);
-      
+
       // Set processing state to show progress bar immediately (this triggers toolbar update via useEffect)
       // Don't dispatch directly here - let useEffect handle it to avoid update conflicts
       setProcessingParagraph({ id: paragraphId, action });
@@ -302,7 +302,7 @@ export function AIEnhancedEditor({
         const newContent = [...beforeLines, ...improvedLines, ...afterLines].join('\n');
         
         // Change content - this will trigger re-analysis
-        onChange(newContent);
+          onChange(newContent);
         
         // Immediately trigger analysis for the updated paragraph (don't wait for debounce)
         // We need to find the new paragraph ID after content change
@@ -336,11 +336,11 @@ export function AIEnhancedEditor({
         
         // Clear processing state
         setProcessingParagraph(null);
-        
-        // Save with ai-action changeType if callback is provided
-        if (onSaveWithType) {
-          await onSaveWithType(newContent, 'ai-action');
-        }
+          
+          // Save with ai-action changeType if callback is provided
+          if (onSaveWithType) {
+            await onSaveWithType(newContent, 'ai-action');
+          }
 
         // Keep previousAnalysis for 30 seconds so deltas show when toolbar reopens
         // This allows users to see the changes even if toolbar disappears and reappears
@@ -394,7 +394,7 @@ export function AIEnhancedEditor({
     };
   }, [getAnalysis]);
   
-
+  
   // Create extension once - it will use the refs which always point to latest callbacks
   const toolbarExt = useMemo(() => {
     return toolbarExtension(
@@ -490,22 +490,22 @@ export function AIEnhancedEditor({
               isMouseOverToolbarRef.current = false;
               // Don't hide if processing
               if (!processingParagraph) {
-                // Hide after delay if not hovering over indicator
-                hideTimeoutRef.current = setTimeout(() => {
+              // Hide after delay if not hovering over indicator
+              hideTimeoutRef.current = setTimeout(() => {
                   if (!isMouseOverToolbarRef.current && !processingParagraph) {
-                    setHoveredParagraph(null);
+                  setHoveredParagraph(null);
                     if (editorViewRef.current) {
                       safeDispatchToolbar(() => {
-                        if (editorViewRef.current) {
-                          editorViewRef.current.dispatch({
-                            effects: showToolbar.of(null),
+                  if (editorViewRef.current) {
+                    editorViewRef.current.dispatch({
+                      effects: showToolbar.of(null),
                           });
                         }
-                      });
-                    }
+                    });
                   }
-                  hideTimeoutRef.current = null;
-                }, 300);
+                }
+                hideTimeoutRef.current = null;
+              }, 300);
               }
             },
           }),
@@ -576,22 +576,22 @@ export function AIEnhancedEditor({
               isMouseOverToolbarRef.current = false;
               // Only hide after delay if not processing
               if (!processingParagraph) {
-                hideTimeoutRef.current = setTimeout(() => {
-                  if (!isMouseOverToolbarRef.current) {
-                    setHoveredParagraph(null);
+      hideTimeoutRef.current = setTimeout(() => {
+        if (!isMouseOverToolbarRef.current) {
+          setHoveredParagraph(null);
                     if (editorViewRef.current) {
                       safeDispatchToolbar(() => {
-                        if (editorViewRef.current) {
-                          editorViewRef.current.dispatch({
-                            effects: showToolbar.of(null),
+          if (editorViewRef.current) {
+            editorViewRef.current.dispatch({
+              effects: showToolbar.of(null),
                           });
                         }
-                      });
-                    }
-                  }
-                  hideTimeoutRef.current = null;
-                }, 300);
-              }
+            });
+          }
+        }
+        hideTimeoutRef.current = null;
+      }, 300);
+    }
             },
           }),
         });
