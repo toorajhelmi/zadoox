@@ -738,7 +738,7 @@ export async function aiRoutes(fastify: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const { draftText, paragraphId, context, mode, model } = request.body as {
+        const { draftText, context, mode, model } = request.body as {
           draftText: string;
           paragraphId: string;
           context: {
