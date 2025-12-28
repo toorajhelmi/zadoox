@@ -643,6 +643,76 @@ This phase adds the ability to toggle each paragraph section between "write" and
 
 ---
 
+### Phase 7.8: AI Change Tracking & Acceptance UI 🔄
+**Status**: Not Started
+
+This phase implements a Cursor-style diff view that shows AI-generated changes with visual indicators and allows users to accept or reject individual changes.
+
+#### Visual Indicators:
+- [ ] **Change highlighting**:
+  - [ ] Green background/highlight for added content
+  - [ ] Red background/highlight for deleted content
+  - [ ] Blue background/highlight for modified content
+  - [ ] Visual distinction between original and changed text
+
+#### Change Tracking:
+- [ ] **Diff calculation**:
+  - [ ] Compare original content with AI-generated content
+  - [ ] Calculate word-level or character-level differences
+  - [ ] Track individual change blocks (added, deleted, modified)
+  - [ ] Store change metadata (position, type, original text, new text)
+
+#### User Interface:
+- [ ] **Inline change indicators**:
+  - [ ] Show change highlights directly in the editor (CodeMirror decorations)
+  - [ ] Accept/Reject buttons for each change block
+  - [ ] Hover tooltips showing original vs. new text
+  - [ ] Keyboard shortcuts for accepting/rejecting changes
+
+- [ ] **Change panel/sidebar** (optional):
+  - [ ] List all changes with previews
+  - [ ] Accept all / Reject all buttons
+  - [ ] Individual accept/reject actions
+  - [ ] Filter by change type (additions, deletions, modifications)
+
+#### Integration:
+- [ ] **AI action integration**:
+  - [ ] Track changes for all AI actions (Improve, Expand, Clarify, Condense, Blend, Replace)
+  - [ ] Show diff view after AI generates content
+  - [ ] Only apply changes when user accepts them
+  - [ ] Undo functionality to revert accepted changes
+
+- [ ] **Editor integration**:
+  - [ ] Overlay diff view on existing content
+  - [ ] Seamless editing experience
+  - [ ] Preserve user's ability to manually edit while viewing diffs
+  - [ ] Clear/reset diff view option
+
+#### Implementation Details:
+- [ ] **Backend**:
+  - [ ] Add diff calculation utility (use diff-match-patch or similar)
+  - [ ] Store change metadata in document versions (optional)
+  - [ ] API endpoint for diff calculation (if needed for complex diffs)
+
+- [ ] **Frontend**:
+  - [ ] CodeMirror decoration system for highlighting
+  - [ ] Change tracking state management
+  - [ ] Accept/Reject button components
+  - [ ] Diff view component
+  - [ ] Integration with AI action handlers
+
+**Deliverables**:
+- ✅ Visual change indicators (green/red/blue highlights)
+- ✅ Accept/Reject buttons for individual changes
+- ✅ Inline diff view in editor
+- ✅ Integration with all AI actions
+- ✅ Keyboard shortcuts for change acceptance/rejection
+- ✅ Change panel/sidebar (optional)
+
+**Note**: This feature provides a Cursor-like experience where users can review AI changes before accepting them, giving them full control over the editing process.
+
+---
+
 ### Phase 8: Backend API - Export Service ✅
 **Status**: Not Started
 
