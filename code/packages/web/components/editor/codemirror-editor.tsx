@@ -68,6 +68,7 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange, onCursorP
   const editorRef = useRef<HTMLDivElement>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
+  const editorViewReadyCalledRef = useRef(false);
   const [hasEdited, setHasEdited] = useState(false);
   const [displayValue, setDisplayValue] = useState(value);
   const [showFormatMenu, setShowFormatMenu] = useState(false);
@@ -76,6 +77,7 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange, onCursorP
   const [selectionRange, setSelectionRange] = useState({ from: 0, to: 0 });
   const selectionRangeRef = useRef<{ from: number; to: number; text: string } | null>(null);
   const selectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const previousCursorPositionRef = useRef<{ line: number; column: number } | null>(null);
 
   // Clear placeholder on first edit
   useEffect(() => {
@@ -205,13 +207,17 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange, onCursorP
   useEffect(() => {
     // Try to get view from container after editor mounts
     const timer = setTimeout(() => {
-      if (editorContainerRef.current) {
+      if (editorContainerRef.current && !editorViewReadyCalledRef.current) {
         const cmEditor = editorContainerRef.current.querySelector('.cm-editor');
         if (cmEditor) {
           // @uiw/react-codemirror stores view in a specific way
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const view = (cmEditor as any).__cm_view?.view || (cmEditor as any).cmView?.view;
-          if (view) {
+          if (view && onEditorViewReady) {
+            editorViewRef.current = view;
+            editorViewReadyCalledRef.current = true;
+            onEditorViewReady(view);
+          } else if (view) {
             editorViewRef.current = view;
           }
         }
@@ -219,7 +225,7 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange, onCursorP
     }, 100);
 
     return () => clearTimeout(timer);
-  }, [displayValue]);
+  }, [displayValue, onEditorViewReady]);
 
   // Hide menu on click outside (but not on the menu itself)
   useEffect(() => {
@@ -250,34 +256,31 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange, onCursorP
   // Extension to track selection and show floating menu, and expose editor view
   const selectionExtension = useCallback(() => {
     return EditorView.updateListener.of((update: ViewUpdate) => {
-      // Expose editor view to parent
-      if (update.view && onEditorViewReady) {
+      // Expose editor view to parent (only once on first update)
+      if (update.view && onEditorViewReady && !editorViewReadyCalledRef.current) {
         editorViewRef.current = update.view;
+        editorViewReadyCalledRef.current = true;
         onEditorViewReady(update.view);
+      } else if (update.view) {
+        // Just update the ref, don't call the callback again
+        editorViewRef.current = update.view;
       }
       
-      // Track cursor position (line and column)
-      if (update.selectionSet && update.view && onCursorPositionChange) {
-        const selection = update.state.selection.main;
-        const line = update.state.doc.lineAt(selection.head);
-        const lineNumber = line.number;
-        const column = selection.head - line.from + 1; // +1 for 1-based column
-        
-        onCursorPositionChange({
-          line: lineNumber,
-          column: column,
-        });
-      } else if (update.view && onCursorPositionChange) {
-        // Also update on other changes (like content changes)
+      // Track cursor position (line and column) - only when it actually changes
+      if (update.view && onCursorPositionChange) {
         const selection = update.view.state.selection.main;
         const line = update.view.state.doc.lineAt(selection.head);
         const lineNumber = line.number;
-        const column = selection.head - line.from + 1;
+        const column = selection.head - line.from + 1; // +1 for 1-based column
         
-        onCursorPositionChange({
-          line: lineNumber,
-          column: column,
-        });
+        const newPosition = { line: lineNumber, column: column };
+        const previousPosition = previousCursorPositionRef.current;
+        
+        // Only call callback if position actually changed
+        if (!previousPosition || previousPosition.line !== newPosition.line || previousPosition.column !== newPosition.column) {
+          previousCursorPositionRef.current = newPosition;
+          onCursorPositionChange(newPosition);
+        }
       }
       
       if (update.selectionSet && update.view) {

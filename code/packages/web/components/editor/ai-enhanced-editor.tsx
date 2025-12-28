@@ -25,6 +25,7 @@ interface AIEnhancedEditorProps {
   thinkPanelOpen?: boolean;
   openParagraphId?: string | null;
   onOpenPanel?: (paragraphId: string) => void;
+  onEditorViewReady?: (view: EditorView | null) => void;
 }
 
 /**
@@ -46,6 +47,7 @@ export function AIEnhancedEditor({
   thinkPanelOpen = false,
   openParagraphId = null,
   onOpenPanel,
+  onEditorViewReady,
 }: AIEnhancedEditorProps) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_hoveredParagraph, setHoveredParagraph] = useState<string | null>(null);
@@ -641,6 +643,9 @@ export function AIEnhancedEditor({
           extensions={[toolbarExt, ...disableSelectionExt]}
           onEditorViewReady={(view) => {
             editorViewRef.current = view;
+            if (onEditorViewReady) {
+              onEditorViewReady(view);
+            }
           }}
           readOnly={readOnly}
         />

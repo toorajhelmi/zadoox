@@ -172,6 +172,56 @@ export class AIService {
   }
 
   /**
+   * Research chat - find and summarize relevant sources
+   */
+  async researchChat(
+    query: string,
+    chatHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
+    context: {
+      blockContent: string;
+      sectionHeading?: string;
+      sectionContent?: string;
+    },
+    documentStyle: 'academic' | 'whitepaper' | 'technical-docs' | 'blog' | 'other',
+    existingSources: Array<{ id: string; title: string; url?: string }>,
+    model?: AIModel,
+    sourceType?: 'academic' | 'web'
+  ): Promise<{
+    response: string;
+    sources: Array<{
+      title: string;
+      authors?: string[];
+      venue?: string;
+      year?: number;
+      url?: string;
+      summary: string;
+      sourceType: 'academic' | 'web';
+      relevanceScore: number;
+    }>;
+  }> {
+    const provider = this.getProvider(model);
+    return provider.researchChat(query, chatHistory, context, documentStyle, existingSources, sourceType);
+  }
+
+  async findCitationPositions(
+    blockContent: string,
+    sources: Array<{
+      id: string;
+      title: string;
+      authors?: string[];
+      summary: string;
+    }>,
+    model?: AIModel
+  ): Promise<Array<{
+    sourceId: string;
+    position: number | null;
+    relevantText?: string;
+  }>> {
+    const provider = this.getProvider(model);
+    return provider.findCitationPositions(blockContent, sources);
+  }
+
+  /**
    * Get available models
    */
   getAvailableModels(): AIModelInfo[] {

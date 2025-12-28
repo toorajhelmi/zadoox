@@ -2,8 +2,9 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { BrainstormTab } from './brainstorm-tab';
+import { ResearchTab } from './research-tab';
 import { api } from '@/lib/api/client';
-import type { BrainstormingSession } from '@zadoox/shared';
+import type { BrainstormingSession, ResearchSession, DocumentStyle, CitationFormat } from '@zadoox/shared';
 
 const DEFAULT_WIDTH = 320; // 80 * 4 (w-80 = 320px)
 const MIN_WIDTH = 240;
@@ -15,7 +16,8 @@ interface ThinkModePanelProps {
   paragraphId: string | null;
   content: string;
   documentId: string;
-  onContentGenerated: (content: string, mode: 'blend' | 'replace') => void;
+  projectId: string;
+  onContentGenerated: (content: string, mode: 'blend' | 'replace' | 'citation' | 'summary', sources?: any[]) => void;
 }
 
 // Helper to check if a line is a markdown heading
@@ -44,6 +46,10 @@ function getParagraphInfo(paragraphId: string | null, content: string): {
   if (startLine < 0 || startLine >= lines.length) {
     return { blockContent: '' };
   }
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'think-mode-panel.tsx:45',message:'Extracting block content for research',data:{paragraphId,startLine,contentLength:content.length,firstLine:lines[startLine]?.substring(0,50)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
 
   // Check if this is a section (starts with heading)
   const startLineIsHeading = isHeading(lines[startLine].trim());
@@ -75,6 +81,10 @@ function getParagraphInfo(paragraphId: string | null, content: string): {
 
   const blockContent = lines.slice(startLine, endLine).join('\n');
   
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'think-mode-panel.tsx:82',message:'Block content extracted for research',data:{paragraphId,startLine,endLine,blockContentLength:blockContent.length,blockContentPreview:blockContent.substring(0,200),isHeading:startLineIsHeading},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
+  
   if (startLineIsHeading) {
     const sectionHeading = lines[startLine];
     const sectionContent = lines.slice(startLine, endLine).join('\n');
@@ -99,10 +109,14 @@ export function ThinkModePanel({
   paragraphId,
   content,
   documentId,
+  projectId,
   onContentGenerated,
 }: ThinkModePanelProps) {
   const [activeTab, setActiveTab] = useState<'brainstorm' | 'research' | 'fragments'>('brainstorm');
   const [session, setSession] = useState<BrainstormingSession | null>(null);
+  const [researchSession, setResearchSession] = useState<ResearchSession | null>(null);
+  const [documentStyle, setDocumentStyle] = useState<DocumentStyle>('other');
+  const [citationFormat, setCitationFormat] = useState<CitationFormat>('numbered');
   const [width, setWidth] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('think-panel-width');
@@ -118,7 +132,24 @@ export function ThinkModePanel({
     return getParagraphInfo(paragraphId, content);
   }, [paragraphId, content]);
 
-  // Load session from document metadata when paragraph changes
+  // Load project settings
+  useEffect(() => {
+    async function loadProjectSettings() {
+      try {
+        const project = await api.projects.get(projectId);
+        setDocumentStyle(project.settings.documentStyle || 'other');
+        setCitationFormat(project.settings.citationFormat || 'numbered');
+      } catch (error) {
+        console.error('Failed to load project settings:', error);
+      }
+    }
+
+    if (projectId) {
+      loadProjectSettings();
+    }
+  }, [projectId]);
+
+  // Load brainstorming session from document metadata when paragraph changes
   useEffect(() => {
     async function loadSession() {
       if (!paragraphId || !documentId) {
@@ -142,6 +173,32 @@ export function ThinkModePanel({
     }
 
     loadSession();
+  }, [paragraphId, documentId]);
+
+  // Load research session from document metadata when paragraph changes
+  useEffect(() => {
+    async function loadResearchSession() {
+      if (!paragraphId || !documentId) {
+        setResearchSession(null);
+        return;
+      }
+
+      try {
+        const document = await api.documents.get(documentId);
+        const sessions = document.metadata?.researchSessions || {};
+        const existingSession = sessions[paragraphId];
+        if (existingSession) {
+          setResearchSession(existingSession);
+        } else {
+          setResearchSession(null);
+        }
+      } catch (error) {
+        console.error('Failed to load research session:', error);
+        setResearchSession(null);
+      }
+    }
+
+    loadResearchSession();
   }, [paragraphId, documentId]);
 
   // Handle resize
@@ -182,15 +239,26 @@ export function ThinkModePanel({
     setSession(updatedSession);
   };
 
-  const handleContentGenerated = (generatedContent: string, mode: 'blend' | 'replace') => {
-    onContentGenerated(generatedContent, mode);
+  const handleContentGenerated = (generatedContent: string, mode: 'blend' | 'replace' | 'citation' | 'summary', sources?: any[]) => {
+    onContentGenerated(generatedContent, mode, sources);
     // Auto-close the panel after content is generated
-    onClose();
+    if (mode === 'blend' || mode === 'replace' || mode === 'citation' || mode === 'summary') {
+      onClose();
+    }
   };
 
   const handleReset = () => {
     // Reload session (will be empty after reset)
     setSession(null);
+  };
+
+  const handleResearchReset = () => {
+    // Reload research session (will be empty after reset)
+    setResearchSession(null);
+  };
+
+  const handleResearchSessionUpdate = (updatedSession: ResearchSession) => {
+    setResearchSession(updatedSession);
   };
 
   return (
@@ -270,11 +338,21 @@ export function ThinkModePanel({
           />
         )}
         {activeTab === 'research' && (
-          <div className="flex-1 overflow-y-auto p-4 bg-black">
-            <div className="text-xs text-gray-400 text-center py-8">
-              Research features coming soon...
-            </div>
-          </div>
+          <ResearchTab
+            paragraphId={paragraphId}
+            blockContent={paragraphInfo.blockContent}
+            sectionHeading={paragraphInfo.sectionHeading}
+            sectionContent={paragraphInfo.sectionContent}
+            documentId={documentId}
+            projectId={projectId}
+            documentStyle={documentStyle}
+            citationFormat={citationFormat}
+            onContentGenerated={handleContentGenerated}
+            onSessionUpdate={handleResearchSessionUpdate}
+            initialSession={researchSession}
+            onReset={handleResearchReset}
+            onClose={onClose}
+          />
         )}
         {activeTab === 'fragments' && (
           <div className="flex-1 overflow-y-auto p-4 bg-black">

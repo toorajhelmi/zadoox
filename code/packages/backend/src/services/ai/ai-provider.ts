@@ -74,6 +74,53 @@ export interface AIProvider {
   ): Promise<string>;
 
   /**
+   * Research chat - find and summarize relevant sources
+   */
+  researchChat(
+    query: string,
+    chatHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
+    context: {
+      blockContent: string;
+      sectionHeading?: string;
+      sectionContent?: string;
+    },
+    documentStyle: 'academic' | 'whitepaper' | 'technical-docs' | 'blog' | 'other',
+    existingSources: Array<{ id: string; title: string; url?: string }>,
+    sourceType?: 'academic' | 'web'
+  ): Promise<{
+    response: string;
+    sources: Array<{
+      title: string;
+      authors?: string[];
+      venue?: string;
+      year?: number;
+      url?: string;
+      summary: string;
+      sourceType: 'academic' | 'web';
+      relevanceScore: number;
+      citationContext?: string; // 3-7 words from the block content that appear immediately before where the citation should be inserted
+    }>;
+  }>;
+
+  /**
+   * Find relevant positions in text for inserting citations
+   * Returns array of positions where each citation should be inserted
+   */
+  findCitationPositions(
+    blockContent: string,
+    sources: Array<{
+      id: string;
+      title: string;
+      authors?: string[];
+      summary: string;
+    }>
+  ): Promise<Array<{
+    sourceId: string;
+    position: number | null; // Character position, or null if no relevant text found
+    relevantText?: string; // The text snippet where citation should be inserted
+  }>>;
+
+  /**
    * Get model information
    */
   getModelInfo(): AIModelInfo;

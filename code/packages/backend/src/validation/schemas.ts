@@ -49,9 +49,10 @@ export const createDocumentSchema = z.object({
   metadata: z
     .object({
       type: z.enum(['chapter', 'section', 'standalone']).optional(),
-      chapterNumber: z.number().int().positive().optional(),
+      chapterNumber: z.number().int().nonnegative().nullable().optional(), // Allow 0 and null
       order: z.number().int().nonnegative().optional(),
     })
+    .passthrough() // Allow additional fields like insertedSources, brainstormingSessions, researchSessions, etc.
     .optional(),
 });
 
@@ -61,9 +62,10 @@ export const updateDocumentSchema = z.object({
   metadata: z
     .object({
       type: z.enum(['chapter', 'section', 'standalone']).optional(),
-      chapterNumber: z.number().int().positive().optional(),
+      chapterNumber: z.number().int().nonnegative().nullable().optional(), // Allow 0 and null
       order: z.number().int().nonnegative().optional(),
     })
+    .passthrough() // Allow additional fields like insertedSources, brainstormingSessions, researchSessions, etc.
     .optional(),
   changeType: z.enum(['manual-save', 'auto-save', 'ai-action', 'milestone', 'rollback']).optional(),
   changeDescription: z.string().optional(),
