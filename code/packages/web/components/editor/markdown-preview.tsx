@@ -104,7 +104,6 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
     
     // Find the References section boundaries
     const refSectionStart = htmlContent.indexOf('<h2') !== -1 ? htmlContent.indexOf('References</h2>') : -1;
-    const refSectionEnd = refSectionStart !== -1 ? htmlContent.indexOf('<h', refSectionStart + 100) : -1;
     
     // Collect all citation matches with their positions
     while ((match = citationRegex.exec(htmlContent)) !== null) {

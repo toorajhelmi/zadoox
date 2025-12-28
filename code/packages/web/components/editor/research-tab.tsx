@@ -36,7 +36,7 @@ export function ResearchTab({
   sectionHeading,
   sectionContent,
   documentId,
-  projectId,
+  projectId: _projectId,
   documentStyle,
   citationFormat,
   onContentGenerated,
@@ -171,7 +171,7 @@ export function ResearchTab({
       };
 
       // Add new sources with IDs
-      const newSources: ResearchSource[] = response.sources.map((source, index) => {
+      const newSources: ResearchSource[] = response.sources.map((source) => {
         // Extract citationContext from API response
         const citationContext = source.citationContext ? String(source.citationContext).trim() : undefined;
         
@@ -300,6 +300,7 @@ export function ResearchTab({
     try {
       const currentDocument = await api.documents.get(documentId);
       const currentSessions = currentDocument.metadata.researchSessions || {};
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { [paragraphId]: _, ...remainingSessions } = currentSessions;
       const updatedMetadata = {
         ...currentDocument.metadata,

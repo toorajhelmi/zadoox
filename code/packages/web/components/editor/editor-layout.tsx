@@ -101,7 +101,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [thinkPanelOpen, setThinkPanelOpen] = useState(false);
   const [openParagraphId, setOpenParagraphId] = useState<string | null>(null);
   const [citationFormat, setCitationFormat] = useState<CitationFormat>('numbered');
-  const [editorView, setEditorView] = useState<any>(null);
   const currentSelectionRef = useRef<{ from: number; to: number; text: string } | null>(null);
 
   // Load project settings for citation format
@@ -455,7 +454,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 thinkPanelOpen={thinkPanelOpen}
                 openParagraphId={openParagraphId}
                 onOpenPanel={handleOpenPanel}
-                onEditorViewReady={setEditorView}
                 readOnly={(() => {
                   // Disable editing when Think panel is open
                   if (thinkPanelOpen) {
@@ -507,7 +505,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 if (mode === 'citation' && sources && sources.length > 0 && (citationFormat === 'numbered' || citationFormat === 'ieee')) {
                   // Replace [?] placeholders with correct numbers
                   const allSources = [...existingSources];
-                  const newSourceIds = new Set(sources.map(s => s.id));
                   const citations: string[] = [];
                   
                   sources.forEach((source) => {
@@ -679,7 +676,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                       const before = modifiedBlock.slice(0, pos.position);
                       const after = modifiedBlock.slice(pos.position);
                       // Insert citation with space before it (unless already after space/punctuation)
-                      const needsSpace = pos.position > 0 && !/\s$/.test(before) && !/[\.,;:!?\)\]\}]$/.test(before);
+                      const needsSpace = pos.position > 0 && !/\s$/.test(before) && !/[\.,;:!?)\]}]$/.test(before);
                       modifiedBlock = before + (needsSpace ? ' ' : '') + citation + after;
                       // #region agent log
                       fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:612',message:'Citation inserted',data:{sourceId:pos.sourceId,position:pos.position,citation,modifiedBlockLength:modifiedBlock.length,context:pos.citationContext?.substring(0,30)},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
