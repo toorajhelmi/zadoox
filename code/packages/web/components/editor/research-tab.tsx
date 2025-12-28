@@ -159,7 +159,12 @@ export function ResearchTab({
         },
         documentStyle,
         sourceType: sourceTypeFilter === 'all' ? undefined : (sourceTypeFilter === 'academic' ? 'academic' : undefined),
-        chatHistory: chatHistory.slice(0, -1), // Exclude current message
+        chatHistory: chatHistory.slice(0, -1).map(msg => ({
+          id: msg.id,
+          role: msg.role,
+          content: msg.content,
+          timestamp: msg.timestamp,
+        })), // Exclude current message
         existingSources,
       });
 
