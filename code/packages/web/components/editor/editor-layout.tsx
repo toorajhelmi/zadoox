@@ -13,6 +13,7 @@ import { api } from '@/lib/api/client';
 import type { FormatType } from './floating-format-menu';
 import { useChangeTracking } from '@/hooks/use-change-tracking';
 import type { ResearchSource } from '@zadoox/shared';
+import { extractCitedSourceIds } from '@/lib/utils/citation';
 
 interface EditorLayoutProps {
   projectId: string;
@@ -44,19 +45,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [pendingChangeContent, setPendingChangeContent] = useState<{ original: string; new: string } | null>(null);
   const [isGeneratingContent, setIsGeneratingContent] = useState(false);
 
-  // Helper to extract source IDs from citations in content
-  const extractCitedSourceIds = useCallback((contentText: string): Set<string> => {
-    const citedIds = new Set<string>();
-    // Match citations in format [@sourceId] or [1], [2], etc.
-    // Also match parenthetical citations like (Author, Year) - these might reference sources
-    // For now, we'll focus on [@sourceId] format
-    const citationRegex = /\[@([a-zA-Z0-9-]+)\]/g;
-    let match;
-    while ((match = citationRegex.exec(contentText)) !== null) {
-      citedIds.add(match[1]);
-    }
-    return citedIds;
-  }, []);
 
   // Helper to clean up insertedSources when citations are removed
   const cleanupInsertedSources = useCallback(async (newContent: string, oldContent: string) => {
@@ -93,7 +81,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       // #endregion
       console.error('Failed to cleanup insertedSources:', error);
     }
-  }, [actualDocumentId, extractCitedSourceIds]);
+  }, [actualDocumentId]);
 
   // Wrapper for saveDocument that also cleans up insertedSources
   const saveDocument = useCallback(async (contentToSave: string, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
