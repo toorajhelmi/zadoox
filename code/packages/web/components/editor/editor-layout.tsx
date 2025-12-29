@@ -47,28 +47,25 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
 
 
   // Helper to clean up insertedSources when citations are removed
+  // This is a background cleanup operation - errors are logged but don't block the main flow
   const cleanupInsertedSources = useCallback(async (newContent: string, _oldContent: string) => {
-    try {
-      const currentDocument = await api.documents.get(actualDocumentId);
-      const insertedSources: ResearchSource[] = currentDocument.metadata?.insertedSources || [];
-      
-      // Extract source IDs that are still cited in the new content
-      const citedSourceIds = extractCitedSourceIds(newContent);
-      
-      // Filter out sources that are no longer cited
-      const remainingInsertedSources = insertedSources.filter(source => citedSourceIds.has(source.id));
-      
-      // Only update if something changed
-      if (remainingInsertedSources.length !== insertedSources.length) {
-        await api.documents.update(actualDocumentId, {
-          metadata: {
-            ...currentDocument.metadata,
-            insertedSources: remainingInsertedSources,
-          },
-        });
-      }
-    } catch (error) {
-      console.error('Failed to cleanup insertedSources:', error);
+    const currentDocument = await api.documents.get(actualDocumentId);
+    const insertedSources: ResearchSource[] = currentDocument.metadata?.insertedSources || [];
+    
+    // Extract source IDs that are still cited in the new content
+    const citedSourceIds = extractCitedSourceIds(newContent);
+    
+    // Filter out sources that are no longer cited
+    const remainingInsertedSources = insertedSources.filter(source => citedSourceIds.has(source.id));
+    
+    // Only update if something changed
+    if (remainingInsertedSources.length !== insertedSources.length) {
+      await api.documents.update(actualDocumentId, {
+        metadata: {
+          ...currentDocument.metadata,
+          insertedSources: remainingInsertedSources,
+        },
+      });
     }
   }, [actualDocumentId]);
 
@@ -115,50 +112,45 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     if (!actualDocumentId || actualDocumentId === 'default') return;
 
     async function loadMetadata() {
-      try {
-        const metadata = await api.versions.getMetadata(actualDocumentId);
-        let newLatestVersion: number | null = null;
-        
-        // Check if currentVersion exists and is valid
-        if (metadata.currentVersion !== undefined && metadata.currentVersion !== null) {
-          newLatestVersion = Number(metadata.currentVersion);
+      const metadata = await api.versions.getMetadata(actualDocumentId);
+      let newLatestVersion: number | null = null;
+      
+      // Check if currentVersion exists and is valid
+      if (metadata.currentVersion !== undefined && metadata.currentVersion !== null) {
+        newLatestVersion = Number(metadata.currentVersion);
+      } else {
+        // Fallback: get latest from versions list
+        const versions = await api.versions.list(actualDocumentId, 1, 0);
+        if (versions.length > 0) {
+          newLatestVersion = versions[0].versionNumber;
+        }
+      }
+      
+      if (newLatestVersion !== null) {
+        // If the latest version changed and we were viewing the latest, update to new latest
+        if (latestVersion !== null && newLatestVersion > latestVersion && selectedVersion === null) {
+          // New version was created while viewing the latest - stay on latest
+          setLatestVersion(newLatestVersion);
+          setSelectedVersion(null); // Ensure we're still viewing the latest
+        } else if (latestVersion !== null && newLatestVersion > latestVersion && selectedVersion !== null) {
+          // New version was created while viewing an older version - keep viewing that older version (read-only)
+          setLatestVersion(newLatestVersion);
+          // Don't change selectedVersion - keep it read-only
         } else {
-          // Fallback: get latest from versions list
-          const versions = await api.versions.list(actualDocumentId, 1, 0);
-          if (versions.length > 0) {
-            newLatestVersion = versions[0].versionNumber;
-          }
-        }
-        
-        if (newLatestVersion !== null) {
-          // If the latest version changed and we were viewing the latest, update to new latest
-          if (latestVersion !== null && newLatestVersion > latestVersion && selectedVersion === null) {
-            // New version was created while viewing the latest - stay on latest
-            setLatestVersion(newLatestVersion);
-            setSelectedVersion(null); // Ensure we're still viewing the latest
-          } else if (latestVersion !== null && newLatestVersion > latestVersion && selectedVersion !== null) {
-            // New version was created while viewing an older version - keep viewing that older version (read-only)
-            setLatestVersion(newLatestVersion);
-            // Don't change selectedVersion - keep it read-only
-          } else {
-            setLatestVersion(newLatestVersion);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load version metadata:', error);
-        // Fallback: try to get latest from versions list
-        try {
-          const versions = await api.versions.list(actualDocumentId, 1, 0);
-          if (versions.length > 0) {
-            setLatestVersion(versions[0].versionNumber);
-          }
-        } catch (listError) {
-          console.error('Failed to fetch versions list:', listError);
+          setLatestVersion(newLatestVersion);
         }
       }
     }
 
-    loadMetadata();
+    // Load metadata - errors will propagate in tests, handled gracefully in production
+    loadMetadata().catch((error) => {
+      // In test environment, let errors propagate so tests fail when mocks are incorrect
+      if (process.env.NODE_ENV === 'test') {
+        throw error;
+      }
+      // In production, log but don't break the component (background operation)
+      console.error('Failed to load version metadata:', error);
+    });
   }, [actualDocumentId, lastSaved?.getTime()]); // Reload when lastSaved changes (new version created)
 
   const handleContentChange = useCallback(
@@ -351,33 +343,19 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           
           // Always fetch latest version metadata to ensure we have the current latest
           let currentLatestVersion: number | null = latestVersion ?? null;
-          try {
-            const metadata = await api.versions.getMetadata(actualDocumentId);
-            // Check if currentVersion exists and is valid
-            if (metadata.currentVersion !== undefined && metadata.currentVersion !== null) {
-              currentLatestVersion = Number(metadata.currentVersion);
-            } else {
-              // Metadata exists but currentVersion is missing - fall back to versions list
-              const versions = await api.versions.list(actualDocumentId, 1, 0);
-              if (versions.length > 0) {
-                currentLatestVersion = versions[0].versionNumber; // First version is latest (sorted DESC)
-              }
-            }
-            // Update latestVersion state
-            setLatestVersion(currentLatestVersion);
-          } catch (error) {
-            console.error('Failed to fetch version metadata:', error);
-            // Fallback: try to get latest from versions list
-            try {
-              const versions = await api.versions.list(actualDocumentId, 1, 0);
-              if (versions.length > 0) {
-                currentLatestVersion = versions[0].versionNumber;
-                setLatestVersion(currentLatestVersion);
-              }
-            } catch (listError) {
-              console.error('Failed to fetch versions list:', listError);
+          const metadata = await api.versions.getMetadata(actualDocumentId);
+          // Check if currentVersion exists and is valid
+          if (metadata.currentVersion !== undefined && metadata.currentVersion !== null) {
+            currentLatestVersion = Number(metadata.currentVersion);
+          } else {
+            // Metadata exists but currentVersion is missing - fall back to versions list
+            const versions = await api.versions.list(actualDocumentId, 1, 0);
+            if (versions.length > 0) {
+              currentLatestVersion = versions[0].versionNumber; // First version is latest (sorted DESC)
             }
           }
+          // Update latestVersion state
+          setLatestVersion(currentLatestVersion);
           
           // If selecting the latest version, reset to null to enable editing
           // Use Number() to ensure type-safe comparison
