@@ -7,8 +7,9 @@ import { ParagraphModeToggles } from './paragraph-mode-toggles';
 import { toolbarExtension, showToolbar } from './toolbar-extension';
 import { useAIAnalysis } from '@/hooks/use-ai-analysis';
 import { api } from '@/lib/api/client';
-import type { AIActionType, AIAnalysisResponse, ParagraphMode } from '@zadoox/shared';
+import type { AIActionType, AIAnalysisResponse, ParagraphMode, ChangeBlock } from '@zadoox/shared';
 import { EditorView } from '@codemirror/view';
+import { changeHighlightExtension, setChanges } from './change-highlight-extension';
 
 interface AIEnhancedEditorProps {
   value: string;
@@ -26,6 +27,9 @@ interface AIEnhancedEditorProps {
   openParagraphId?: string | null;
   onOpenPanel?: (paragraphId: string) => void;
   onEditorViewReady?: (view: EditorView | null) => void;
+  changes?: ChangeBlock[];
+  onAcceptChange?: (changeId: string) => void;
+  onRejectChange?: (changeId: string) => void;
 }
 
 /**
@@ -48,6 +52,9 @@ export function AIEnhancedEditor({
   openParagraphId = null,
   onOpenPanel,
   onEditorViewReady,
+  changes,
+  onAcceptChange,
+  onRejectChange,
 }: AIEnhancedEditorProps) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_hoveredParagraph, setHoveredParagraph] = useState<string | null>(null);
@@ -59,6 +66,24 @@ export function AIEnhancedEditor({
 
   const { paragraphs, getAnalysis, isAnalyzing, analyze: analyzeParagraph } = useAIAnalysis(value, model);
   const editorViewRef = useRef<EditorView | null>(null);
+
+  // Memoize change highlight extension
+  const changeHighlightExt = useMemo(() => {
+    if (!onAcceptChange || !onRejectChange) return null;
+    return changeHighlightExtension(onAcceptChange, onRejectChange);
+  }, [onAcceptChange, onRejectChange]);
+
+  // Dispatch changes to CodeMirror when they update
+  useEffect(() => {
+    if (!editorViewRef.current) {
+      return;
+    }
+    // Always dispatch changes (even if empty) to clear decorations when changes are cleared
+    const changesToDispatch = changes || [];
+    editorViewRef.current.dispatch({
+      effects: setChanges.of(changesToDispatch),
+    });
+  }, [changes]);
   
   // Helper function to check if a line is a markdown heading
   const isHeading = (line: string): boolean => {
@@ -639,7 +664,11 @@ export function AIEnhancedEditor({
           onChange={onChange}
           onSelectionChange={onSelectionChange}
           onCursorPositionChange={handleCursorPositionChangeInternal}
-          extensions={[toolbarExt, ...disableSelectionExt]}
+          extensions={[
+            toolbarExt,
+            ...disableSelectionExt,
+            ...(changeHighlightExt ? [changeHighlightExt] : []),
+          ]}
           onEditorViewReady={(view) => {
             editorViewRef.current = view;
             if (onEditorViewReady) {

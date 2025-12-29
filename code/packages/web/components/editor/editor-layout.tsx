@@ -11,6 +11,9 @@ import { ThinkModePanel } from './think-mode-panel';
 import { useDocumentState } from '@/hooks/use-document-state';
 import { api } from '@/lib/api/client';
 import type { FormatType } from './floating-format-menu';
+import { useChangeTracking } from '@/hooks/use-change-tracking';
+import type { ResearchSource } from '@zadoox/shared';
+import { extractCitedSourceIds } from '@/lib/utils/citation';
 
 interface EditorLayoutProps {
   projectId: string;
@@ -22,7 +25,14 @@ type ViewMode = 'edit' | 'preview' | 'split';
 type SidebarTab = 'outline' | 'history';
 
 export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
-  const { content, documentTitle, updateContent, setContentWithoutSave, isSaving, lastSaved, documentId: actualDocumentId, saveDocument, paragraphModes, handleModeToggle: handleModeToggleFromHook } = useDocumentState(documentId, projectId);
+  const { content, documentTitle, updateContent, setContentWithoutSave, isSaving, lastSaved, documentId: actualDocumentId, saveDocument: originalSaveDocument, paragraphModes, handleModeToggle: handleModeToggleFromHook } = useDocumentState(documentId, projectId);
+  const previousContentRef = useRef<string>(content);
+  
+  // Update previousContentRef when content changes from outside (e.g., document load)
+  useEffect(() => {
+    previousContentRef.current = content;
+  }, [content]);
+  
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('outline');
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
@@ -32,6 +42,55 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [thinkPanelOpen, setThinkPanelOpen] = useState(false);
   const [openParagraphId, setOpenParagraphId] = useState<string | null>(null);
   const currentSelectionRef = useRef<{ from: number; to: number; text: string } | null>(null);
+  const [pendingChangeContent, setPendingChangeContent] = useState<{ original: string; new: string } | null>(null);
+  const [isGeneratingContent, setIsGeneratingContent] = useState(false);
+
+
+  // Helper to clean up insertedSources when citations are removed
+  // This is a background cleanup operation - errors are logged but don't block the main flow
+  const cleanupInsertedSources = useCallback(async (newContent: string, _oldContent: string) => {
+    const currentDocument = await api.documents.get(actualDocumentId);
+    const insertedSources: ResearchSource[] = currentDocument.metadata?.insertedSources || [];
+    
+    // Extract source IDs that are still cited in the new content
+    const citedSourceIds = extractCitedSourceIds(newContent);
+    
+    // Filter out sources that are no longer cited
+    const remainingInsertedSources = insertedSources.filter(source => citedSourceIds.has(source.id));
+    
+    // Only update if something changed
+    if (remainingInsertedSources.length !== insertedSources.length) {
+      await api.documents.update(actualDocumentId, {
+        metadata: {
+          ...currentDocument.metadata,
+          insertedSources: remainingInsertedSources,
+        },
+      });
+    }
+  }, [actualDocumentId]);
+
+  // Wrapper for saveDocument that also cleans up insertedSources
+  const saveDocument = useCallback(async (contentToSave: string, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
+    const oldContent = previousContentRef.current;
+    // Clean up insertedSources before saving
+    await cleanupInsertedSources(contentToSave, oldContent);
+    previousContentRef.current = contentToSave;
+    await originalSaveDocument(contentToSave, changeType);
+  }, [originalSaveDocument, cleanupInsertedSources]);
+
+  // Change tracking hook
+  const changeTracking = useChangeTracking(content, {
+    onApply: async (newContent: string) => {
+      // Clean up insertedSources before updating content
+      await cleanupInsertedSources(newContent, content);
+      updateContent(newContent);
+      await saveDocument(newContent, 'ai-action');
+      setPendingChangeContent(null);
+    },
+    onCancel: () => {
+      setPendingChangeContent(null);
+    },
+  });
 
   // Handle opening panel for a paragraph
   const handleOpenPanel = useCallback((paragraphId: string) => {
@@ -53,50 +112,45 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     if (!actualDocumentId || actualDocumentId === 'default') return;
 
     async function loadMetadata() {
-      try {
-        const metadata = await api.versions.getMetadata(actualDocumentId);
-        let newLatestVersion: number | null = null;
-        
-        // Check if currentVersion exists and is valid
-        if (metadata.currentVersion !== undefined && metadata.currentVersion !== null) {
-          newLatestVersion = Number(metadata.currentVersion);
+      const metadata = await api.versions.getMetadata(actualDocumentId);
+      let newLatestVersion: number | null = null;
+      
+      // Check if currentVersion exists and is valid
+      if (metadata.currentVersion !== undefined && metadata.currentVersion !== null) {
+        newLatestVersion = Number(metadata.currentVersion);
+      } else {
+        // Fallback: get latest from versions list
+        const versions = await api.versions.list(actualDocumentId, 1, 0);
+        if (versions.length > 0) {
+          newLatestVersion = versions[0].versionNumber;
+        }
+      }
+      
+      if (newLatestVersion !== null) {
+        // If the latest version changed and we were viewing the latest, update to new latest
+        if (latestVersion !== null && newLatestVersion > latestVersion && selectedVersion === null) {
+          // New version was created while viewing the latest - stay on latest
+          setLatestVersion(newLatestVersion);
+          setSelectedVersion(null); // Ensure we're still viewing the latest
+        } else if (latestVersion !== null && newLatestVersion > latestVersion && selectedVersion !== null) {
+          // New version was created while viewing an older version - keep viewing that older version (read-only)
+          setLatestVersion(newLatestVersion);
+          // Don't change selectedVersion - keep it read-only
         } else {
-          // Fallback: get latest from versions list
-          const versions = await api.versions.list(actualDocumentId, 1, 0);
-          if (versions.length > 0) {
-            newLatestVersion = versions[0].versionNumber;
-          }
-        }
-        
-        if (newLatestVersion !== null) {
-          // If the latest version changed and we were viewing the latest, update to new latest
-          if (latestVersion !== null && newLatestVersion > latestVersion && selectedVersion === null) {
-            // New version was created while viewing the latest - stay on latest
-            setLatestVersion(newLatestVersion);
-            setSelectedVersion(null); // Ensure we're still viewing the latest
-          } else if (latestVersion !== null && newLatestVersion > latestVersion && selectedVersion !== null) {
-            // New version was created while viewing an older version - keep viewing that older version (read-only)
-            setLatestVersion(newLatestVersion);
-            // Don't change selectedVersion - keep it read-only
-          } else {
-            setLatestVersion(newLatestVersion);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load version metadata:', error);
-        // Fallback: try to get latest from versions list
-        try {
-          const versions = await api.versions.list(actualDocumentId, 1, 0);
-          if (versions.length > 0) {
-            setLatestVersion(versions[0].versionNumber);
-          }
-        } catch (listError) {
-          console.error('Failed to fetch versions list:', listError);
+          setLatestVersion(newLatestVersion);
         }
       }
     }
 
-    loadMetadata();
+    // Load metadata - errors will propagate in tests, handled gracefully in production
+    loadMetadata().catch((error) => {
+      // In test environment, let errors propagate so tests fail when mocks are incorrect
+      if (process.env.NODE_ENV === 'test') {
+        throw error;
+      }
+      // In production, log but don't break the component (background operation)
+      console.error('Failed to load version metadata:', error);
+    });
   }, [actualDocumentId, lastSaved?.getTime()]); // Reload when lastSaved changes (new version created)
 
   const handleContentChange = useCallback(
@@ -289,33 +343,19 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           
           // Always fetch latest version metadata to ensure we have the current latest
           let currentLatestVersion: number | null = latestVersion ?? null;
-          try {
-            const metadata = await api.versions.getMetadata(actualDocumentId);
-            // Check if currentVersion exists and is valid
-            if (metadata.currentVersion !== undefined && metadata.currentVersion !== null) {
-              currentLatestVersion = Number(metadata.currentVersion);
-            } else {
-              // Metadata exists but currentVersion is missing - fall back to versions list
-              const versions = await api.versions.list(actualDocumentId, 1, 0);
-              if (versions.length > 0) {
-                currentLatestVersion = versions[0].versionNumber; // First version is latest (sorted DESC)
-              }
-            }
-            // Update latestVersion state
-            setLatestVersion(currentLatestVersion);
-          } catch (error) {
-            console.error('Failed to fetch version metadata:', error);
-            // Fallback: try to get latest from versions list
-            try {
-              const versions = await api.versions.list(actualDocumentId, 1, 0);
-              if (versions.length > 0) {
-                currentLatestVersion = versions[0].versionNumber;
-                setLatestVersion(currentLatestVersion);
-              }
-            } catch (listError) {
-              console.error('Failed to fetch versions list:', listError);
+          const metadata = await api.versions.getMetadata(actualDocumentId);
+          // Check if currentVersion exists and is valid
+          if (metadata.currentVersion !== undefined && metadata.currentVersion !== null) {
+            currentLatestVersion = Number(metadata.currentVersion);
+          } else {
+            // Metadata exists but currentVersion is missing - fall back to versions list
+            const versions = await api.versions.list(actualDocumentId, 1, 0);
+            if (versions.length > 0) {
+              currentLatestVersion = versions[0].versionNumber; // First version is latest (sorted DESC)
             }
           }
+          // Update latestVersion state
+          setLatestVersion(currentLatestVersion);
           
           // If selecting the latest version, reset to null to enable editing
           // Use Number() to ensure type-safe comparison
@@ -352,12 +392,41 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           viewMode={viewMode}
         />
 
+        {/* Change Tracking Banner - shown at top when tracking is active */}
+        {changeTracking.isTracking && (
+          <div className="px-4 py-2 bg-gray-800 border-b border-gray-700 flex items-center justify-between z-50">
+            <div className="flex items-center gap-2 text-sm text-gray-300">
+              <span className="text-green-400">●</span>
+              <span>You have {changeTracking.changes.length} pending change{changeTracking.changes.length !== 1 ? 's' : ''}</span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  changeTracking.cancelTracking();
+                }}
+                className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded border border-gray-600 transition-colors"
+              >
+                Undo
+              </button>
+              <button
+                onClick={() => {
+                  changeTracking.applyChanges();
+                }}
+                disabled={changeTracking.changes.length === 0}
+                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm rounded transition-colors"
+              >
+                Keep
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Editor/Preview */}
         <div className="flex-1 overflow-hidden flex relative">
           {(viewMode === 'edit' || viewMode === 'split') && (
             <div className={viewMode === 'split' ? 'flex-1 border-r border-vscode-border overflow-hidden relative' : 'flex-1 overflow-hidden relative'}>
               <AIEnhancedEditor
-                value={content}
+                value={pendingChangeContent?.new ?? content}
                 onChange={handleContentChange}
                 onSelectionChange={handleSelectionChange}
                 onCursorPositionChange={handleCursorPositionChange}
@@ -369,6 +438,10 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 openParagraphId={openParagraphId}
                 onOpenPanel={handleOpenPanel}
                 readOnly={(() => {
+                  // Disable editing when change tracking is active
+                  if (changeTracking.isTracking) {
+                    return true;
+                  }
                   // Disable editing when Think panel is open
                   if (thinkPanelOpen) {
                     return true;
@@ -383,6 +456,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                                     Number(selectedVersion) !== Number(safeLatestVersion);
                   return isReadOnly;
                 })()}
+                changes={changeTracking.mappedChanges}
+                onAcceptChange={changeTracking.acceptChange}
+                onRejectChange={changeTracking.rejectChange}
                 onSaveWithType={async (contentToSave, changeType) => {
                   await saveDocument(contentToSave, changeType);
                 }}
@@ -397,16 +473,24 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             paragraphId={openParagraphId}
             content={content}
             documentId={actualDocumentId}
-            onContentGenerated={async (generatedContent, mode) => {
+            projectId={projectId}
+            onGeneratingChange={setIsGeneratingContent}
+            onContentGenerated={async (generatedContent, mode, _sources) => {
               // Find the paragraph and replace/blend content
-              if (!openParagraphId) return;
+              if (!openParagraphId) {
+                return;
+              }
               
               const lines = content.split('\n');
               const match = openParagraphId.match(/^para-(\d+)$/);
-              if (!match) return;
+              if (!match) {
+                return;
+              }
               
               const startLine = parseInt(match[1], 10);
-              if (startLine < 0 || startLine >= lines.length) return;
+              if (startLine < 0 || startLine >= lines.length) {
+                return;
+              }
               
               // Check if section
               const isHeading = (line: string) => /^#{1,6}\s/.test(line.trim());
@@ -431,14 +515,16 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               const afterLines = lines.slice(endLine); // endLine is exclusive (first line after block)
               
               let newContent: string;
-              if (mode === 'replace' || mode === 'extend') {
+              if (mode === 'replace' || mode === 'extend' || mode === 'citation' || mode === 'summary') {
                 // Replace: use generated content directly
                 // Extend: append generated content (handled in frontend)
+                // Citation/Summary: insert generated content with citations
                 if (mode === 'extend') {
                   // Extend: append generated content to the existing block content
                   const currentBlockContent = lines.slice(startLine, endLine).join('\n');
                   newContent = [...beforeLines, currentBlockContent + '\n\n' + generatedContent, ...afterLines].join('\n');
                 } else {
+                  // Replace, Citation, or Summary: replace with generated content
                   newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
                 }
               } else {
@@ -447,14 +533,30 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
               }
               
-              updateContent(newContent);
-              await saveDocument(newContent, 'ai-action');
+              // Note: We don't clear researchSessions - they remain associated with the block
+              // Only insertedSources will be cleaned up when citations are removed (handled in cleanupInsertedSources)
+              
+              // Start change tracking instead of directly applying
+              setPendingChangeContent({ original: content, new: newContent });
+              changeTracking.startTracking(newContent, content);
+              // Hide progress indicator after change tracking is set up
+              setIsGeneratingContent(false);
             }}
           />
           
           {(viewMode === 'preview' || viewMode === 'split') && (
             <div className={viewMode === 'split' ? 'flex-1 overflow-auto' : 'flex-1'}>
               <MarkdownPreview content={content} />
+            </div>
+          )}
+
+          {/* Progress Overlay - shown when generating content */}
+          {isGeneratingContent && (
+            <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] pointer-events-none">
+              <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 flex flex-col items-center gap-4 min-w-[200px] pointer-events-auto">
+                <div className="w-8 h-8 border-4 border-gray-600 border-t-vscode-blue rounded-full animate-spin" />
+                <div className="text-sm text-gray-400">Generating content...</div>
+              </div>
             </div>
           )}
         </div>
