@@ -39,35 +39,17 @@ export function useChangeTracking(originalContent: string, options?: UseChangeTr
    * @param originalContentOverride - Optional original content to use instead of the hook's current originalContent
    */
   const startTracking = useCallback((newContent: string, originalContentOverride?: string) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'use-change-tracking.ts:41',message:'startTracking called',data:{newContentLength:newContent.length,hasOverride:!!originalContentOverride,overrideLength:originalContentOverride?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
     // Use override if provided, otherwise use the ref's current value
     const original = originalContentOverride ?? originalContentRef.current;
     // Store the original content at the time tracking starts
     trackingOriginalContentRef.current = original;
     newContentRef.current = newContent;
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'use-change-tracking.ts:48',message:'Before calculateChanges',data:{originalLength:original.length,newContentLength:newContent.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
     const calculatedChanges = calculateChanges(trackingOriginalContentRef.current, newContent);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'use-change-tracking.ts:51',message:'After calculateChanges',data:{changesCount:calculatedChanges.length,changes:calculatedChanges.map(c=>({type:c.type,start:c.startPosition,end:c.endPosition,textLength:c.newText?.length||c.originalText?.length||0}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
     setChanges(calculatedChanges);
     // Map changes to new content positions for display
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'use-change-tracking.ts:55',message:'Before mapChangesToNewContent',data:{changesCount:calculatedChanges.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
     const mapped = mapChangesToNewContent(calculatedChanges, trackingOriginalContentRef.current, newContent);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'use-change-tracking.ts:58',message:'After mapChangesToNewContent',data:{mappedCount:mapped.length,mapped:mapped.map(c=>({type:c.type,start:c.startPosition,end:c.endPosition,textLength:c.newText?.length||c.originalText?.length||0}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
     setMappedChanges(mapped);
     setIsTracking(calculatedChanges.length > 0);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'use-change-tracking.ts:61',message:'startTracking completed',data:{isTracking:calculatedChanges.length>0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
   }, []);
 
   /**

@@ -128,12 +128,6 @@ export function calculateChanges(originalContent: string, newContent: string): C
     }
   }
 
-  // #region agent log
-  if (typeof fetch !== 'undefined') {
-    fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'diff.ts:77',message:'Merged consecutive changes',data:{beforeMerge:changes.length,afterMerge:mergedChanges.length,changes:mergedChanges.map(c=>({type:c.type,start:c.startPosition,end:c.endPosition,textLength:c.newText?.length||c.originalText?.length||0}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
-  }
-  // #endregion
-
   return mergedChanges;
 }
 

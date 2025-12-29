@@ -47,12 +47,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
 
 
   // Helper to clean up insertedSources when citations are removed
-  const cleanupInsertedSources = useCallback(async (newContent: string, oldContent: string) => {
+  const cleanupInsertedSources = useCallback(async (newContent: string, _oldContent: string) => {
     try {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:50',message:'Cleaning up insertedSources',data:{newContentLength:newContent.length,oldContentLength:oldContent.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
-      // #endregion
-      
       const currentDocument = await api.documents.get(actualDocumentId);
       const insertedSources: ResearchSource[] = currentDocument.metadata?.insertedSources || [];
       
@@ -64,10 +60,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       
       // Only update if something changed
       if (remainingInsertedSources.length !== insertedSources.length) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:65',message:'Updating insertedSources',data:{beforeCount:insertedSources.length,afterCount:remainingInsertedSources.length,removedIds:insertedSources.filter(source => !citedSourceIds.has(source.id)).map(s => s.id)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
-        // #endregion
-        
         await api.documents.update(actualDocumentId, {
           metadata: {
             ...currentDocument.metadata,
@@ -76,9 +68,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         });
       }
     } catch (error) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:75',message:'Failed to cleanup insertedSources',data:{error:error instanceof Error ? error.message : 'Unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
-      // #endregion
       console.error('Failed to cleanup insertedSources:', error);
     }
   }, [actualDocumentId]);
@@ -426,12 +415,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         />
 
         {/* Change Tracking Banner - shown at top when tracking is active */}
-        {(() => {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:372',message:'Checking banner visibility',data:{isTracking:changeTracking.isTracking,changesLength:changeTracking.changes.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
-          // #endregion
-          return changeTracking.isTracking;
-        })() && (
+        {changeTracking.isTracking && (
           <div className="px-4 py-2 bg-gray-800 border-b border-gray-700 flex items-center justify-between z-50">
             <div className="flex items-center gap-2 text-sm text-gray-300">
               <span className="text-green-400">●</span>
@@ -440,9 +424,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             <div className="flex gap-2">
               <button
                 onClick={() => {
-                  // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:384',message:'Undo button clicked',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
-                  // #endregion
                   changeTracking.cancelTracking();
                 }}
                 className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded border border-gray-600 transition-colors"
@@ -451,9 +432,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               </button>
               <button
                 onClick={() => {
-                  // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:395',message:'Keep button clicked',data:{changesLength:changeTracking.changes.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
-                  // #endregion
                   changeTracking.applyChanges();
                 }}
                 disabled={changeTracking.changes.length === 0}
@@ -470,13 +448,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           {(viewMode === 'edit' || viewMode === 'split') && (
             <div className={viewMode === 'split' ? 'flex-1 border-r border-vscode-border overflow-hidden relative' : 'flex-1 overflow-hidden relative'}>
               <AIEnhancedEditor
-                value={(() => {
-                  const editorValue = pendingChangeContent?.new ?? content;
-                  // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:375',message:'AIEnhancedEditor value prop',data:{hasPendingChange:!!pendingChangeContent,pendingNewLength:pendingChangeContent?.new.length,contentLength:content.length,editorValueLength:editorValue.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-                  // #endregion
-                  return editorValue;
-                })()}
+                value={pendingChangeContent?.new ?? content}
                 onChange={handleContentChange}
                 onSelectionChange={handleSelectionChange}
                 onCursorPositionChange={handleCursorPositionChange}
@@ -526,31 +498,19 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             projectId={projectId}
             onGeneratingChange={setIsGeneratingContent}
             onContentGenerated={async (generatedContent, mode, _sources) => {
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:423',message:'onContentGenerated callback entered',data:{generatedContentLength:generatedContent.length,mode,openParagraphId,contentLength:content.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-              // #endregion
               // Find the paragraph and replace/blend content
               if (!openParagraphId) {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:427',message:'openParagraphId is null, returning early',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-                // #endregion
                 return;
               }
               
               const lines = content.split('\n');
               const match = openParagraphId.match(/^para-(\d+)$/);
               if (!match) {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:432',message:'paragraphId match failed',data:{openParagraphId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-                // #endregion
                 return;
               }
               
               const startLine = parseInt(match[1], 10);
               if (startLine < 0 || startLine >= lines.length) {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:437',message:'startLine out of bounds',data:{startLine,linesLength:lines.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-                // #endregion
                 return;
               }
               
@@ -598,14 +558,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               // Note: We don't clear researchSessions - they remain associated with the block
               // Only insertedSources will be cleaned up when citations are removed (handled in cleanupInsertedSources)
               
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:475',message:'Before startTracking',data:{originalContentLength:content.length,newContentLength:newContent.length,mode},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-              // #endregion
               // Start change tracking instead of directly applying
               setPendingChangeContent({ original: content, new: newContent });
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:478',message:'calling changeTracking.startTracking',data:{newContentLength:newContent.length,originalContentLength:content.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-              // #endregion
               changeTracking.startTracking(newContent, content);
               // Hide progress indicator after change tracking is set up
               setIsGeneratingContent(false);

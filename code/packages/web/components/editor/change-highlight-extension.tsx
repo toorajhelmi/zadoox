@@ -39,19 +39,10 @@ export function changeHighlightExtension(
         const changes = tr.state.field(pendingChangesField);
         const docLength = tr.state.doc.length;
 
-      // #region agent log
-      if (changes.length > 0) {
-        fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'change-highlight-extension.tsx:77',message:'Extension update - creating decorations',data:{changesCount:changes.length,docLength,hasPendingChanges:changes.length>0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-      }
-      // #endregion
-
-      // If no changes, clear all decorations
-      if (changes.length === 0) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'change-highlight-extension.tsx:94',message:'Clearing decorations - no changes',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-        // #endregion
-        return Decoration.none;
-      }
+        // If no changes, clear all decorations
+        if (changes.length === 0) {
+          return Decoration.none;
+        }
 
       // SIMPLIFIED: Highlight only the NEW parts (changes), not the entire document
       if (docLength > 0) {
@@ -118,10 +109,6 @@ export function changeHighlightExtension(
             // Skip on error
           }
         }
-        
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'change-highlight-extension.tsx:140',message:'Simplified decoration set created',data:{docLength,marksCount:markRanges.length,linesCount:lineRanges.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-        // #endregion
         
         return decorationSet;
       }

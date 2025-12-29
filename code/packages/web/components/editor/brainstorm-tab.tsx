@@ -222,24 +222,11 @@ export function BrainstormTab({
   }, [documentId, paragraphId, onReset]);
 
   const generateContent = useCallback(async (idea: IdeaCardType, mode: 'blend' | 'replace' | 'extend') => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'brainstorm-tab.tsx:224',message:'generateContent called',data:{ideaTopic:idea.topic,mode,paragraphId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     try {
       setIsLoading(true);
       if (onGeneratingChange) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'brainstorm-tab.tsx:228',message:'onGeneratingChange(true) called',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
         onGeneratingChange(true);
-      } else {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'brainstorm-tab.tsx:232',message:'onGeneratingChange is null/undefined',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
       }
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'brainstorm-tab.tsx:235',message:'API call starting',data:{paragraphId,blockContentLength:blockContent.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
       const response = await api.ai.brainstorm.generate({
         paragraphId,
         ideaCard: {
@@ -254,19 +241,10 @@ export function BrainstormTab({
         mode: mode === 'extend' ? 'replace' : mode, // extend handled in frontend
       });
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'brainstorm-tab.tsx:252',message:'API response received',data:{responseContentLength:response.content.length,mode},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'brainstorm-tab.tsx:255',message:'onContentGenerated called',data:{contentLength:response.content.length,mode,hasCallback:!!onContentGenerated},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
       onContentGenerated(response.content, mode);
       setShowBlendReplaceDialog(false);
       setPendingIdea(null);
     } catch (error) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'brainstorm-tab.tsx:260',message:'API call failed',data:{error:error instanceof Error ? error.message : 'Unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
       console.error('Failed to generate content:', error);
       alert(`Failed to generate content: ${error instanceof Error ? error.message : 'Unknown error'}`);
       if (onGeneratingChange) {

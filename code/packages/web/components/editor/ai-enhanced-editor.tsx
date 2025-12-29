@@ -75,20 +75,11 @@ export function AIEnhancedEditor({
 
   // Dispatch changes to CodeMirror when they update
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ai-enhanced-editor.tsx:77',message:'useEffect changes triggered',data:{hasEditorView:!!editorViewRef.current,changesCount:changes?.length||0,changes:changes?.map(c=>({type:c.type,start:c.startPosition,end:c.endPosition}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
     if (!editorViewRef.current) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ai-enhanced-editor.tsx:81',message:'Skipping dispatch - missing editorView',data:{hasEditorView:!!editorViewRef.current,changesCount:changes?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
       return;
     }
     // Always dispatch changes (even if empty) to clear decorations when changes are cleared
     const changesToDispatch = changes || [];
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ai-enhanced-editor.tsx:85',message:'Dispatching changes to CodeMirror',data:{changesCount:changesToDispatch.length,isEmpty:changesToDispatch.length===0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
     editorViewRef.current.dispatch({
       effects: setChanges.of(changesToDispatch),
     });
