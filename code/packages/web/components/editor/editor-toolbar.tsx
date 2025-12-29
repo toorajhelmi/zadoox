@@ -1,6 +1,6 @@
 'use client';
 
-import { Bars3Icon, EyeIcon, PencilIcon, Squares2X2Icon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import { Bars3Icon, EyeIcon, PencilIcon, Squares2X2Icon, ChevronRightIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api/client';
@@ -16,6 +16,10 @@ interface EditorToolbarProps {
   onToggleSidebar: () => void;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
 }
 
 export function EditorToolbar({ 
@@ -26,6 +30,10 @@ export function EditorToolbar({
   onToggleSidebar,
   viewMode,
   onViewModeChange,
+  canUndo = false,
+  canRedo = false,
+  onUndo,
+  onRedo,
 }: EditorToolbarProps) {
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
@@ -75,6 +83,38 @@ export function EditorToolbar({
             </>
           )}
         </nav>
+
+        {/* Undo/Redo Buttons */}
+        {onUndo && onRedo && (
+          <div className="flex items-center gap-1 border-l border-vscode-border pl-4">
+            <button
+              onClick={onUndo}
+              disabled={!canUndo}
+              className={`px-3 py-1 text-sm rounded transition-colors ${
+                canUndo
+                  ? 'text-vscode-text-secondary hover:text-vscode-text'
+                  : 'text-vscode-text-secondary/50 cursor-not-allowed'
+              }`}
+              aria-label="Undo"
+              title="Undo (Cmd/Ctrl+Z)"
+            >
+              <ArrowUturnLeftIcon className="w-4 h-4" />
+            </button>
+            <button
+              onClick={onRedo}
+              disabled={!canRedo}
+              className={`px-3 py-1 text-sm rounded transition-colors ${
+                canRedo
+                  ? 'text-vscode-text-secondary hover:text-vscode-text'
+                  : 'text-vscode-text-secondary/50 cursor-not-allowed'
+              }`}
+              aria-label="Redo"
+              title="Redo (Cmd/Ctrl+Shift+Z or Cmd/Ctrl+Y)"
+            >
+              <ArrowUturnRightIcon className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {/* View Mode Toggle */}
         <div className="flex items-center gap-1 border-l border-vscode-border pl-4">
