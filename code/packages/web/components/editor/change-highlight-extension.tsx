@@ -1,6 +1,6 @@
 'use client';
 
-import { StateField, StateEffect } from '@codemirror/state';
+import { StateField, StateEffect, Range } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { ChangeIndicator } from './change-indicator';
 import { createRoot, Root } from 'react-dom/client';
@@ -130,7 +130,7 @@ export function changeHighlightExtension(
 
         // Create all ranges: marks first, then widgets (sorted by position)
         // Marks come before widgets at the same position (startSide ordering: marks=0, widgets with side:1=1)
-        const allRanges: Array<{ from: number; to: number; startSide: number; range: any }> = [];
+        const allRanges: Array<{ from: number; to: number; startSide: number; range: Range<Decoration> }> = [];
         
         // Add marks (startSide = 0)
         markRanges.forEach(r => {

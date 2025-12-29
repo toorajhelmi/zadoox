@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeBlock } from '@zadoox/shared';
+import type { EditorView } from '@codemirror/view';
 
 interface ChangeIndicatorsProps {
   content: string;
   changes: ChangeBlock[];
-  editorView: any; // EditorView from CodeMirror
+  editorView: EditorView;
 }
 
 /**
