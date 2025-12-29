@@ -41,9 +41,9 @@ export function ChangeIndicators({ content, changes, editorView }: ChangeIndicat
           if (change.startPosition >= doc.length) continue;
 
           // Get coordinates from editor
-          const startCoords = editorView.coordsAtPos(change.startPosition, false);
+          const startCoords = editorView.coordsAtPos(change.startPosition);
           const endPos = change.endPosition ? Math.min(change.endPosition, doc.length) : change.startPosition;
-          const endCoords = editorView.coordsAtPos(endPos, false);
+          const endCoords = editorView.coordsAtPos(endPos);
 
           if (!startCoords || !endCoords) continue;
 
