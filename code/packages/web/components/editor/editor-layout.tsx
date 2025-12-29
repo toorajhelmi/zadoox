@@ -398,7 +398,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             content={content}
             documentId={actualDocumentId}
             projectId={projectId}
-            onContentGenerated={async (generatedContent, mode, sources) => {
+            onContentGenerated={async (generatedContent, mode, _sources) => {
               // Find the paragraph and replace/blend content
               if (!openParagraphId) return;
               

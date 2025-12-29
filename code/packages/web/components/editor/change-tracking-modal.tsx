@@ -21,8 +21,8 @@ interface ChangeTrackingModalProps {
  */
 export function ChangeTrackingModal({
   changes,
-  originalContent,
-  newContent,
+  originalContent: _originalContent,
+  newContent: _newContent,
   onAccept,
   onReject,
   onAcceptAll,

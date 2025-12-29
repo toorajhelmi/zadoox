@@ -29,8 +29,6 @@ export function ChangeIndicators({ content, changes, editorView }: ChangeIndicat
       if (!container || !editorView) return;
 
       const editor = editorView.dom;
-      const editorRect = editor.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
       const scrollContainer = editor.closest('.cm-scroller') || editor;
       
       for (const change of changes) {

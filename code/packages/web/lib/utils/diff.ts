@@ -3,7 +3,7 @@
  */
 
 import DiffMatchPatch from 'diff-match-patch';
-import type { ChangeBlock, ChangeType } from '@zadoox/shared';
+import type { ChangeBlock } from '@zadoox/shared';
 
 const dmp = new DiffMatchPatch();
 

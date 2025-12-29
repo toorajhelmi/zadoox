@@ -9,7 +9,7 @@ import type { ChangeBlock } from '@zadoox/shared';
  * Map change positions from original content to new content
  * This is needed because diff positions are in original content, but we display new content
  */
-export function mapChangesToNewContent(changes: ChangeBlock[], originalContent: string, newContent: string): ChangeBlock[] {
+export function mapChangesToNewContent(changes: ChangeBlock[], originalContent: string, _newContent: string): ChangeBlock[] {
   // For simplicity, we'll create a position mapping
   // This is a simplified approach - for production, you'd want a more robust mapping
   
