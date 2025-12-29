@@ -397,7 +397,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             paragraphId={openParagraphId}
             content={content}
             documentId={actualDocumentId}
-            onContentGenerated={async (generatedContent, mode) => {
+            projectId={projectId}
+            onContentGenerated={async (generatedContent, mode, sources) => {
               // Find the paragraph and replace/blend content
               if (!openParagraphId) return;
               
@@ -431,14 +432,16 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               const afterLines = lines.slice(endLine); // endLine is exclusive (first line after block)
               
               let newContent: string;
-              if (mode === 'replace' || mode === 'extend') {
+              if (mode === 'replace' || mode === 'extend' || mode === 'citation' || mode === 'summary') {
                 // Replace: use generated content directly
                 // Extend: append generated content (handled in frontend)
+                // Citation/Summary: insert generated content with citations
                 if (mode === 'extend') {
                   // Extend: append generated content to the existing block content
                   const currentBlockContent = lines.slice(startLine, endLine).join('\n');
                   newContent = [...beforeLines, currentBlockContent + '\n\n' + generatedContent, ...afterLines].join('\n');
                 } else {
+                  // Replace, Citation, or Summary: replace with generated content
                   newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
                 }
               } else {

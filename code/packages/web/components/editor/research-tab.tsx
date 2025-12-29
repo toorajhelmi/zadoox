@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { ChatMessage } from './chat-message';
 import { api } from '@/lib/api/client';
 import { MicIcon, ArrowRightIcon } from '@/components/dashboard/icons';
 import type { ResearchSession, ChatMessage as ChatMessageType, ResearchSource, DocumentStyle } from '@zadoox/shared';
@@ -371,9 +370,25 @@ export function ResearchTab({
               </div>
             ) : (
               <>
-                {messages.map((message) => (
-                  <ChatMessage key={message.id} message={message} />
-                ))}
+                {messages.map((message) => {
+                  const isUser = message.role === 'user';
+                  return (
+                    <div key={message.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4 min-w-0`}>
+                      <div
+                        className={`max-w-[75%] min-w-0 rounded-lg px-3 py-2 ${
+                          isUser
+                            ? 'bg-gray-800 text-gray-400'
+                            : 'bg-gray-900 border border-gray-700 text-gray-400'
+                        }`}
+                      >
+                        <div className="text-xs whitespace-pre-wrap break-words overflow-wrap-anywhere">{message.content}</div>
+                        <div className="text-xs mt-1 opacity-70 text-gray-500">
+                          {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
                 {isLoading && (
                   <div className="text-xs text-gray-400 text-center py-2">
                     Searching for sources...
