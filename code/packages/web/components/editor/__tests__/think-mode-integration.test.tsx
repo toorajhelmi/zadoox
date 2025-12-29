@@ -12,8 +12,22 @@ vi.mock('@/hooks/use-document-state');
 vi.mock('@/lib/api/client', () => ({
   api: {
     versions: {
-      getMetadata: vi.fn(),
-      list: vi.fn(),
+      getMetadata: vi.fn().mockResolvedValue({
+        documentId: 'doc-1',
+        currentVersion: 1,
+        totalVersions: 1,
+        lastModifiedAt: new Date(),
+      }),
+      list: vi.fn().mockResolvedValue([
+        {
+          id: 'version-1',
+          documentId: 'doc-1',
+          versionNumber: 1,
+          isSnapshot: true,
+          authorId: 'user-1',
+          createdAt: new Date(),
+        },
+      ]),
     },
     projects: {
       get: vi.fn().mockResolvedValue({
