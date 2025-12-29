@@ -1,53 +1,8 @@
 'use client';
 
-import { StateField, StateEffect, Range } from '@codemirror/state';
-import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
-import { ChangeIndicator } from './change-indicator';
-import { createRoot, Root } from 'react-dom/client';
+import { StateField, StateEffect } from '@codemirror/state';
+import { Decoration, DecorationSet, EditorView } from '@codemirror/view';
 import type { ChangeBlock } from '@zadoox/shared';
-
-interface ChangeHighlightProps {
-  change: ChangeBlock;
-  onAccept: (changeId: string) => void;
-  onReject: (changeId: string) => void;
-}
-
-/**
- * Widget for change indicator badge
- */
-class ChangeIndicatorWidget extends WidgetType {
-  private root: Root | null = null;
-
-  constructor(private props: ChangeHighlightProps) {
-    super();
-  }
-
-  toDOM() {
-    const container = document.createElement('span');
-    container.className = 'change-indicator-widget';
-    this.root = createRoot(container);
-    this.root.render(
-      <ChangeIndicator
-        change={this.props.change}
-        onAccept={this.props.onAccept}
-        onReject={this.props.onReject}
-        position={{ from: 0, to: 0 }} // Position is handled by decoration
-      />
-    );
-    return container;
-  }
-
-  destroy() {
-    if (this.root) {
-      this.root.unmount();
-      this.root = null;
-    }
-  }
-
-  ignoreEvent() {
-    return false; // Handle clicks on buttons
-  }
-}
 
 // State effect to update changes
 export const setChanges = StateEffect.define<ChangeBlock[]>();
@@ -56,123 +11,126 @@ export const setChanges = StateEffect.define<ChangeBlock[]>();
  * Create CodeMirror extension for change highlighting
  */
 export function changeHighlightExtension(
-  onAcceptChange: (changeId: string) => void,
-  onRejectChange: (changeId: string) => void
+  _onAcceptChange: (changeId: string) => void,
+  _onRejectChange: (changeId: string) => void
 ) {
-  return StateField.define<DecorationSet>({
-    create() {
-      return Decoration.none;
-    },
-    update(decorations, tr) {
-      const changes: ChangeBlock[] = [];
-
-      // Collect changes from state effects
+  // Store pending changes in a state field so they persist across transactions
+  const pendingChangesField = StateField.define<ChangeBlock[]>({
+    create: () => [],
+    update: (value, tr) => {
+      // Collect new changes from effects
       for (const effect of tr.effects) {
         if (effect.is(setChanges)) {
-          changes.push(...effect.value);
+          return effect.value; // Replace with new changes
         }
       }
+      return value; // Keep existing changes
+    },
+  });
 
-      // If we have new changes, create fresh decorations (replace all)
+  return [
+    pendingChangesField,
+    StateField.define<DecorationSet>({
+      create() {
+        return Decoration.none;
+      },
+      update(decorations, tr) {
+        // Get changes from the state field (persists across transactions)
+        const changes = tr.state.field(pendingChangesField);
+        const docLength = tr.state.doc.length;
+
+      // #region agent log
       if (changes.length > 0) {
-        const markRanges: Array<{ from: number; to: number; value: ReturnType<typeof Decoration.mark> }> = [];
-        const widgetRanges: Array<{ from: number; to: number; value: ReturnType<typeof Decoration.widget> }> = [];
+        fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'change-highlight-extension.tsx:77',message:'Extension update - creating decorations',data:{changesCount:changes.length,docLength,hasPendingChanges:changes.length>0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+      }
+      // #endregion
 
+      // If no changes, clear all decorations
+      if (changes.length === 0) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'change-highlight-extension.tsx:94',message:'Clearing decorations - no changes',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
+        return Decoration.none;
+      }
+
+      // SIMPLIFIED: Highlight only the NEW parts (changes), not the entire document
+      if (docLength > 0) {
+        const markRanges: Array<{ from: number; to: number; value: ReturnType<typeof Decoration.mark> }> = [];
+        const lineRanges: Array<{ from: number; value: ReturnType<typeof Decoration.line> }> = [];
+        
+        // Process each change - highlight only the new parts
         for (const change of changes) {
           if (change.accepted === undefined) {
             // Only show pending changes
             const from = change.startPosition;
             const to = change.endPosition || change.startPosition;
 
-            // Highlight decoration based on change type
-            let markDeco: ReturnType<typeof Decoration.mark>;
-            switch (change.type) {
-              case 'add':
-                markDeco = Decoration.mark({
-                  class: 'cm-change-add',
-                  attributes: { title: `Added: ${change.newText?.substring(0, 50)}` },
-                });
-                break;
-              case 'delete':
-                markDeco = Decoration.mark({
-                  class: 'cm-change-delete',
-                  attributes: { title: `Deleted: ${change.originalText?.substring(0, 50)}` },
-                });
-                break;
-              case 'modify':
-                markDeco = Decoration.mark({
-                  class: 'cm-change-modify',
-                  attributes: {
-                    title: `Modified: ${change.originalText?.substring(0, 30)} → ${change.newText?.substring(0, 30)}`,
-                  },
-                });
-                break;
-              default:
-                markDeco = Decoration.mark({
-                  class: 'cm-change-unknown',
-                });
-            }
+            // Skip invalid ranges
+            if (from > to || from >= docLength || to > docLength) continue;
 
+            // Get line numbers for right-side indicators
+            const fromLine = tr.state.doc.lineAt(from).number;
+            const toLine = tr.state.doc.lineAt(Math.min(to, docLength - 1)).number;
+
+            // Always use "add" style (green) for new content
+            const markDeco = Decoration.mark({
+              class: 'cm-change-add',
+              attributes: { title: 'New content' },
+            });
             markRanges.push({ from, to, value: markDeco });
 
-            // Add indicator widget at the start of the change
-            const indicatorWidget = Decoration.widget({
-              widget: new ChangeIndicatorWidget({
-                change,
-                onAccept: onAcceptChange,
-                onReject: onRejectChange,
-              }),
-              side: 1, // After the position
-            });
-            widgetRanges.push({ from, to: from, value: indicatorWidget });
+            // Add line decorations for right-side indicators
+            for (let lineNum = fromLine; lineNum <= toLine; lineNum++) {
+              try {
+                const line = tr.state.doc.line(lineNum);
+                const lineDeco = Decoration.line({
+                  class: 'cm-change-add-line',
+                });
+                lineRanges.push({ from: line.from, value: lineDeco });
+              } catch (error) {
+                // Skip if line doesn't exist
+              }
+            }
           }
         }
 
-        // Create all ranges: marks first, then widgets (sorted by position)
-        // Marks come before widgets at the same position (startSide ordering: marks=0, widgets with side:1=1)
-        const allRanges: Array<{ from: number; to: number; startSide: number; range: Range<Decoration> }> = [];
+        // Build decoration set incrementally
+        let decorationSet = Decoration.none;
         
-        // Add marks (startSide = 0)
-        markRanges.forEach(r => {
-          allRanges.push({ 
-            from: r.from, 
-            to: r.to, 
-            startSide: 0, // Marks have startSide 0
-            range: r.value.range(r.from, r.to) 
-          });
-        });
-        
-        // Add widgets (startSide = 1 for side:1)
-        widgetRanges.forEach(r => {
-          allRanges.push({ 
-            from: r.from, 
-            to: r.to, 
-            startSide: 1, // Widgets with side:1 have startSide 1
-            range: r.value.range(r.from, r.to) 
-          });
-        });
-        
-        // Sort: by from position first, then by startSide
-        allRanges.sort((a, b) => {
-          if (a.from !== b.from) {
-            return a.from - b.from;
+        // Add line decorations first
+        for (const lineRange of lineRanges) {
+          try {
+            decorationSet = decorationSet.update({
+              add: [lineRange.value.range(lineRange.from)],
+            });
+          } catch (error) {
+            // Skip on error
           }
-          // At same from position: sort by startSide (marks=0 before widgets=1)
-          if (a.startSide !== b.startSide) {
-            return a.startSide - b.startSide;
-          }
-          return a.to - b.to;
-        });
+        }
         
-        // Create decoration set from sorted ranges
-        // Use Decoration.set with sorted ranges, or use update method
-        return Decoration.set(allRanges.map(d => d.range));
+        // Add mark decorations
+        for (const markRange of markRanges) {
+          try {
+            decorationSet = decorationSet.update({
+              add: [markRange.value.range(markRange.from, markRange.to)],
+            });
+          } catch (error) {
+            // Skip on error
+          }
+        }
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'change-highlight-extension.tsx:140',message:'Simplified decoration set created',data:{docLength,marksCount:markRanges.length,linesCount:lineRanges.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
+        
+        return decorationSet;
       }
 
-      // No new changes - map existing decorations through document changes
-      return decorations.map(tr.changes);
+      // No document content - return none
+      return Decoration.none;
     },
     provide: (f) => EditorView.decorations.from(f),
-  });
+  }),
+  ];
 }
 

@@ -11,6 +11,8 @@ import { ThinkModePanel } from './think-mode-panel';
 import { useDocumentState } from '@/hooks/use-document-state';
 import { api } from '@/lib/api/client';
 import type { FormatType } from './floating-format-menu';
+import { useChangeTracking } from '@/hooks/use-change-tracking';
+import type { ResearchSource } from '@zadoox/shared';
 
 interface EditorLayoutProps {
   projectId: string;
@@ -22,7 +24,14 @@ type ViewMode = 'edit' | 'preview' | 'split';
 type SidebarTab = 'outline' | 'history';
 
 export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
-  const { content, documentTitle, updateContent, setContentWithoutSave, isSaving, lastSaved, documentId: actualDocumentId, saveDocument, paragraphModes, handleModeToggle: handleModeToggleFromHook } = useDocumentState(documentId, projectId);
+  const { content, documentTitle, updateContent, setContentWithoutSave, isSaving, lastSaved, documentId: actualDocumentId, saveDocument: originalSaveDocument, paragraphModes, handleModeToggle: handleModeToggleFromHook } = useDocumentState(documentId, projectId);
+  const previousContentRef = useRef<string>(content);
+  
+  // Update previousContentRef when content changes from outside (e.g., document load)
+  useEffect(() => {
+    previousContentRef.current = content;
+  }, [content]);
+  
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('outline');
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
@@ -32,6 +41,82 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [thinkPanelOpen, setThinkPanelOpen] = useState(false);
   const [openParagraphId, setOpenParagraphId] = useState<string | null>(null);
   const currentSelectionRef = useRef<{ from: number; to: number; text: string } | null>(null);
+  const [pendingChangeContent, setPendingChangeContent] = useState<{ original: string; new: string } | null>(null);
+  const [isGeneratingContent, setIsGeneratingContent] = useState(false);
+
+  // Helper to extract source IDs from citations in content
+  const extractCitedSourceIds = useCallback((contentText: string): Set<string> => {
+    const citedIds = new Set<string>();
+    // Match citations in format [@sourceId] or [1], [2], etc.
+    // Also match parenthetical citations like (Author, Year) - these might reference sources
+    // For now, we'll focus on [@sourceId] format
+    const citationRegex = /\[@([a-zA-Z0-9-]+)\]/g;
+    let match;
+    while ((match = citationRegex.exec(contentText)) !== null) {
+      citedIds.add(match[1]);
+    }
+    return citedIds;
+  }, []);
+
+  // Helper to clean up insertedSources when citations are removed
+  const cleanupInsertedSources = useCallback(async (newContent: string, oldContent: string) => {
+    try {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:50',message:'Cleaning up insertedSources',data:{newContentLength:newContent.length,oldContentLength:oldContent.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
+      // #endregion
+      
+      const currentDocument = await api.documents.get(actualDocumentId);
+      const insertedSources: ResearchSource[] = currentDocument.metadata?.insertedSources || [];
+      
+      // Extract source IDs that are still cited in the new content
+      const citedSourceIds = extractCitedSourceIds(newContent);
+      
+      // Filter out sources that are no longer cited
+      const remainingInsertedSources = insertedSources.filter(source => citedSourceIds.has(source.id));
+      
+      // Only update if something changed
+      if (remainingInsertedSources.length !== insertedSources.length) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:65',message:'Updating insertedSources',data:{beforeCount:insertedSources.length,afterCount:remainingInsertedSources.length,removedIds:insertedSources.filter(source => !citedSourceIds.has(source.id)).map(s => s.id)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
+        // #endregion
+        
+        await api.documents.update(actualDocumentId, {
+          metadata: {
+            ...currentDocument.metadata,
+            insertedSources: remainingInsertedSources,
+          },
+        });
+      }
+    } catch (error) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:75',message:'Failed to cleanup insertedSources',data:{error:error instanceof Error ? error.message : 'Unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
+      // #endregion
+      console.error('Failed to cleanup insertedSources:', error);
+    }
+  }, [actualDocumentId, extractCitedSourceIds]);
+
+  // Wrapper for saveDocument that also cleans up insertedSources
+  const saveDocument = useCallback(async (contentToSave: string, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
+    const oldContent = previousContentRef.current;
+    // Clean up insertedSources before saving
+    await cleanupInsertedSources(contentToSave, oldContent);
+    previousContentRef.current = contentToSave;
+    await originalSaveDocument(contentToSave, changeType);
+  }, [originalSaveDocument, cleanupInsertedSources]);
+
+  // Change tracking hook
+  const changeTracking = useChangeTracking(content, {
+    onApply: async (newContent: string) => {
+      // Clean up insertedSources before updating content
+      await cleanupInsertedSources(newContent, content);
+      updateContent(newContent);
+      await saveDocument(newContent, 'ai-action');
+      setPendingChangeContent(null);
+    },
+    onCancel: () => {
+      setPendingChangeContent(null);
+    },
+  });
 
   // Handle opening panel for a paragraph
   const handleOpenPanel = useCallback((paragraphId: string) => {
@@ -352,12 +437,58 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           viewMode={viewMode}
         />
 
+        {/* Change Tracking Banner - shown at top when tracking is active */}
+        {(() => {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:372',message:'Checking banner visibility',data:{isTracking:changeTracking.isTracking,changesLength:changeTracking.changes.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
+          // #endregion
+          return changeTracking.isTracking;
+        })() && (
+          <div className="px-4 py-2 bg-gray-800 border-b border-gray-700 flex items-center justify-between z-50">
+            <div className="flex items-center gap-2 text-sm text-gray-300">
+              <span className="text-green-400">●</span>
+              <span>You have {changeTracking.changes.length} pending change{changeTracking.changes.length !== 1 ? 's' : ''}</span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  // #region agent log
+                  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:384',message:'Undo button clicked',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
+                  // #endregion
+                  changeTracking.cancelTracking();
+                }}
+                className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded border border-gray-600 transition-colors"
+              >
+                Undo
+              </button>
+              <button
+                onClick={() => {
+                  // #region agent log
+                  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:395',message:'Keep button clicked',data:{changesLength:changeTracking.changes.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
+                  // #endregion
+                  changeTracking.applyChanges();
+                }}
+                disabled={changeTracking.changes.length === 0}
+                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm rounded transition-colors"
+              >
+                Keep
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Editor/Preview */}
         <div className="flex-1 overflow-hidden flex relative">
           {(viewMode === 'edit' || viewMode === 'split') && (
             <div className={viewMode === 'split' ? 'flex-1 border-r border-vscode-border overflow-hidden relative' : 'flex-1 overflow-hidden relative'}>
               <AIEnhancedEditor
-                value={content}
+                value={(() => {
+                  const editorValue = pendingChangeContent?.new ?? content;
+                  // #region agent log
+                  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:375',message:'AIEnhancedEditor value prop',data:{hasPendingChange:!!pendingChangeContent,pendingNewLength:pendingChangeContent?.new.length,contentLength:content.length,editorValueLength:editorValue.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+                  // #endregion
+                  return editorValue;
+                })()}
                 onChange={handleContentChange}
                 onSelectionChange={handleSelectionChange}
                 onCursorPositionChange={handleCursorPositionChange}
@@ -369,6 +500,10 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 openParagraphId={openParagraphId}
                 onOpenPanel={handleOpenPanel}
                 readOnly={(() => {
+                  // Disable editing when change tracking is active
+                  if (changeTracking.isTracking) {
+                    return true;
+                  }
                   // Disable editing when Think panel is open
                   if (thinkPanelOpen) {
                     return true;
@@ -383,6 +518,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                                     Number(selectedVersion) !== Number(safeLatestVersion);
                   return isReadOnly;
                 })()}
+                changes={changeTracking.mappedChanges}
+                onAcceptChange={changeTracking.acceptChange}
+                onRejectChange={changeTracking.rejectChange}
                 onSaveWithType={async (contentToSave, changeType) => {
                   await saveDocument(contentToSave, changeType);
                 }}
@@ -398,16 +536,35 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             content={content}
             documentId={actualDocumentId}
             projectId={projectId}
+            onGeneratingChange={setIsGeneratingContent}
             onContentGenerated={async (generatedContent, mode, _sources) => {
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:423',message:'onContentGenerated callback entered',data:{generatedContentLength:generatedContent.length,mode,openParagraphId,contentLength:content.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+              // #endregion
               // Find the paragraph and replace/blend content
-              if (!openParagraphId) return;
+              if (!openParagraphId) {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:427',message:'openParagraphId is null, returning early',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                // #endregion
+                return;
+              }
               
               const lines = content.split('\n');
               const match = openParagraphId.match(/^para-(\d+)$/);
-              if (!match) return;
+              if (!match) {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:432',message:'paragraphId match failed',data:{openParagraphId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                // #endregion
+                return;
+              }
               
               const startLine = parseInt(match[1], 10);
-              if (startLine < 0 || startLine >= lines.length) return;
+              if (startLine < 0 || startLine >= lines.length) {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:437',message:'startLine out of bounds',data:{startLine,linesLength:lines.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                // #endregion
+                return;
+              }
               
               // Check if section
               const isHeading = (line: string) => /^#{1,6}\s/.test(line.trim());
@@ -450,14 +607,36 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
               }
               
-              updateContent(newContent);
-              await saveDocument(newContent, 'ai-action');
+              // Note: We don't clear researchSessions - they remain associated with the block
+              // Only insertedSources will be cleaned up when citations are removed (handled in cleanupInsertedSources)
+              
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:475',message:'Before startTracking',data:{originalContentLength:content.length,newContentLength:newContent.length,mode},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+              // #endregion
+              // Start change tracking instead of directly applying
+              setPendingChangeContent({ original: content, new: newContent });
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-layout.tsx:478',message:'calling changeTracking.startTracking',data:{newContentLength:newContent.length,originalContentLength:content.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+              // #endregion
+              changeTracking.startTracking(newContent, content);
+              // Hide progress indicator after change tracking is set up
+              setIsGeneratingContent(false);
             }}
           />
           
           {(viewMode === 'preview' || viewMode === 'split') && (
             <div className={viewMode === 'split' ? 'flex-1 overflow-auto' : 'flex-1'}>
               <MarkdownPreview content={content} />
+            </div>
+          )}
+
+          {/* Progress Overlay - shown when generating content */}
+          {isGeneratingContent && (
+            <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] pointer-events-none">
+              <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 flex flex-col items-center gap-4 min-w-[200px] pointer-events-auto">
+                <div className="w-8 h-8 border-4 border-gray-600 border-t-vscode-blue rounded-full animate-spin" />
+                <div className="text-sm text-gray-400">Generating content...</div>
+              </div>
             </div>
           )}
         </div>

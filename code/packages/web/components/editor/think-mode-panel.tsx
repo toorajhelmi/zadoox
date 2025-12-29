@@ -19,6 +19,7 @@ interface ThinkModePanelProps {
   documentId: string;
   projectId: string;
   onContentGenerated: (content: string, mode: 'blend' | 'replace' | 'extend' | 'citation' | 'summary', sources?: unknown[]) => void;
+  onGeneratingChange?: (isGenerating: boolean) => void;
 }
 
 // Helper to check if a line is a markdown heading
@@ -104,6 +105,7 @@ export function ThinkModePanel({
   documentId,
   projectId,
   onContentGenerated,
+  onGeneratingChange,
 }: ThinkModePanelProps) {
   const [activeTab, setActiveTab] = useState<'brainstorm' | 'research' | 'draft'>('brainstorm');
   const [session, setSession] = useState<BrainstormingSession | null>(null);
@@ -332,6 +334,7 @@ export function ThinkModePanel({
             onSessionUpdate={handleSessionUpdate}
             initialSession={session}
             onReset={handleReset}
+            onGeneratingChange={onGeneratingChange}
           />
         )}
         {activeTab === 'research' && (
