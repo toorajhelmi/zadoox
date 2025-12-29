@@ -126,6 +126,9 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.39.0
         version: 2.89.0
+      '@types/diff-match-patch':
+        specifier: ^1.0.36
+        version: 1.0.36
       '@types/node':
         specifier: ^20.10.0
         version: 20.19.27
@@ -147,6 +150,9 @@ importers:
       date-fns:
         specifier: ^3.0.0
         version: 3.6.0
+      diff-match-patch:
+        specifier: ^1.0.5
+        version: 1.0.5
       eslint:
         specifier: ^8.56.0
         version: 8.57.1
