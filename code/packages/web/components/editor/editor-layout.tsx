@@ -420,23 +420,21 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       }
     };
     
-    const selection = currentSelectionRef.current;
-    const cmSelection = editorViewRef.current?.state.selection.main ?? null;
+    // Always prefer CodeMirror's current doc + selection to avoid stale indices/content
+    const view = editorViewRef.current;
+    const baseContent = view ? view.state.doc.toString() : content;
+    const cmSelection = view?.state.selection.main ?? null;
     
     // Resolve a selection range in document coordinates (prefer stored selection, fallback to CodeMirror selection)
-    const from =
-      selection?.from ??
-      (cmSelection ? Math.min(cmSelection.from, cmSelection.to) : null);
-    const to =
-      selection?.to ??
-      (cmSelection ? Math.max(cmSelection.from, cmSelection.to) : null);
+    const from = cmSelection ? Math.min(cmSelection.from, cmSelection.to) : null;
+    const to = cmSelection ? Math.max(cmSelection.from, cmSelection.to) : null;
 
     const hasRange = typeof from === 'number' && typeof to === 'number' && from >= 0 && to >= 0 && to > from;
 
     if (hasRange) {
       // Format selected text using exact positions from CodeMirror
       let formattedText = '';
-      const selectedText = content.slice(from!, to!);
+      const selectedText = baseContent.slice(from!, to!);
       switch (format) {
         case 'bold':
           formattedText = `**${selectedText}**`;
@@ -464,9 +462,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
 
       // Replace using exact positions from CodeMirror
       const newContent = 
-        content.slice(0, from!) + 
+        baseContent.slice(0, from!) + 
         formattedText + 
-        content.slice(to!);
+        baseContent.slice(to!);
       applyUserEdit(newContent);
     } else {
       // No selection - insert placeholder at cursor position (fallback to end)
@@ -495,7 +493,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           break;
       }
       const insertPos = cmSelection ? cmSelection.head : content.length;
-      const newContent = content.slice(0, insertPos) + placeholder + content.slice(insertPos);
+      const safeInsertPos = Math.min(Math.max(0, insertPos), baseContent.length);
+      const newContent = baseContent.slice(0, safeInsertPos) + placeholder + baseContent.slice(safeInsertPos);
       applyUserEdit(newContent);
     }
   }, [content, updateContent, selectedVersion, latestVersion, cursorPosition, undoRedo, changeTracking.isTracking]);
