@@ -129,9 +129,11 @@ export function ThinkModePanel({
 
   // Load project settings
   useEffect(() => {
+    let cancelled = false;
     async function loadProjectSettings() {
       try {
         const project = await api.projects.get(projectId);
+        if (cancelled) return;
         setDocumentStyle(project.settings.documentStyle || 'other');
         setCitationFormat(project.settings.citationFormat || 'numbered');
       } catch (error) {
@@ -142,18 +144,24 @@ export function ThinkModePanel({
     if (projectId) {
       loadProjectSettings();
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [projectId]);
 
   // Load brainstorming session from document metadata when paragraph changes
   useEffect(() => {
+    let cancelled = false;
     async function loadSession() {
       if (!paragraphId || !documentId) {
-        setSession(null);
+        if (!cancelled) setSession(null);
         return;
       }
 
       try {
         const document = await api.documents.get(documentId);
+        if (cancelled) return;
         const sessions = document.metadata?.brainstormingSessions || {};
         const existingSession = sessions[paragraphId];
         if (existingSession) {
@@ -163,23 +171,29 @@ export function ThinkModePanel({
         }
       } catch (error) {
         console.error('Failed to load brainstorming session:', error);
-        setSession(null);
+        if (!cancelled) setSession(null);
       }
     }
 
     loadSession();
+
+    return () => {
+      cancelled = true;
+    };
   }, [paragraphId, documentId]);
 
   // Load research session from document metadata when paragraph changes
   useEffect(() => {
+    let cancelled = false;
     async function loadResearchSession() {
       if (!paragraphId || !documentId) {
-        setResearchSession(null);
+        if (!cancelled) setResearchSession(null);
         return;
       }
 
       try {
         const document = await api.documents.get(documentId);
+        if (cancelled) return;
         const sessions = document.metadata?.researchSessions || {};
         const existingSession = sessions[paragraphId];
         if (existingSession) {
@@ -189,11 +203,15 @@ export function ThinkModePanel({
         }
       } catch (error) {
         console.error('Failed to load research session:', error);
-        setResearchSession(null);
+        if (!cancelled) setResearchSession(null);
       }
     }
 
     loadResearchSession();
+
+    return () => {
+      cancelled = true;
+    };
   }, [paragraphId, documentId]);
 
   // Handle resize
