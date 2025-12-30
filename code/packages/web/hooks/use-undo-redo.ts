@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 
 export interface EditorState {
   content: string;
@@ -34,8 +34,14 @@ export function useUndoRedo(initialContent: string, options?: UseUndoRedoOptions
     },
   ]);
   const [historyIndex, setHistoryIndex] = useState(0);
+  const historyIndexRef = useRef(0); // Keep ref in sync with state for synchronous access
   const isUndoRedoOperationRef = useRef(false);
   const lastContentRef = useRef<string>(initialContent);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    historyIndexRef.current = historyIndex;
+  }, [historyIndex]);
 
   // Update lastContentRef when content changes from outside
   useEffect(() => {
@@ -56,7 +62,8 @@ export function useUndoRedo(initialContent: string, options?: UseUndoRedoOptions
       }
 
       setHistory((prevHistory) => {
-        const currentIndex = historyIndex;
+        // Use ref to get current index synchronously
+        const currentIndex = historyIndexRef.current;
         // Remove any states after current index (when undoing and then making a new change)
         const newHistory = prevHistory.slice(0, currentIndex + 1);
         
@@ -70,83 +77,118 @@ export function useUndoRedo(initialContent: string, options?: UseUndoRedoOptions
         let updatedHistory = [...newHistory, state];
         
         // Limit history size
-        let removedCount = 0;
         if (updatedHistory.length > maxHistorySize) {
           // Remove oldest states
           const excess = updatedHistory.length - maxHistorySize;
-          removedCount = excess;
           updatedHistory = updatedHistory.slice(excess);
         }
         
         // Update index to point to the last item (new state)
         const newIndex = updatedHistory.length - 1;
         setHistoryIndex(newIndex);
+        historyIndexRef.current = newIndex; // Update ref immediately
         
         return updatedHistory;
       });
     },
-    [historyIndex, maxHistorySize]
+    [maxHistorySize]
   );
 
   /**
    * Undo: Move back in history
    */
   const undo = useCallback((): EditorState | null => {
-    if (historyIndex <= 0) {
-      return null; // Already at the beginning
-    }
-
-    isUndoRedoOperationRef.current = true;
-    const newIndex = historyIndex - 1;
-    setHistoryIndex(newIndex);
-    const previousState = history[newIndex];
+    // Use functional update to get current state
+    let previousState: EditorState | null = null;
+    let newIndex = 0;
     
-    if (previousState && onStateChange) {
-      onStateChange(previousState);
+    setHistory((prevHistory) => {
+      const currentIndex = historyIndexRef.current;
+      if (currentIndex <= 0) {
+        return prevHistory; // Already at the beginning
+      }
+
+      isUndoRedoOperationRef.current = true;
+      newIndex = currentIndex - 1;
+      previousState = prevHistory[newIndex];
+      
+      return prevHistory; // History doesn't change during undo
+    });
+
+    // Update index and call onStateChange outside of setHistory
+    if (previousState) {
+      setHistoryIndex(newIndex);
+      historyIndexRef.current = newIndex; // Update ref immediately
+      
+      if (onStateChange) {
+        onStateChange(previousState);
+      }
+
+      // Reset flag after a short delay to allow state updates to complete
+      setTimeout(() => {
+        isUndoRedoOperationRef.current = false;
+      }, 0);
     }
 
-    // Reset flag after a short delay to allow state updates to complete
-    setTimeout(() => {
-      isUndoRedoOperationRef.current = false;
-    }, 0);
-
-    return previousState || null;
-  }, [historyIndex, history, onStateChange]);
+    return previousState;
+  }, [onStateChange]);
 
   /**
    * Redo: Move forward in history
    */
   const redo = useCallback((): EditorState | null => {
-    if (historyIndex >= history.length - 1) {
-      return null; // Already at the end
-    }
-
-    isUndoRedoOperationRef.current = true;
-    const newIndex = historyIndex + 1;
-    setHistoryIndex(newIndex);
-    const nextState = history[newIndex];
+    // Use functional update to get current state
+    let nextState: EditorState | null = null;
+    let newIndex = 0;
     
-    if (nextState && onStateChange) {
-      onStateChange(nextState);
+    setHistory((prevHistory) => {
+      const currentIndex = historyIndexRef.current;
+      if (currentIndex >= prevHistory.length - 1) {
+        return prevHistory; // Already at the end
+      }
+
+      isUndoRedoOperationRef.current = true;
+      newIndex = currentIndex + 1;
+      nextState = prevHistory[newIndex];
+      
+      return prevHistory; // History doesn't change during redo
+    });
+
+    // Update index and call onStateChange outside of setHistory
+    if (nextState) {
+      setHistoryIndex(newIndex);
+      historyIndexRef.current = newIndex; // Update ref immediately
+      
+      if (onStateChange) {
+        onStateChange(nextState);
+      }
+
+      // Reset flag after a short delay to allow state updates to complete
+      setTimeout(() => {
+        isUndoRedoOperationRef.current = false;
+      }, 0);
     }
 
-    // Reset flag after a short delay to allow state updates to complete
-    setTimeout(() => {
-      isUndoRedoOperationRef.current = false;
-    }, 0);
-
-    return nextState || null;
-  }, [historyIndex, history, onStateChange]);
+    return nextState;
+  }, [onStateChange]);
 
   /**
    * Check if undo is available
+   * Compute from both historyIndex and history.length to ensure it updates correctly
    */
-  const canUndo = historyIndex > 0;
+  const canUndo = useMemo(() => {
+    // Can undo if we have more than one item in history and we're not at the first item
+    return history.length > 1 && historyIndex > 0;
+  }, [historyIndex, history.length]);
 
   /**
    * Check if redo is available
+   * Compute from both historyIndex and history.length to ensure it updates correctly
    */
-  const canRedo = historyIndex < history.length - 1;
+  const canRedo = useMemo(() => {
+    // Can redo if we're not at the last item
+    return historyIndex < history.length - 1;
+  }, [historyIndex, history.length]);
 
   /**
    * Clear history (useful when loading a new document)
@@ -160,6 +202,7 @@ export function useUndoRedo(initialContent: string, options?: UseUndoRedoOptions
     };
     setHistory([newState]);
     setHistoryIndex(0);
+    historyIndexRef.current = 0; // Update ref immediately
     lastContentRef.current = newContent;
   }, []);
 
@@ -170,7 +213,7 @@ export function useUndoRedo(initialContent: string, options?: UseUndoRedoOptions
   const updateCurrentState = useCallback(
     (updates: Partial<EditorState>) => {
       setHistory((prevHistory) => {
-        const currentIndex = historyIndex;
+        const currentIndex = historyIndexRef.current; // Use ref for synchronous access
         const currentState = prevHistory[currentIndex];
         if (!currentState) return prevHistory;
 

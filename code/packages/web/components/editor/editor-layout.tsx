@@ -48,6 +48,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const previousContentForHistoryRef = useRef<string>(content);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const editorViewRef = useRef<import('@codemirror/view').EditorView | null>(null);
+  const isUserInputRef = useRef<boolean>(false); // Track if content change is from user input
 
 
   // Helper to clean up insertedSources when citations are removed
@@ -87,6 +88,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     maxHistorySize: 50,
     onStateChange: (state) => {
       // When undo/redo is performed, update content and clear change tracking
+      // Mark as undo/redo operation to prevent history clearing
+      isUserInputRef.current = false; // This is an undo/redo, not user input
+      previousContentForHistoryRef.current = state.content; // Update ref to prevent history clearing
       setContentWithoutSave(state.content);
       // Restore cursor position if available
       if (state.cursorPosition && editorViewRef.current) {
@@ -142,12 +146,15 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   });
 
   // Clear undo/redo history when document changes (e.g., loading a different document)
+  // Only clear if the change is NOT from user input (i.e., from external source like document load)
   useEffect(() => {
-    if (previousContentForHistoryRef.current !== content) {
+    if (previousContentForHistoryRef.current !== content && !isUserInputRef.current) {
       // Content changed from outside (e.g., document load) - clear history
       undoRedo.clearHistory(content);
       previousContentForHistoryRef.current = content;
     }
+    // Reset the flag after checking
+    isUserInputRef.current = false;
   }, [content, undoRedo]);
 
   // Handle opening panel for a paragraph
@@ -224,6 +231,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         // If selectedVersion === latestVersion, allow editing (fall through)
       }
       // If selectedVersion === null, allow editing (fall through)
+      // Mark this as user input before updating content
+      isUserInputRef.current = true;
       updateContent(value);
 
       // Add to undo history (debounced to avoid too many history entries)
