@@ -223,11 +223,11 @@ export function paragraphBlockControlsTheme() {
   return EditorView.baseTheme({
     '.cm-line': {
       position: 'relative',
-      paddingRight: '36px', // room for the toggle button + extra gap from scrollbar
+      paddingRight: '52px', // room for the toggle button + bigger gap from scrollbar
     },
     '.cm-paragraph-block-toggle': {
       position: 'absolute',
-      right: '8px', // keep off the scrollbar
+      right: '20px', // keep well off the scrollbar
       top: '0px',
       height: '100%',
       display: 'flex',
