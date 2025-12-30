@@ -12,6 +12,7 @@ import { useDocumentState } from '@/hooks/use-document-state';
 import { api } from '@/lib/api/client';
 import type { FormatType } from './floating-format-menu';
 import { useChangeTracking } from '@/hooks/use-change-tracking';
+import { useUndoRedo } from '@/hooks/use-undo-redo';
 import type { ResearchSource } from '@zadoox/shared';
 import { extractCitedSourceIds } from '@/lib/utils/citation';
 
@@ -44,6 +45,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const currentSelectionRef = useRef<{ from: number; to: number; text: string } | null>(null);
   const [pendingChangeContent, setPendingChangeContent] = useState<{ original: string; new: string } | null>(null);
   const [isGeneratingContent, setIsGeneratingContent] = useState(false);
+  const previousContentForHistoryRef = useRef<string>(content);
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const editorViewRef = useRef<import('@codemirror/view').EditorView | null>(null);
 
 
   // Helper to clean up insertedSources when citations are removed
@@ -78,6 +82,32 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     await originalSaveDocument(contentToSave, changeType);
   }, [originalSaveDocument, cleanupInsertedSources]);
 
+  // Undo/Redo hook (defined first to avoid circular dependencies)
+  const undoRedo = useUndoRedo(content, {
+    maxHistorySize: 50,
+    onStateChange: (state) => {
+      // When undo/redo is performed, update content and clear change tracking
+      setContentWithoutSave(state.content);
+      // Restore cursor position if available
+      if (state.cursorPosition && editorViewRef.current) {
+        setCursorPosition(state.cursorPosition);
+        // Restore cursor position in editor
+        try {
+          const { line, column } = state.cursorPosition;
+          const doc = editorViewRef.current.state.doc;
+          const lineInfo = doc.line(Math.min(line, doc.lines));
+          const pos = lineInfo.from + Math.min(column - 1, lineInfo.length);
+          editorViewRef.current.dispatch({
+            selection: { anchor: pos, head: pos },
+            scrollIntoView: true,
+          });
+        } catch (error) {
+          // Cursor restoration failed, but content was updated
+        }
+      }
+    },
+  });
+
   // Change tracking hook
   const changeTracking = useChangeTracking(content, {
     onApply: async (newContent: string) => {
@@ -86,11 +116,39 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       updateContent(newContent);
       await saveDocument(newContent, 'ai-action');
       setPendingChangeContent(null);
+      // Add to undo history after applying changes
+      // Capture current cursor position
+      let currentCursorPos = cursorPosition;
+      if (editorViewRef.current && !currentCursorPos) {
+        try {
+          const selection = editorViewRef.current.state.selection.main;
+          const line = editorViewRef.current.state.doc.lineAt(selection.head);
+          currentCursorPos = { line: line.number, column: selection.head - line.from + 1 };
+        } catch {
+          // Failed to get cursor position
+        }
+      }
+      undoRedo.addToHistory({
+        content: newContent,
+        cursorPosition: currentCursorPos,
+        selection: currentSelectionRef.current,
+        timestamp: Date.now(),
+      });
+      previousContentForHistoryRef.current = newContent;
     },
     onCancel: () => {
       setPendingChangeContent(null);
     },
   });
+
+  // Clear undo/redo history when document changes (e.g., loading a different document)
+  useEffect(() => {
+    if (previousContentForHistoryRef.current !== content) {
+      // Content changed from outside (e.g., document load) - clear history
+      undoRedo.clearHistory(content);
+      previousContentForHistoryRef.current = content;
+    }
+  }, [content, undoRedo]);
 
   // Handle opening panel for a paragraph
   const handleOpenPanel = useCallback((paragraphId: string) => {
@@ -167,8 +225,39 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       }
       // If selectedVersion === null, allow editing (fall through)
       updateContent(value);
+
+      // Add to undo history (debounced to avoid too many history entries)
+      // Only add if not in change tracking mode (change tracking handles its own history)
+      if (!changeTracking.isTracking) {
+        if (debounceTimeoutRef.current) {
+          clearTimeout(debounceTimeoutRef.current);
+        }
+        debounceTimeoutRef.current = setTimeout(() => {
+          if (previousContentForHistoryRef.current !== value) {
+            // Capture current cursor position from editor if available
+            let currentCursorPos = cursorPosition;
+            if (editorViewRef.current && !currentCursorPos) {
+              try {
+                const selection = editorViewRef.current.state.selection.main;
+                const line = editorViewRef.current.state.doc.lineAt(selection.head);
+                currentCursorPos = { line: line.number, column: selection.head - line.from + 1 };
+              } catch {
+                // Failed to get cursor position, use stored value or null
+              }
+            }
+            
+            undoRedo.addToHistory({
+              content: value,
+              cursorPosition: currentCursorPos,
+              selection: currentSelectionRef.current,
+              timestamp: Date.now(),
+            });
+            previousContentForHistoryRef.current = value;
+          }
+        }, 300); // Debounce for 300ms
+      }
     },
-    [updateContent, selectedVersion, latestVersion]
+    [updateContent, selectedVersion, latestVersion, cursorPosition, undoRedo, changeTracking.isTracking]
   );
 
   // Handle selection changes from editor
@@ -181,13 +270,43 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     setCursorPosition(position);
   }, []);
 
-  // Handle keyboard shortcuts (Ctrl+S / Cmd+S for immediate auto-save, Ctrl+T / Cmd+T for mode toggle)
+  // Handle keyboard shortcuts (Ctrl+S / Cmd+S for immediate auto-save, Ctrl+T / Cmd+T for mode toggle, Ctrl+Z/Ctrl+Shift+Z for undo/redo)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't allow shortcuts if viewing an older version
       // Allow shortcuts if selectedVersion === null (latest) or selectedVersion === latestVersion
       if (selectedVersion !== null && latestVersion !== null && selectedVersion !== latestVersion) {
         return; // Don't allow shortcuts for older versions
+      }
+
+      // Don't allow undo/redo if change tracking is active
+      if (changeTracking.isTracking) {
+        // Allow undo/redo shortcuts to work even during change tracking
+        // They will cancel change tracking and perform undo/redo
+      }
+      
+      // Ctrl+Z / Cmd+Z for undo
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        // Clear change tracking if active
+        if (changeTracking.isTracking) {
+          changeTracking.cancelTracking();
+        }
+        const state = undoRedo.undo();
+        // State change is handled by onStateChange callback
+        return;
+      }
+      
+      // Ctrl+Shift+Z / Cmd+Shift+Z or Ctrl+Y / Cmd+Y for redo
+      if (((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z') || ((e.ctrlKey || e.metaKey) && e.key === 'y')) {
+        e.preventDefault();
+        // Clear change tracking if active
+        if (changeTracking.isTracking) {
+          changeTracking.cancelTracking();
+        }
+        const state = undoRedo.redo();
+        // State change is handled by onStateChange callback
+        return;
       }
       
       // Ctrl+S / Cmd+S for immediate auto-save
@@ -245,7 +364,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [content, saveDocument, selectedVersion, latestVersion, cursorPosition, handleOpenPanel]);
+  }, [content, saveDocument, selectedVersion, latestVersion, cursorPosition, handleOpenPanel, undoRedo, changeTracking]);
 
   // Handle formatting from toolbar
   const handleFormat = useCallback((format: FormatType) => {
@@ -384,6 +503,20 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
+          canUndo={undoRedo.canUndo}
+          canRedo={undoRedo.canRedo}
+          onUndo={() => {
+            if (changeTracking.isTracking) {
+              changeTracking.cancelTracking();
+            }
+            undoRedo.undo();
+          }}
+          onRedo={() => {
+            if (changeTracking.isTracking) {
+              changeTracking.cancelTracking();
+            }
+            undoRedo.redo();
+          }}
         />
 
         {/* Formatting Toolbar */}
@@ -437,6 +570,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 thinkPanelOpen={thinkPanelOpen}
                 openParagraphId={openParagraphId}
                 onOpenPanel={handleOpenPanel}
+                onEditorViewReady={(view) => {
+                  editorViewRef.current = view;
+                }}
                 readOnly={(() => {
                   // Disable editing when change tracking is active
                   if (changeTracking.isTracking) {

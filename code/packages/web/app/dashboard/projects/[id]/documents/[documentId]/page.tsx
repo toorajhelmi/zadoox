@@ -1,13 +1,16 @@
 import { EditorLayout } from '@/components/editor/editor-layout';
 
 interface DocumentEditorPageProps {
-  params: {
+  params: Promise<{
     id: string;
     documentId: string;
-  };
+  }>;
 }
 
-export default function DocumentEditorPage({ params }: DocumentEditorPageProps) {
-  return <EditorLayout projectId={params.id} documentId={params.documentId} />;
+export default async function DocumentEditorPage({
+  params,
+}: DocumentEditorPageProps) {
+  const { id, documentId } = await params;
+  return <EditorLayout projectId={id} documentId={documentId} />;
 }
 

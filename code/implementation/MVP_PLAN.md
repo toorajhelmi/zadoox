@@ -644,30 +644,30 @@ This phase adds the ability to toggle each paragraph section between "write" and
 ---
 
 ### Phase 7.8: AI Change Tracking & Acceptance UI 🔄
-**Status**: Not Started
+**Status**: ✅ Completed
 
 This phase implements a Cursor-style diff view that shows AI-generated changes with visual indicators and allows users to accept or reject individual changes.
 
 #### Visual Indicators:
-- [ ] **Change highlighting**:
-  - [ ] Green background/highlight for added content
-  - [ ] Red background/highlight for deleted content
-  - [ ] Blue background/highlight for modified content
-  - [ ] Visual distinction between original and changed text
+- [x] **Change highlighting**:
+  - [x] Green background/highlight for added content
+  - [x] Red background/highlight for deleted content
+  - [x] Blue background/highlight for modified content
+  - [x] Visual distinction between original and changed text
 
 #### Change Tracking:
-- [ ] **Diff calculation**:
-  - [ ] Compare original content with AI-generated content
-  - [ ] Calculate word-level or character-level differences
-  - [ ] Track individual change blocks (added, deleted, modified)
-  - [ ] Store change metadata (position, type, original text, new text)
+- [x] **Diff calculation**:
+  - [x] Compare original content with AI-generated content
+  - [x] Calculate word-level or character-level differences
+  - [x] Track individual change blocks (added, deleted, modified)
+  - [x] Store change metadata (position, type, original text, new text)
 
 #### User Interface:
-- [ ] **Inline change indicators**:
-  - [ ] Show change highlights directly in the editor (CodeMirror decorations)
-  - [ ] Accept/Reject buttons for each change block
-  - [ ] Hover tooltips showing original vs. new text
-  - [ ] Keyboard shortcuts for accepting/rejecting changes
+- [x] **Inline change indicators**:
+  - [x] Show change highlights directly in the editor (CodeMirror decorations)
+  - [x] Accept/Reject buttons for each change block
+  - [x] Right-side indicator bars (green/red/blue vertical bars)
+  - [x] Banner with "Undo" and "Keep" buttons at top of editor
 
 - [ ] **Change panel/sidebar** (optional):
   - [ ] List all changes with previews
@@ -676,40 +676,99 @@ This phase implements a Cursor-style diff view that shows AI-generated changes w
   - [ ] Filter by change type (additions, deletions, modifications)
 
 #### Integration:
-- [ ] **AI action integration**:
-  - [ ] Track changes for all AI actions (Improve, Expand, Clarify, Condense, Blend, Replace)
-  - [ ] Show diff view after AI generates content
-  - [ ] Only apply changes when user accepts them
-  - [ ] Undo functionality to revert accepted changes
+- [x] **AI action integration**:
+  - [x] Track changes for all AI actions (Improve, Expand, Clarify, Condense, Blend, Replace)
+  - [x] Show diff view after AI generates content
+  - [x] Only apply changes when user accepts them
+  - [x] Undo functionality to revert accepted changes (via "Undo" button)
 
-- [ ] **Editor integration**:
-  - [ ] Overlay diff view on existing content
-  - [ ] Seamless editing experience
-  - [ ] Preserve user's ability to manually edit while viewing diffs
-  - [ ] Clear/reset diff view option
+- [x] **Editor integration**:
+  - [x] Overlay diff view on existing content
+  - [x] Seamless editing experience
+  - [x] Editor becomes read-only during change review
+  - [x] Clear/reset diff view when changes are accepted or rejected
 
 #### Implementation Details:
-- [ ] **Backend**:
-  - [ ] Add diff calculation utility (use diff-match-patch or similar)
-  - [ ] Store change metadata in document versions (optional)
-  - [ ] API endpoint for diff calculation (if needed for complex diffs)
+- [x] **Backend**:
+  - [x] Add diff calculation utility (using diff-match-patch)
+  - [x] Change merging logic to combine adjacent changes
+  - [x] Citation cleanup when content is replaced/deleted
 
-- [ ] **Frontend**:
-  - [ ] CodeMirror decoration system for highlighting
-  - [ ] Change tracking state management
-  - [ ] Accept/Reject button components
-  - [ ] Diff view component
-  - [ ] Integration with AI action handlers
+- [x] **Frontend**:
+  - [x] CodeMirror decoration system for highlighting
+  - [x] Change tracking state management (useChangeTracking hook)
+  - [x] Accept/Reject button components (banner with "Undo" and "Keep")
+  - [x] Change highlight extension for CodeMirror
+  - [x] Integration with AI action handlers
+  - [x] Unit tests for diff calculation, mapping, and change tracking
 
 **Deliverables**:
 - ✅ Visual change indicators (green/red/blue highlights)
-- ✅ Accept/Reject buttons for individual changes
+- ✅ Accept/Reject buttons (banner with "Undo" and "Keep")
 - ✅ Inline diff view in editor
 - ✅ Integration with all AI actions
-- ✅ Keyboard shortcuts for change acceptance/rejection
-- ✅ Change panel/sidebar (optional)
+- ✅ Right-side indicator bars
+- ✅ Citation cleanup when content changes
+- ✅ Unit tests for change tracking functionality
 
 **Note**: This feature provides a Cursor-like experience where users can review AI changes before accepting them, giving them full control over the editing process.
+
+---
+
+### Phase 7.8.1: Undo/Redo Functionality 🔄
+**Status**: Not Started
+
+This phase implements undo/redo functionality for document editing, allowing users to undo and redo changes in the document.
+
+#### Core Functionality:
+- [ ] **Undo/Redo stack**:
+  - [ ] Maintain history of document states
+  - [ ] Track changes (content, cursor position, selection)
+  - [ ] Support undo/redo operations
+  - [ ] Limit history size (e.g., 50-100 operations)
+
+#### User Interface:
+- [ ] **Keyboard shortcuts**:
+  - [ ] Cmd/Ctrl+Z for undo
+  - [ ] Cmd/Ctrl+Shift+Z or Cmd/Ctrl+Y for redo
+  - [ ] Visual feedback when undo/redo is performed
+
+- [ ] **Toolbar buttons** (optional):
+  - [ ] Undo button in editor toolbar
+  - [ ] Redo button in editor toolbar
+  - [ ] Disable buttons when undo/redo stack is empty
+  - [ ] Show tooltips with action descriptions
+
+#### Integration:
+- [ ] **Editor integration**:
+  - [ ] Integrate with CodeMirror editor
+  - [ ] Track content changes
+  - [ ] Track cursor position and selection
+  - [ ] Restore editor state on undo/redo
+
+- [ ] **Change tracking integration**:
+  - [ ] Clear change tracking when undo/redo is performed
+  - [ ] Handle undo/redo of AI-generated changes
+  - [ ] Preserve change tracking state appropriately
+
+#### Implementation Details:
+- [ ] **State management**:
+  - [ ] Create undo/redo hook (useUndoRedo)
+  - [ ] Store document history in memory
+  - [ ] Handle edge cases (empty history, max history reached)
+
+- [ ] **Backend** (optional):
+  - [ ] Consider persisting undo/redo history (future enhancement)
+  - [ ] Integration with document versioning system
+
+**Deliverables**:
+- [ ] Undo/redo functionality working
+- [ ] Keyboard shortcuts implemented
+- [ ] Editor state properly restored on undo/redo
+- [ ] Integration with change tracking system
+- [ ] Unit tests for undo/redo functionality
+
+**Note**: This feature provides standard document editing capabilities, allowing users to easily revert changes and restore previous document states.
 
 ---
 
