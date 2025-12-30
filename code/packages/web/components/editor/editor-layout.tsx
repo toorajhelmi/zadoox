@@ -457,7 +457,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           formattedText = `\`${selectedText}\``;
           break;
         case 'link':
-          formattedText = `[${selectedText}](url)`;
+          // Use an absolute placeholder so clicking in preview doesn't navigate the SPA route
+          formattedText = `[${selectedText}](https://example.com)`;
           break;
       }
 

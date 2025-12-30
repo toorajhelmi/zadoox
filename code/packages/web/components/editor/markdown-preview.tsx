@@ -1,13 +1,14 @@
 'use client';
 
 import { renderMarkdownToHtml, extractHeadings } from '@zadoox/shared';
-import { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, useRef } from 'react';
 
 interface MarkdownPreviewProps {
   content: string;
 }
 
 export function MarkdownPreview({ content }: MarkdownPreviewProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const html = useMemo(() => {
     if (!content.trim()) {
       return '';
@@ -202,13 +203,60 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
       }
     };
 
-    const container = document.querySelector('.markdown-content');
-    if (container) {
-      container.addEventListener('click', handleCitationClick as EventListener);
-      return () => {
-        container.removeEventListener('click', handleCitationClick as EventListener);
-      };
-    }
+    const container = containerRef.current;
+    if (!container) return;
+
+    container.addEventListener('click', handleCitationClick as EventListener);
+    return () => {
+      container.removeEventListener('click', handleCitationClick as EventListener);
+    };
+  }, [html]);
+
+  // Prevent normal markdown links from navigating away from the editor.
+  // Instead, open external/relative links in a new tab; handle hash links as in-page scroll.
+  useEffect(() => {
+    const handleLinkClick = (e: Event) => {
+      const target = e.target as HTMLElement;
+      const link = target.closest('a') as HTMLAnchorElement | null;
+      if (!link) return;
+
+      // Let citation handler manage citations (it calls preventDefault itself).
+      if (link.classList.contains('citation-link')) {
+        return;
+      }
+
+      const href = link.getAttribute('href') || '';
+      if (!href) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      // In-page anchors: scroll within preview
+      if (href.startsWith('#')) {
+        const id = href.slice(1);
+        if (!id) return;
+        const el = document.getElementById(id);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        return;
+      }
+
+      // Open in a new tab to avoid breaking the SPA route
+      try {
+        const url = new URL(href, window.location.origin);
+        window.open(url.toString(), '_blank', 'noopener,noreferrer');
+      } catch {
+        // If URL parsing fails, just ignore (do not navigate away)
+      }
+    };
+
+    const container = containerRef.current;
+    if (!container) return;
+    container.addEventListener('click', handleLinkClick as EventListener);
+    return () => {
+      container.removeEventListener('click', handleLinkClick as EventListener);
+    };
   }, [html]);
 
   if (!content.trim()) {
@@ -222,6 +270,7 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
   return (
     <div className="h-full overflow-auto p-6 bg-vscode-bg">
       <div
+        ref={containerRef}
         className="markdown-content"
         dangerouslySetInnerHTML={{ __html: html }}
         style={{
