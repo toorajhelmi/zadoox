@@ -35,6 +35,14 @@ export function useUndoRedo(initialContent: string, options?: UseUndoRedoOptions
   ]);
   const [historyIndex, setHistoryIndex] = useState(0);
   const historyIndexRef = useRef(0); // Keep ref in sync with state for synchronous access
+  const historyRef = useRef<EditorState[]>([
+    {
+      content: initialContent,
+      cursorPosition: null,
+      selection: null,
+      timestamp: Date.now(),
+    },
+  ]);
   const isUndoRedoOperationRef = useRef(false);
   const lastContentRef = useRef<string>(initialContent);
 
@@ -42,6 +50,11 @@ export function useUndoRedo(initialContent: string, options?: UseUndoRedoOptions
   useEffect(() => {
     historyIndexRef.current = historyIndex;
   }, [historyIndex]);
+
+  // Keep historyRef in sync with state (so undo/redo can read synchronously)
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
 
   // Update lastContentRef when content changes from outside
   useEffect(() => {
@@ -87,6 +100,7 @@ export function useUndoRedo(initialContent: string, options?: UseUndoRedoOptions
         const newIndex = updatedHistory.length - 1;
         setHistoryIndex(newIndex);
         historyIndexRef.current = newIndex; // Update ref immediately
+        historyRef.current = updatedHistory; // Update ref immediately
         
         return updatedHistory;
       });
@@ -98,37 +112,27 @@ export function useUndoRedo(initialContent: string, options?: UseUndoRedoOptions
    * Undo: Move back in history
    */
   const undo = useCallback((): EditorState | null => {
-    // Use functional update to get current state
-    let previousState: EditorState | null = null;
-    let newIndex = 0;
-    
-    setHistory((prevHistory) => {
-      const currentIndex = historyIndexRef.current;
-      if (currentIndex <= 0) {
-        return prevHistory; // Already at the beginning
-      }
-
-      isUndoRedoOperationRef.current = true;
-      newIndex = currentIndex - 1;
-      previousState = prevHistory[newIndex];
-      
-      return prevHistory; // History doesn't change during undo
-    });
-
-    // Update index and call onStateChange outside of setHistory
-    if (previousState) {
-      setHistoryIndex(newIndex);
-      historyIndexRef.current = newIndex; // Update ref immediately
-      
-      if (onStateChange) {
-        onStateChange(previousState);
-      }
-
-      // Reset flag after a short delay to allow state updates to complete
-      setTimeout(() => {
-        isUndoRedoOperationRef.current = false;
-      }, 0);
+    const currentIndex = historyIndexRef.current;
+    if (currentIndex <= 0) {
+      return null; // Already at the beginning
     }
+
+    isUndoRedoOperationRef.current = true;
+    const newIndex = currentIndex - 1;
+
+    const previousState = historyRef.current[newIndex] ?? null;
+
+    setHistoryIndex(newIndex);
+    historyIndexRef.current = newIndex; // Update ref immediately
+
+    if (previousState && onStateChange) {
+      onStateChange(previousState);
+    }
+
+    // Reset flag after a short delay to allow state updates to complete
+    setTimeout(() => {
+      isUndoRedoOperationRef.current = false;
+    }, 0);
 
     return previousState;
   }, [onStateChange]);
@@ -137,37 +141,27 @@ export function useUndoRedo(initialContent: string, options?: UseUndoRedoOptions
    * Redo: Move forward in history
    */
   const redo = useCallback((): EditorState | null => {
-    // Use functional update to get current state
-    let nextState: EditorState | null = null;
-    let newIndex = 0;
-    
-    setHistory((prevHistory) => {
-      const currentIndex = historyIndexRef.current;
-      if (currentIndex >= prevHistory.length - 1) {
-        return prevHistory; // Already at the end
-      }
-
-      isUndoRedoOperationRef.current = true;
-      newIndex = currentIndex + 1;
-      nextState = prevHistory[newIndex];
-      
-      return prevHistory; // History doesn't change during redo
-    });
-
-    // Update index and call onStateChange outside of setHistory
-    if (nextState) {
-      setHistoryIndex(newIndex);
-      historyIndexRef.current = newIndex; // Update ref immediately
-      
-      if (onStateChange) {
-        onStateChange(nextState);
-      }
-
-      // Reset flag after a short delay to allow state updates to complete
-      setTimeout(() => {
-        isUndoRedoOperationRef.current = false;
-      }, 0);
+    const currentIndex = historyIndexRef.current;
+    const currentHistory = historyRef.current;
+    if (currentIndex >= currentHistory.length - 1) {
+      return null; // Already at the end
     }
+
+    isUndoRedoOperationRef.current = true;
+    const newIndex = currentIndex + 1;
+    const nextState = currentHistory[newIndex] ?? null;
+
+    setHistoryIndex(newIndex);
+    historyIndexRef.current = newIndex; // Update ref immediately
+
+    if (nextState && onStateChange) {
+      onStateChange(nextState);
+    }
+
+    // Reset flag after a short delay to allow state updates to complete
+    setTimeout(() => {
+      isUndoRedoOperationRef.current = false;
+    }, 0);
 
     return nextState;
   }, [onStateChange]);
@@ -203,6 +197,7 @@ export function useUndoRedo(initialContent: string, options?: UseUndoRedoOptions
     setHistory([newState]);
     setHistoryIndex(0);
     historyIndexRef.current = 0; // Update ref immediately
+    historyRef.current = [newState]; // Update ref immediately
     lastContentRef.current = newContent;
   }, []);
 
@@ -225,6 +220,7 @@ export function useUndoRedo(initialContent: string, options?: UseUndoRedoOptions
 
         const newHistory = [...prevHistory];
         newHistory[currentIndex] = updatedState;
+        historyRef.current = newHistory; // Update ref immediately
         return newHistory;
       });
     },

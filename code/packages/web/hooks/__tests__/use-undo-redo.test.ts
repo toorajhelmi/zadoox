@@ -127,13 +127,13 @@ describe('useUndoRedo', () => {
   });
 
   describe('undo', () => {
-    it.skip('should undo to previous state', async () => {
+    it('should undo to previous state', async () => {
       const onStateChange = vi.fn();
       const { result } = renderHook(() =>
         useUndoRedo('initial', { onStateChange })
       );
 
-      act(() => {
+      await act(async () => {
         result.current.addToHistory({
           content: 'updated',
           cursorPosition: null,
@@ -144,21 +144,26 @@ describe('useUndoRedo', () => {
 
       await waitFor(() => {
         expect(result.current.canUndo).toBe(true);
+        expect(result.current.currentState?.content).toBe('updated');
       });
 
-      act(() => {
+      await act(async () => {
         result.current.undo();
       });
 
+      // Wait for onStateChange to be called first
+      await waitFor(() => {
+        expect(onStateChange).toHaveBeenCalledWith(
+          expect.objectContaining({ content: 'initial' })
+        );
+      });
+
+      // Then wait for state to update
       await waitFor(() => {
         expect(result.current.currentState?.content).toBe('initial');
         expect(result.current.canUndo).toBe(false);
         expect(result.current.canRedo).toBe(true);
       });
-
-      expect(onStateChange).toHaveBeenCalledWith(
-        expect.objectContaining({ content: 'initial' })
-      );
     });
 
     it('should not undo when at the beginning', () => {
@@ -175,13 +180,13 @@ describe('useUndoRedo', () => {
       expect(result.current.currentState?.content).toBe('initial');
     });
 
-    it.skip('should restore cursor position on undo', async () => {
+    it('should restore cursor position on undo', async () => {
       const onStateChange = vi.fn();
       const { result } = renderHook(() =>
         useUndoRedo('initial', { onStateChange })
       );
 
-      act(() => {
+      await act(async () => {
         result.current.addToHistory({
           content: 'updated',
           cursorPosition: { line: 2, column: 5 },
@@ -194,7 +199,7 @@ describe('useUndoRedo', () => {
         expect(result.current.canUndo).toBe(true);
       });
 
-      act(() => {
+      await act(async () => {
         result.current.undo();
       });
 
@@ -208,12 +213,12 @@ describe('useUndoRedo', () => {
       });
     });
 
-    it.skip('should allow multiple undos', async () => {
+    it('should allow multiple undos', async () => {
       const { result } = renderHook(() => useUndoRedo('state 0'));
 
       // Add multiple states
       for (let i = 1; i <= 3; i++) {
-        act(() => {
+        await act(async () => {
           result.current.addToHistory({
             content: `state ${i}`,
             cursorPosition: null,
@@ -229,21 +234,21 @@ describe('useUndoRedo', () => {
       });
 
       // Undo multiple times
-      act(() => {
+      await act(async () => {
         result.current.undo();
       });
       await waitFor(() => {
         expect(result.current.currentState?.content).toBe('state 2');
       });
 
-      act(() => {
+      await act(async () => {
         result.current.undo();
       });
       await waitFor(() => {
         expect(result.current.currentState?.content).toBe('state 1');
       });
 
-      act(() => {
+      await act(async () => {
         result.current.undo();
       });
       await waitFor(() => {
@@ -254,13 +259,13 @@ describe('useUndoRedo', () => {
   });
 
   describe('redo', () => {
-    it.skip('should redo to next state', async () => {
+    it('should redo to next state', async () => {
       const onStateChange = vi.fn();
       const { result } = renderHook(() =>
         useUndoRedo('initial', { onStateChange })
       );
 
-      act(() => {
+      await act(async () => {
         result.current.addToHistory({
           content: 'updated',
           cursorPosition: null,
@@ -271,17 +276,19 @@ describe('useUndoRedo', () => {
 
       await waitFor(() => {
         expect(result.current.canUndo).toBe(true);
+        expect(result.current.currentState?.content).toBe('updated');
       });
 
-      act(() => {
+      await act(async () => {
         result.current.undo();
       });
 
       await waitFor(() => {
+        expect(result.current.currentState?.content).toBe('initial');
         expect(result.current.canRedo).toBe(true);
       });
 
-      act(() => {
+      await act(async () => {
         result.current.redo();
       });
 
@@ -321,13 +328,13 @@ describe('useUndoRedo', () => {
       expect(result.current.currentState?.content).toBe('updated');
     });
 
-    it.skip('should restore cursor position on redo', async () => {
+    it('should restore cursor position on redo', async () => {
       const onStateChange = vi.fn();
       const { result } = renderHook(() =>
         useUndoRedo('initial', { onStateChange })
       );
 
-      act(() => {
+      await act(async () => {
         result.current.addToHistory({
           content: 'updated',
           cursorPosition: { line: 3, column: 8 },
@@ -340,7 +347,7 @@ describe('useUndoRedo', () => {
         expect(result.current.canUndo).toBe(true);
       });
 
-      act(() => {
+      await act(async () => {
         result.current.undo();
       });
 
@@ -348,7 +355,7 @@ describe('useUndoRedo', () => {
         expect(result.current.canRedo).toBe(true);
       });
 
-      act(() => {
+      await act(async () => {
         result.current.redo();
       });
 
@@ -362,12 +369,12 @@ describe('useUndoRedo', () => {
       });
     });
 
-    it.skip('should allow multiple redos', async () => {
+    it('should allow multiple redos', async () => {
       const { result } = renderHook(() => useUndoRedo('state 0'));
 
       // Add multiple states
       for (let i = 1; i <= 3; i++) {
-        act(() => {
+        await act(async () => {
           result.current.addToHistory({
             content: `state ${i}`,
             cursorPosition: null,
@@ -382,21 +389,21 @@ describe('useUndoRedo', () => {
       });
 
       // Undo all
-      act(() => {
+      await act(async () => {
         result.current.undo();
       });
       await waitFor(() => {
         expect(result.current.currentState?.content).toBe('state 2');
       });
 
-      act(() => {
+      await act(async () => {
         result.current.undo();
       });
       await waitFor(() => {
         expect(result.current.currentState?.content).toBe('state 1');
       });
 
-      act(() => {
+      await act(async () => {
         result.current.undo();
       });
       await waitFor(() => {
@@ -405,21 +412,21 @@ describe('useUndoRedo', () => {
       });
 
       // Redo multiple times
-      act(() => {
+      await act(async () => {
         result.current.redo();
       });
       await waitFor(() => {
         expect(result.current.currentState?.content).toBe('state 1');
       });
 
-      act(() => {
+      await act(async () => {
         result.current.redo();
       });
       await waitFor(() => {
         expect(result.current.currentState?.content).toBe('state 2');
       });
 
-      act(() => {
+      await act(async () => {
         result.current.redo();
       });
       await waitFor(() => {
@@ -430,11 +437,11 @@ describe('useUndoRedo', () => {
   });
 
   describe('undo/redo interaction', () => {
-    it.skip('should clear redo history when adding new state after undo', async () => {
+    it('should clear redo history when adding new state after undo', async () => {
       const { result } = renderHook(() => useUndoRedo('initial'));
 
       // Add state and undo
-      act(() => {
+      await act(async () => {
         result.current.addToHistory({
           content: 'updated',
           cursorPosition: null,
@@ -447,7 +454,7 @@ describe('useUndoRedo', () => {
         expect(result.current.canUndo).toBe(true);
       });
 
-      act(() => {
+      await act(async () => {
         result.current.undo();
       });
 
@@ -456,7 +463,7 @@ describe('useUndoRedo', () => {
       });
 
       // Add new state after undo
-      act(() => {
+      await act(async () => {
         result.current.addToHistory({
           content: 'new content',
           cursorPosition: null,
@@ -472,11 +479,11 @@ describe('useUndoRedo', () => {
       });
     });
 
-    it.skip('should maintain correct history after undo and new addition', async () => {
+    it('should maintain correct history after undo and new addition', async () => {
       const { result } = renderHook(() => useUndoRedo('state 0'));
 
       // Add states: state 0 -> state 1 -> state 2
-      act(() => {
+      await act(async () => {
         result.current.addToHistory({
           content: 'state 1',
           cursorPosition: null,
@@ -485,7 +492,7 @@ describe('useUndoRedo', () => {
         });
       });
 
-      act(() => {
+      await act(async () => {
         result.current.addToHistory({
           content: 'state 2',
           cursorPosition: null,
@@ -499,7 +506,7 @@ describe('useUndoRedo', () => {
       });
 
       // Undo to state 1
-      act(() => {
+      await act(async () => {
         result.current.undo();
       });
 
@@ -508,7 +515,7 @@ describe('useUndoRedo', () => {
       });
 
       // Add new state (should create: state 0 -> state 1 -> state 3)
-      act(() => {
+      await act(async () => {
         result.current.addToHistory({
           content: 'state 3',
           cursorPosition: null,
@@ -525,7 +532,7 @@ describe('useUndoRedo', () => {
       });
 
       // Undo should go to state 1, not state 2
-      act(() => {
+      await act(async () => {
         result.current.undo();
       });
       await waitFor(() => {
@@ -612,7 +619,7 @@ describe('useUndoRedo', () => {
   });
 
   describe('canUndo and canRedo', () => {
-    it.skip('should correctly report canUndo and canRedo states', async () => {
+    it('should correctly report canUndo and canRedo states', async () => {
       const { result } = renderHook(() => useUndoRedo('initial'));
 
       // Initially: no undo, no redo
@@ -620,7 +627,7 @@ describe('useUndoRedo', () => {
       expect(result.current.canRedo).toBe(false);
 
       // After adding: can undo, cannot redo
-      act(() => {
+      await act(async () => {
         result.current.addToHistory({
           content: 'updated',
           cursorPosition: null,
@@ -635,7 +642,7 @@ describe('useUndoRedo', () => {
       });
 
       // After undo: cannot undo, can redo
-      act(() => {
+      await act(async () => {
         result.current.undo();
       });
 
@@ -645,7 +652,7 @@ describe('useUndoRedo', () => {
       });
 
       // After redo: can undo, cannot redo
-      act(() => {
+      await act(async () => {
         result.current.redo();
       });
 
@@ -657,13 +664,13 @@ describe('useUndoRedo', () => {
   });
 
   describe('onStateChange callback', () => {
-    it.skip('should call onStateChange when undo is performed', async () => {
+    it('should call onStateChange when undo is performed', async () => {
       const onStateChange = vi.fn();
       const { result } = renderHook(() =>
         useUndoRedo('initial', { onStateChange })
       );
 
-      act(() => {
+      await act(async () => {
         result.current.addToHistory({
           content: 'updated',
           cursorPosition: null,
@@ -676,7 +683,7 @@ describe('useUndoRedo', () => {
         expect(result.current.canUndo).toBe(true);
       });
 
-      act(() => {
+      await act(async () => {
         result.current.undo();
       });
 
@@ -688,13 +695,13 @@ describe('useUndoRedo', () => {
       });
     });
 
-    it.skip('should call onStateChange when redo is performed', async () => {
+    it('should call onStateChange when redo is performed', async () => {
       const onStateChange = vi.fn();
       const { result } = renderHook(() =>
         useUndoRedo('initial', { onStateChange })
       );
 
-      act(() => {
+      await act(async () => {
         result.current.addToHistory({
           content: 'updated',
           cursorPosition: null,
@@ -707,7 +714,7 @@ describe('useUndoRedo', () => {
         expect(result.current.canUndo).toBe(true);
       });
 
-      act(() => {
+      await act(async () => {
         result.current.undo();
       });
 
@@ -715,7 +722,7 @@ describe('useUndoRedo', () => {
         expect(result.current.canRedo).toBe(true);
       });
 
-      act(() => {
+      await act(async () => {
         result.current.redo();
       });
 
