@@ -183,7 +183,8 @@ class BlockToggleWidget extends WidgetType {
     btn.disabled = this.opts.disabled;
     btn.className = [
       'cm-paragraph-block-toggle-btn',
-      'w-6 h-6 border-l border-vscode-border flex items-center justify-center hover:opacity-90 transition-all duration-200 font-bold text-sm',
+      // Add full border + slight shadow so it doesn't look glued to the scrollbar/right edge
+      'w-6 h-6 border border-vscode-border rounded flex items-center justify-center hover:opacity-90 transition-all duration-200 font-bold text-sm shadow-sm',
       this.opts.isActive
         ? 'bg-purple-600 text-white'
         : 'bg-vscode-sidebar/50 text-vscode-text-secondary hover:bg-vscode-buttonBg',
@@ -223,11 +224,13 @@ export function paragraphBlockControlsTheme() {
   return EditorView.baseTheme({
     '.cm-line': {
       position: 'relative',
-      paddingRight: '52px', // room for the toggle button + bigger gap from scrollbar
+      paddingRight: '52px', // room for the toggle button
     },
     '.cm-paragraph-block-toggle': {
       position: 'absolute',
-      right: '20px', // keep well off the scrollbar
+      // Keep the anchor at the far right, but add padding so the button isn't flush to the edge
+      right: '0px',
+      paddingRight: '20px',
       top: '0px',
       height: '100%',
       display: 'flex',
