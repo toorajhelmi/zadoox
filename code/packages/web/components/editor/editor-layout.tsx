@@ -382,6 +382,43 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     if (selectedVersion !== null && latestVersion !== null && selectedVersion !== latestVersion) {
       return; // Don't allow formatting older versions
     }
+
+    // Formatting is a user edit: route through undo/redo + prevent external-change history reset
+    const applyUserEdit = (newContent: string) => {
+      // Mark as user input so the "external content change" effect does not clear history
+      isUserInputRef.current = true;
+
+      // Cancel any pending debounced history entry (typing) to avoid weird ordering
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+        debounceTimeoutRef.current = null;
+      }
+
+      updateContent(newContent);
+
+      // Add to undo history immediately (formatting is an intentional edit)
+      if (!changeTracking.isTracking) {
+        // Capture cursor position if available
+        let currentCursorPos = cursorPosition;
+        if (editorViewRef.current && !currentCursorPos) {
+          try {
+            const selection = editorViewRef.current.state.selection.main;
+            const line = editorViewRef.current.state.doc.lineAt(selection.head);
+            currentCursorPos = { line: line.number, column: selection.head - line.from + 1 };
+          } catch {
+            // ignore
+          }
+        }
+
+        undoRedo.addToHistory({
+          content: newContent,
+          cursorPosition: currentCursorPos,
+          selection: currentSelectionRef.current,
+          timestamp: Date.now(),
+        });
+        previousContentForHistoryRef.current = newContent;
+      }
+    };
     
     const selection = currentSelectionRef.current;
     
@@ -417,7 +454,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         content.slice(0, selection.from) + 
         formattedText + 
         content.slice(selection.to);
-      updateContent(newContent);
+      applyUserEdit(newContent);
     } else {
       // No selection - insert placeholder at end (for now)
       let placeholder = '';
@@ -446,9 +483,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       }
       // Insert at end (could be improved to insert at cursor)
       const newContent = content + placeholder;
-      updateContent(newContent);
+      applyUserEdit(newContent);
     }
-  }, [content, updateContent, selectedVersion, latestVersion]);
+  }, [content, updateContent, selectedVersion, latestVersion, cursorPosition, undoRedo, changeTracking.isTracking]);
 
   return (
     <div className="flex h-screen bg-vscode-bg text-vscode-text">
