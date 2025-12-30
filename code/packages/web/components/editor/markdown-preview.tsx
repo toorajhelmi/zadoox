@@ -215,6 +215,34 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
   // Prevent normal markdown links from navigating away from the editor.
   // Instead, open external/relative links in a new tab; handle hash links as in-page scroll.
   useEffect(() => {
+    const normalizeHref = (rawHref: string): string => {
+      const href = rawHref.trim();
+      if (!href) return href;
+
+      // Already an absolute URL with scheme (http:, https:, mailto:, etc.)
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(href)) {
+        return href;
+      }
+
+      // Protocol-relative URL (//example.com)
+      if (href.startsWith('//')) {
+        return `https:${href}`;
+      }
+
+      // Common "bare domain" patterns (e.g. www.google.com) -> https://www.google.com
+      if (/^www\./i.test(href)) {
+        return `https://${href}`;
+      }
+
+      // If it looks like a domain (has a dot, no spaces, no leading slash), treat as https
+      if (!href.startsWith('/') && href.includes('.') && !/\s/.test(href)) {
+        return `https://${href}`;
+      }
+
+      // Otherwise leave as-is (relative paths remain relative)
+      return href;
+    };
+
     const handleLinkClick = (e: Event) => {
       const target = e.target as HTMLElement;
       const link = target.closest('a') as HTMLAnchorElement | null;
@@ -244,7 +272,8 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
 
       // Open in a new tab to avoid breaking the SPA route
       try {
-        const url = new URL(href, window.location.origin);
+        const normalizedHref = normalizeHref(href);
+        const url = new URL(normalizedHref, window.location.origin);
         window.open(url.toString(), '_blank', 'noopener,noreferrer');
       } catch {
         // If URL parsing fails, just ignore (do not navigate away)
