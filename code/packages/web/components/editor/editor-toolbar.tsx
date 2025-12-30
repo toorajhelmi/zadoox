@@ -37,13 +37,25 @@ export function EditorToolbar({
 }: EditorToolbarProps) {
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
+  const [projectMissing, setProjectMissing] = useState(false);
 
   useEffect(() => {
     async function loadProject() {
       try {
+        setProjectMissing(false);
         const data = await api.projects.get(projectId);
         setProject(data);
       } catch (error) {
+        const maybeApiError = error as { name?: string; code?: string; status?: number; message?: string };
+        // Project missing is a valid runtime state (e.g. deleted project / stale link) — don't spam console.
+        if (
+          maybeApiError?.name === 'ApiError' &&
+          (maybeApiError.code === 'NOT_FOUND' || maybeApiError.status === 404)
+        ) {
+          setProject(null);
+          setProjectMissing(true);
+          return;
+        }
         console.error('Failed to load project:', error);
       }
     }
@@ -71,10 +83,18 @@ export function EditorToolbar({
           </button>
           <ChevronRightIcon className="w-4 h-4 text-vscode-text-secondary" />
           <button
-            onClick={() => router.push(`/dashboard/projects/${projectId}`)}
-            className="text-vscode-text-secondary hover:text-vscode-text transition-colors"
+            onClick={() => {
+              if (projectMissing) return;
+              router.push(`/dashboard/projects/${projectId}`);
+            }}
+            disabled={projectMissing}
+            className={`text-vscode-text-secondary transition-colors ${
+              projectMissing
+                ? 'opacity-60 cursor-not-allowed'
+                : 'hover:text-vscode-text'
+            }`}
           >
-            {project?.name || 'Project'}
+            {project?.name || (projectMissing ? 'Project (missing)' : 'Project')}
           </button>
           {documentTitle && (
             <>
