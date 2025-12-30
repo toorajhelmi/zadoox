@@ -421,42 +421,54 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     };
     
     const selection = currentSelectionRef.current;
+    const cmSelection = editorViewRef.current?.state.selection.main ?? null;
     
-    if (selection && selection.text) {
-      // Format selected text using exact positions
+    // Resolve a selection range in document coordinates (prefer stored selection, fallback to CodeMirror selection)
+    const from =
+      selection?.from ??
+      (cmSelection ? Math.min(cmSelection.from, cmSelection.to) : null);
+    const to =
+      selection?.to ??
+      (cmSelection ? Math.max(cmSelection.from, cmSelection.to) : null);
+
+    const hasRange = typeof from === 'number' && typeof to === 'number' && from >= 0 && to >= 0 && to > from;
+
+    if (hasRange) {
+      // Format selected text using exact positions from CodeMirror
       let formattedText = '';
+      const selectedText = content.slice(from!, to!);
       switch (format) {
         case 'bold':
-          formattedText = `**${selection.text}**`;
+          formattedText = `**${selectedText}**`;
           break;
         case 'italic':
-          formattedText = `*${selection.text}*`;
+          formattedText = `*${selectedText}*`;
           break;
         case 'underline':
-          formattedText = `<u>${selection.text}</u>`;
+          formattedText = `<u>${selectedText}</u>`;
           break;
         case 'superscript':
-          formattedText = `<sup>${selection.text}</sup>`;
+          formattedText = `<sup>${selectedText}</sup>`;
           break;
         case 'subscript':
-          formattedText = `<sub>${selection.text}</sub>`;
+          formattedText = `<sub>${selectedText}</sub>`;
           break;
         case 'code':
-          formattedText = `\`${selection.text}\``;
+          formattedText = `\`${selectedText}\``;
           break;
         case 'link':
-          formattedText = `[${selection.text}](url)`;
+          formattedText = `[${selectedText}](url)`;
           break;
       }
 
       // Replace using exact positions from CodeMirror
       const newContent = 
-        content.slice(0, selection.from) + 
+        content.slice(0, from!) + 
         formattedText + 
-        content.slice(selection.to);
+        content.slice(to!);
       applyUserEdit(newContent);
     } else {
-      // No selection - insert placeholder at end (for now)
+      // No selection - insert placeholder at cursor position (fallback to end)
       let placeholder = '';
       switch (format) {
         case 'bold':
@@ -481,8 +493,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           placeholder = '[]()';
           break;
       }
-      // Insert at end (could be improved to insert at cursor)
-      const newContent = content + placeholder;
+      const insertPos = cmSelection ? cmSelection.head : content.length;
+      const newContent = content.slice(0, insertPos) + placeholder + content.slice(insertPos);
       applyUserEdit(newContent);
     }
   }, [content, updateContent, selectedVersion, latestVersion, cursorPosition, undoRedo, changeTracking.isTracking]);
