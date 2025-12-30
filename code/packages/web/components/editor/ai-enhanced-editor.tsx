@@ -3,8 +3,11 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { CodeMirrorEditor } from './codemirror-editor';
 import { AIIndicators } from './ai-indicators';
-import { ParagraphModeToggles } from './paragraph-mode-toggles';
 import { toolbarExtension, showToolbar } from './toolbar-extension';
+import {
+  paragraphBlockControlsExtension,
+  paragraphBlockControlsTheme,
+} from './paragraph-block-controls-extension';
 import { useAIAnalysis } from '@/hooks/use-ai-analysis';
 import { api } from '@/lib/api/client';
 import type { AIActionType, AIAnalysisResponse, ParagraphMode, ChangeBlock } from '@zadoox/shared';
@@ -72,6 +75,17 @@ export function AIEnhancedEditor({
     if (!onAcceptChange || !onRejectChange) return null;
     return changeHighlightExtension(onAcceptChange, onRejectChange);
   }, [onAcceptChange, onRejectChange]);
+
+  const paragraphBlockControlsExt = useMemo(() => {
+    return [
+      paragraphBlockControlsTheme(),
+      paragraphBlockControlsExtension({
+        openParagraphId,
+        onOpenPanel: onOpenPanel || (() => {}),
+        disabled: readOnly,
+      }),
+    ];
+  }, [openParagraphId, onOpenPanel, readOnly]);
 
   // Dispatch changes to CodeMirror when they update
   useEffect(() => {
@@ -668,6 +682,7 @@ export function AIEnhancedEditor({
             toolbarExt,
             ...disableSelectionExt,
             ...(changeHighlightExt ? [changeHighlightExt] : []),
+            ...paragraphBlockControlsExt,
           ]}
           onEditorViewReady={(view) => {
             editorViewRef.current = view;
@@ -691,15 +706,7 @@ export function AIEnhancedEditor({
           />
         </div>
         
-        {/* Paragraph Mode Toggles Column (overlay on right) */}
-        <div className="absolute right-0 top-0 h-full z-20 pointer-events-none">
-          <ParagraphModeToggles
-            content={value}
-            editorView={editorViewRef.current}
-            openParagraphId={openParagraphId}
-            onOpenPanel={onOpenPanel || (() => {})}
-          />
-        </div>
+        {/* Paragraph Block Controls are now rendered inline via CodeMirror widgets */}
       </div>
 
       {/* Toolbar is now rendered inline via CodeMirror widgets */}
