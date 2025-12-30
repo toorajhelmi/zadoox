@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { IdeaCard } from './idea-card';
 import { ChatMessage } from './chat-message';
+import { GeneratedContentActionModal, type GeneratedContentInsertMode } from './generated-content-action-modal';
 import { api } from '@/lib/api/client';
 import { MicIcon, ArrowRightIcon } from '@/components/dashboard/icons';
 import type { BrainstormingSession, ChatMessage as ChatMessageType, IdeaCard as IdeaCardType } from '@zadoox/shared';
@@ -22,7 +23,7 @@ interface BrainstormTabProps {
   sectionHeading?: string;
   sectionContent?: string;
   documentId: string;
-  onContentGenerated: (content: string, mode: 'blend' | 'replace' | 'extend') => void;
+  onContentGenerated: (content: string, mode: GeneratedContentInsertMode | 'extend') => void;
   onSessionUpdate?: (session: BrainstormingSession) => void;
   initialSession?: BrainstormingSession | null;
   onReset?: () => void;
@@ -221,7 +222,7 @@ export function BrainstormTab({
     }
   }, [documentId, paragraphId, onReset]);
 
-  const generateContent = useCallback(async (idea: IdeaCardType, mode: 'blend' | 'replace' | 'extend') => {
+  const generateContent = useCallback(async (idea: IdeaCardType, mode: GeneratedContentInsertMode | 'extend') => {
     try {
       setIsLoading(true);
       if (onGeneratingChange) {
@@ -238,7 +239,7 @@ export function BrainstormTab({
           sectionHeading,
           sectionContent,
         },
-        mode: mode === 'extend' ? 'replace' : mode, // extend handled in frontend
+        mode: mode === 'extend' || mode === 'lead' || mode === 'conclude' ? 'replace' : mode, // lead/conclude/extend handled in frontend
       });
 
       onContentGenerated(response.content, mode);
@@ -402,52 +403,24 @@ export function BrainstormTab({
       </div>
 
       {/* Blend/Replace Dialog */}
-      {showBlendReplaceDialog && pendingIdea && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 w-96">
-            <h3 className="text-sm font-semibold text-white mb-2">Generate Content</h3>
-            <p className="text-xs text-gray-400 mb-4">
-              This block already has content. How would you like to proceed?
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  if (onGeneratingChange) {
-                    onGeneratingChange(true);
-                  }
-                  generateContent(pendingIdea, 'blend');
-                }}
-                disabled={isLoading}
-                className="flex-1 px-3 py-2 text-sm bg-gray-800 hover:bg-gray-700 text-white rounded border border-gray-700 transition-colors disabled:opacity-50"
-              >
-                Blend
-              </button>
-              <button
-                onClick={() => {
-                  if (onGeneratingChange) {
-                    onGeneratingChange(true);
-                  }
-                  generateContent(pendingIdea, 'replace');
-                }}
-                disabled={isLoading}
-                className="flex-1 px-3 py-2 text-sm bg-gray-800 hover:bg-gray-700 text-white rounded border border-gray-700 transition-colors disabled:opacity-50"
-              >
-                Replace
-              </button>
-              <button
-                onClick={() => {
-                  setShowBlendReplaceDialog(false);
-                  setPendingIdea(null);
-                }}
-                disabled={isLoading}
-                className="px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <GeneratedContentActionModal
+        isOpen={showBlendReplaceDialog && !!pendingIdea}
+        title="Generate Content"
+        description="This block already has content. How would you like to proceed?"
+        isBusy={isLoading}
+        onSelect={(mode) => {
+          const idea = pendingIdea;
+          if (!idea) return;
+          // Close the modal first, then show progress overlay while generating
+          setShowBlendReplaceDialog(false);
+          setPendingIdea(null);
+          generateContent(idea, mode);
+        }}
+        onCancel={() => {
+          setShowBlendReplaceDialog(false);
+          setPendingIdea(null);
+        }}
+      />
 
       {/* Loading Overlay - Only show when generating content (not just thinking in chat) */}
       {isLoading && !showBlendReplaceDialog && (

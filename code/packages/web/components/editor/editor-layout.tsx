@@ -669,21 +669,17 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             documentId={actualDocumentId}
             projectId={projectId}
             onGeneratingChange={setIsGeneratingContent}
-            onContentGenerated={async (generatedContent, mode, _sources) => {
+            onContentGenerated={async (generatedContent, mode, _sources, scope = 'block') => {
               // Find the paragraph and replace/blend content
-              if (!openParagraphId) {
-                return;
-              }
+              const applyingToDocument = scope === 'document';
+              if (!applyingToDocument && !openParagraphId) return;
               
               const lines = content.split('\n');
-              const match = openParagraphId.match(/^para-(\d+)$/);
-              if (!match) {
-                return;
-              }
-              
-              const startLine = parseInt(match[1], 10);
-              if (startLine < 0 || startLine >= lines.length) {
-                return;
+              const startLine = applyingToDocument ? 0 : parseInt(openParagraphId!.match(/^para-(\d+)$/)![1], 10);
+              if (!applyingToDocument) {
+                const match = openParagraphId!.match(/^para-(\d+)$/);
+                if (!match) return;
+                if (startLine < 0 || startLine >= lines.length) return;
               }
               
               // Check if section
@@ -691,7 +687,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               const startLineIsHeading = startLine < lines.length && isHeading(lines[startLine].trim());
               
               let endLine = startLine;
-              if (startLineIsHeading) {
+              if (applyingToDocument) {
+                endLine = lines.length;
+              } else if (startLineIsHeading) {
                 endLine = startLine + 1;
                 while (endLine < lines.length) {
                   if (isHeading(lines[endLine].trim())) break;
@@ -709,14 +707,41 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               const afterLines = lines.slice(endLine); // endLine is exclusive (first line after block)
               
               let newContent: string;
-              if (mode === 'replace' || mode === 'extend' || mode === 'citation' || mode === 'summary') {
+              if (mode === 'replace' || mode === 'lead' || mode === 'conclude' || mode === 'extend' || mode === 'citation' || mode === 'summary') {
                 // Replace: use generated content directly
-                // Extend: append generated content (handled in frontend)
+                // Lead: prepend generated content (handled in frontend)
+                // Conclude: append generated content (handled in frontend)
+                // Extend: legacy append generated content (handled in frontend)
                 // Citation/Summary: insert generated content with citations
-                if (mode === 'extend') {
-                  // Extend: append generated content to the existing block content
+                if (mode === 'lead' || mode === 'conclude' || mode === 'extend') {
                   const currentBlockContent = lines.slice(startLine, endLine).join('\n');
-                  newContent = [...beforeLines, currentBlockContent + '\n\n' + generatedContent, ...afterLines].join('\n');
+
+                  // Special case: sections start with a markdown heading. "Lead" should add content
+                  // to the beginning of the section body (right after the heading), not above the heading.
+                  if (mode === 'lead' && startLineIsHeading && !applyingToDocument) {
+                    const headingLine = lines[startLine] ?? '';
+                    const bodyContent = lines.slice(startLine + 1, endLine).join('\n');
+                    const gen = generatedContent.trim();
+                    const body = bodyContent.trim();
+                    const combined =
+                      gen && body
+                        ? `${headingLine}\n\n${gen}\n\n${bodyContent}`
+                        : gen
+                          ? `${headingLine}\n\n${gen}`
+                          : body
+                            ? `${headingLine}\n\n${bodyContent}`
+                            : headingLine;
+                    newContent = [...beforeLines, combined, ...afterLines].join('\n');
+                  } else {
+                    // Regular Lead/Conclude/Extend behavior for non-heading blocks
+                    const left = mode === 'lead' ? generatedContent : currentBlockContent;
+                    const right = mode === 'lead' ? currentBlockContent : generatedContent;
+                    const combined =
+                      left.trimEnd() && right.trimStart()
+                        ? `${left.trimEnd()}\n\n${right.trimStart()}`
+                        : `${left}${right}`;
+                    newContent = [...beforeLines, combined, ...afterLines].join('\n');
+                  }
                 } else {
                   // Replace, Citation, or Summary: replace with generated content
                   newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');

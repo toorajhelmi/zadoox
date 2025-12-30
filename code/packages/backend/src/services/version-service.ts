@@ -116,17 +116,14 @@ export class VersionService {
       // Create full snapshot
       contentSnapshot = newContent;
     } else {
-      // Create delta from last snapshot or previous version
-      const baseVersion = await this.getVersion(documentId, metadata.lastSnapshotVersion || metadata.currentVersion);
-      if (!baseVersion) {
-        throw new Error(`Base version not found for document ${documentId}`);
-      }
-
-      const baseContent = await this.reconstructVersion(documentId, baseVersion.versionNumber);
+      // Create delta from the PREVIOUS version (so deltas can be applied sequentially).
+      // snapshotBaseVersion remains the most recent snapshot so reconstruction can start from there.
+      const previousVersionNumber = metadata.currentVersion;
+      const baseContent = await this.reconstructVersion(documentId, previousVersionNumber);
       const delta = this.calculateDelta(baseContent, newContent);
-      delta.baseVersion = baseVersion.versionNumber; // Set the base version
+      delta.baseVersion = previousVersionNumber; // delta is relative to previous version
       contentDelta = delta;
-      snapshotBaseVersion = baseVersion.versionNumber;
+      snapshotBaseVersion = metadata.lastSnapshotVersion ?? null;
     }
 
     // Insert new version
@@ -267,6 +264,17 @@ export class VersionService {
 
     // Get base snapshot
     const baseContent = await this.reconstructVersion(documentId, version.snapshotBaseVersion);
+
+    // Backward compatibility:
+    // Some older versions stored deltas relative to the snapshot base (not the previous version),
+    // but reconstruction previously (incorrectly) applied all deltas sequentially, causing corruption.
+    // If the delta declares it is snapshot-relative, apply ONLY this delta to the snapshot.
+    if (
+      typeof version.contentDelta.baseVersion === 'number' &&
+      version.contentDelta.baseVersion === version.snapshotBaseVersion
+    ) {
+      return this.applyDelta(baseContent, version.contentDelta);
+    }
 
     // Apply all deltas from base to target version
     const versions = await this.listVersions(documentId, 1000, 0);

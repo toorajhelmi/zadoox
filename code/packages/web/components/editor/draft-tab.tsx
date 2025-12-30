@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { api } from '@/lib/api/client';
+import { GeneratedContentActionModal, type GeneratedContentInsertMode } from './generated-content-action-modal';
 
 interface DraftTabProps {
   paragraphId: string;
@@ -9,7 +10,7 @@ interface DraftTabProps {
   sectionHeading?: string;
   sectionContent?: string;
   documentId?: string; // Optional, not currently used but may be needed for future features
-  onContentGenerated: (content: string, mode: 'blend' | 'replace' | 'extend') => void;
+  onContentGenerated: (content: string, mode: GeneratedContentInsertMode | 'extend') => void;
   onGeneratingChange?: (isGenerating: boolean) => void;
 }
 
@@ -61,7 +62,7 @@ export function DraftTab({
     }
   }, [draftText, paragraphId, sectionHeading, sectionContent, isTransforming, onGeneratingChange]);
 
-  const handleInsert = useCallback(async (mode: 'blend' | 'replace' | 'extend') => {
+  const handleInsert = useCallback(async (mode: GeneratedContentInsertMode | 'extend') => {
     if (!draftText.trim()) return;
 
     // Close dialog immediately
@@ -73,7 +74,7 @@ export function DraftTab({
 
     try {
       // Transform with the selected mode
-      const transformMode = mode === 'extend' ? 'replace' : mode; // extend handled in frontend
+      const transformMode = mode === 'extend' || mode === 'lead' || mode === 'conclude' ? 'replace' : mode; // lead/conclude/extend handled in frontend
       const result = await api.ai.draft.transform({
         draftText: draftText.trim(),
         paragraphId,
@@ -177,46 +178,16 @@ export function DraftTab({
       </div>
 
       {/* Blend/Replace/Extend Dialog */}
-      {showBlendReplaceDialog && transformedContent && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 w-96">
-            <h3 className="text-sm font-semibold text-white mb-2">Insert Content</h3>
-            <p className="text-xs text-gray-400 mb-4">
-              This block already has content. How would you like to proceed?
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleInsert('blend')}
-                disabled={isTransforming}
-                className="flex-1 px-3 py-2 text-sm bg-gray-800 hover:bg-gray-700 text-white rounded border border-gray-700 transition-colors disabled:opacity-50"
-              >
-                Blend
-              </button>
-              <button
-                onClick={() => handleInsert('replace')}
-                disabled={isTransforming}
-                className="flex-1 px-3 py-2 text-sm bg-gray-800 hover:bg-gray-700 text-white rounded border border-gray-700 transition-colors disabled:opacity-50"
-              >
-                Replace
-              </button>
-              <button
-                onClick={() => handleInsert('extend')}
-                disabled={isTransforming}
-                className="flex-1 px-3 py-2 text-sm bg-gray-800 hover:bg-gray-700 text-white rounded border border-gray-700 transition-colors disabled:opacity-50"
-              >
-                Add
-              </button>
-              <button
-                onClick={() => setShowBlendReplaceDialog(false)}
-                disabled={isTransforming}
-                className="px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <GeneratedContentActionModal
+        isOpen={showBlendReplaceDialog && !!transformedContent}
+        title="Insert Content"
+        description="This block already has content. How would you like to proceed?"
+        isBusy={isTransforming}
+        onSelect={(mode) => {
+          handleInsert(mode);
+        }}
+        onCancel={() => setShowBlendReplaceDialog(false)}
+      />
 
       {/* Loading Overlay - Only show when generating content (not just transforming for preview) */}
       {isTransforming && !showBlendReplaceDialog && (

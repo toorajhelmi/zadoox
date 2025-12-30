@@ -541,8 +541,36 @@ export async function aiRoutes(fastify: FastifyInstance) {
           }))
           .filter(msg => msg.content.length > 0 && (msg.role === 'user' || msg.role === 'assistant'));
 
+        // If the user asks for a summary/description/comparison and we already have idea cards,
+        // interpret the request as "summarize/compare the ideas", not "summarize the block".
+        const hasIdeas = Array.isArray(existingIdeaCards) && existingIdeaCards.length > 0;
+        const isIdeaSummaryRequest =
+          hasIdeas && /\b(summarize|summary|describe|description|compare|difference|different|why|which|pros|cons)\b/i.test(message);
+
+        const ideaCardsText = hasIdeas
+          ? existingIdeaCards
+              .map((c, i) => `${i + 1}. ${String(c.topic || '').trim()}\n   ${String(c.description || '').trim()}`)
+              .join('\n')
+          : '';
+
+        const effectiveMessage = isIdeaSummaryRequest
+          ? `You already proposed multiple idea cards for the user's target content.
+The user is asking you to summarize/compare the IDEA CARDS.
+
+STRICT RULES:
+- Do NOT summarize the document block itself.
+- Focus ONLY on the idea cards and explain: how they differ, when/why to use each, and what each would produce.
+- End with a short recommendation (e.g., "If you want X, pick #Y").
+
+IDEA CARDS:
+${ideaCardsText}
+
+USER REQUEST:
+${message.trim()}`
+          : message;
+
         // Get AI response
-        const aiResponse = await service.brainstormChat(message, history, context, model);
+        const aiResponse = await service.brainstormChat(effectiveMessage, history, context, model);
 
         // Extract ideas if there are existing ideas to compare against
         let extractedIdeas: Array<{ topic: string; description: string }> = [];
