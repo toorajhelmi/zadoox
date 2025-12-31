@@ -200,8 +200,7 @@ describe('BrainstormTab', () => {
       expect(screen.getByText('Generate Content')).toBeInTheDocument();
       expect(screen.getByText('Blend')).toBeInTheDocument();
       expect(screen.getByText('Replace')).toBeInTheDocument();
-      expect(screen.getByText('Lead')).toBeInTheDocument();
-      expect(screen.getByText('Conclude')).toBeInTheDocument();
+      expect(screen.getByText('Extend')).toBeInTheDocument();
       expect(screen.getByText('Cancel')).toBeInTheDocument();
     });
   });
@@ -223,10 +222,6 @@ describe('BrainstormTab', () => {
       updatedAt: new Date().toISOString(),
     };
 
-    vi.mocked(api.ai.brainstorm.generate).mockResolvedValue({
-      content: 'Generated content',
-    });
-
     render(
       <BrainstormTab
         {...defaultProps}
@@ -240,12 +235,10 @@ describe('BrainstormTab', () => {
     fireEvent.click(useButton);
 
     await waitFor(() => {
-      expect(api.ai.brainstorm.generate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          mode: 'replace',
-        })
-      );
-      expect(onContentGenerated).toHaveBeenCalledWith('Generated content', 'replace');
+      // When there's no existing content, 'replace' mode is handled in frontend
+      // No API call is made - it uses the idea description directly
+      expect(api.ai.brainstorm.generate).not.toHaveBeenCalled();
+      expect(onContentGenerated).toHaveBeenCalledWith('Test description', 'replace');
     });
   });
 
