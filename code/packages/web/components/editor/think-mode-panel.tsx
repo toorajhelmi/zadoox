@@ -18,7 +18,12 @@ interface ThinkModePanelProps {
   content: string;
   documentId: string;
   projectId: string;
-  onContentGenerated: (content: string, mode: 'blend' | 'replace' | 'extend' | 'citation' | 'summary', sources?: unknown[]) => void;
+  onContentGenerated: (
+    content: string,
+    mode: 'blend' | 'replace' | 'lead' | 'conclude' | 'extend' | 'citation' | 'summary',
+    sources?: unknown[],
+    scope?: 'block' | 'document'
+  ) => void;
   onGeneratingChange?: (isGenerating: boolean) => void;
 }
 
@@ -92,6 +97,49 @@ function getParagraphInfo(paragraphId: string | null, content: string): {
   return { blockContent };
 }
 
+function makeBlockSnippet(blockContent: string, maxWords = 12): string {
+  const normalized = blockContent
+    .replace(/\s+/g, ' ')
+    .replace(/^#{1,6}\s+/, '') // drop leading markdown heading markers for display
+    .trim();
+
+  if (!normalized) return '';
+  const words = normalized.split(' ').filter(Boolean);
+  const snippet = words.slice(0, maxWords).join(' ');
+  return words.length > maxWords ? `${snippet}…` : snippet;
+}
+
+function TabLabelWithInfo({
+  label,
+  tooltip,
+  isActive,
+}: {
+  label: string;
+  tooltip: string;
+  isActive: boolean;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span>{label}</span>
+      <span className="relative group inline-flex items-center">
+        <span
+          aria-label={`${label} info`}
+          className={`ml-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full border text-[10px] leading-none ${
+            isActive
+              ? 'border-vscode-blue text-vscode-blue'
+              : 'border-gray-600 text-gray-400 group-hover:text-gray-200 group-hover:border-gray-500'
+          }`}
+        >
+          i
+        </span>
+        <span className="pointer-events-none absolute left-1/2 top-full mt-2 w-64 -translate-x-1/2 rounded bg-gray-900 border border-gray-700 px-2 py-1 text-[11px] text-gray-200 opacity-0 shadow-lg transition-opacity group-hover:opacity-100 z-50">
+          {tooltip}
+        </span>
+      </span>
+    </span>
+  );
+}
+
 /**
  * Think Mode Panel
  * Full-height left-side panel that appears when opened
@@ -108,6 +156,7 @@ export function ThinkModePanel({
   onGeneratingChange,
 }: ThinkModePanelProps) {
   const [activeTab, setActiveTab] = useState<'brainstorm' | 'research' | 'draft'>('brainstorm');
+  const [targetScope, setTargetScope] = useState<'block' | 'document'>('block');
   const [session, setSession] = useState<BrainstormingSession | null>(null);
   const [researchSession, setResearchSession] = useState<ResearchSession | null>(null);
   const [documentStyle, setDocumentStyle] = useState<DocumentStyle>('other');
@@ -126,6 +175,15 @@ export function ThinkModePanel({
     if (!paragraphId) return { blockContent: '', sectionHeading: undefined, sectionContent: undefined };
     return getParagraphInfo(paragraphId, content);
   }, [paragraphId, content]);
+
+  const targetContentForContext = useMemo(() => {
+    return targetScope === 'document' ? content : paragraphInfo.blockContent;
+  }, [targetScope, content, paragraphInfo.blockContent]);
+
+  const blockSnippet = useMemo(() => makeBlockSnippet(paragraphInfo.blockContent), [paragraphInfo.blockContent]);
+  const docSnippet = useMemo(() => makeBlockSnippet(content), [content]);
+  const targetSnippet = targetScope === 'document' ? docSnippet : blockSnippet;
+  const effectiveParagraphId = targetScope === 'document' ? 'doc' : paragraphId;
 
   // Load project settings
   useEffect(() => {
@@ -252,15 +310,19 @@ export function ThinkModePanel({
     setSession(updatedSession);
   };
 
-  const handleContentGenerated = (generatedContent: string, mode: 'blend' | 'replace' | 'extend' | 'citation' | 'summary', sources?: unknown[]) => {
-    onContentGenerated(generatedContent, mode, sources);
+  const handleContentGenerated = (
+    generatedContent: string,
+    mode: 'blend' | 'replace' | 'lead' | 'conclude' | 'extend' | 'citation' | 'summary',
+    sources?: unknown[]
+  ) => {
+    onContentGenerated(generatedContent, mode, sources, targetScope);
     // Auto-close the panel after content is generated
-    if (mode === 'blend' || mode === 'replace' || mode === 'extend' || mode === 'citation' || mode === 'summary') {
+    if (mode === 'blend' || mode === 'replace' || mode === 'lead' || mode === 'conclude' || mode === 'extend' || mode === 'citation' || mode === 'summary') {
       onClose();
     }
   };
 
-  const handleDraftContentGenerated = (generatedContent: string, mode: 'blend' | 'replace' | 'extend') => {
+  const handleDraftContentGenerated = (generatedContent: string, mode: 'blend' | 'replace' | 'lead' | 'conclude' | 'extend') => {
     handleContentGenerated(generatedContent, mode);
   };
 
@@ -295,7 +357,50 @@ export function ThinkModePanel({
 
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-vscode-border bg-black">
-        <h2 className="text-sm font-semibold text-white">Think Mode</h2>
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center bg-gray-900 border border-gray-700 rounded overflow-hidden shrink-0 whitespace-nowrap">
+              <span className="px-2 py-1 text-[10px] text-gray-400 border-r border-gray-700">
+                Scope
+              </span>
+              <button
+                type="button"
+                onClick={() => setTargetScope('block')}
+                className={`px-2 py-1 text-[11px] leading-none transition-colors ${
+                  targetScope === 'block' ? 'bg-gray-700 text-white' : 'text-gray-300 hover:bg-gray-800'
+                }`}
+                title="Apply actions to the selected block"
+              >
+                Block
+              </button>
+              <button
+                type="button"
+                onClick={() => setTargetScope('document')}
+                className={`px-2 py-1 text-[11px] leading-none transition-colors ${
+                  targetScope === 'document' ? 'bg-gray-700 text-white' : 'text-gray-300 hover:bg-gray-800'
+                }`}
+                title="Apply actions to the whole document"
+              >
+                Whole doc
+              </button>
+          </div>
+
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-white leading-tight">
+              Let&apos;s think about
+            </div>
+            {targetScope === 'block' && targetSnippet && (
+              <div className="text-[11px] text-gray-400 leading-tight whitespace-normal break-words">
+                {targetSnippet}
+              </div>
+            )}
+            {targetScope === 'document' && (
+              <div className="text-[11px] text-gray-400 leading-tight whitespace-normal break-words">
+                Whole doc
+              </div>
+            )}
+          </div>
+        </div>
+
         <button
           onClick={onClose}
           className="text-gray-400 hover:text-white transition-colors px-2 py-1 hover:bg-gray-800 rounded"
@@ -315,7 +420,11 @@ export function ThinkModePanel({
               : 'text-gray-400 hover:text-white hover:bg-gray-800'
           }`}
         >
-          Brainstorm
+          <TabLabelWithInfo
+            label="Brainstorm"
+            isActive={activeTab === 'brainstorm'}
+            tooltip='Chat to explore angles and extract idea cards. Use an idea card to generate text. Scope toggle controls whether actions apply to the selected block or the whole document.'
+          />
         </button>
         <button
           onClick={() => setActiveTab('research')}
@@ -325,7 +434,11 @@ export function ThinkModePanel({
               : 'text-gray-400 hover:text-white hover:bg-gray-800'
           }`}
         >
-          Research
+          <TabLabelWithInfo
+            label="Research"
+            isActive={activeTab === 'research'}
+            tooltip='Search and collect sources, then insert citations or summaries into your writing. Scope toggle controls whether insertions apply to the selected block or the whole document.'
+          />
         </button>
         <button
           onClick={() => setActiveTab('draft')}
@@ -335,7 +448,11 @@ export function ThinkModePanel({
               : 'text-gray-400 hover:text-white hover:bg-gray-800'
           }`}
         >
-          Draft
+          <TabLabelWithInfo
+            label="Draft"
+            isActive={activeTab === 'draft'}
+            tooltip='Paste rough notes and transform them into polished text, then insert via Blend/Replace/Lead/Conclude. Scope toggle controls whether insertions apply to the selected block or the whole document.'
+          />
         </button>
       </div>
 
@@ -343,10 +460,10 @@ export function ThinkModePanel({
       <div className="flex-1 overflow-hidden flex flex-col">
         {activeTab === 'brainstorm' && (
           <BrainstormTab
-            paragraphId={paragraphId}
-            blockContent={paragraphInfo.blockContent}
-            sectionHeading={paragraphInfo.sectionHeading}
-            sectionContent={paragraphInfo.sectionContent}
+            paragraphId={effectiveParagraphId || 'doc'}
+            blockContent={targetContentForContext}
+            sectionHeading={targetScope === 'block' ? paragraphInfo.sectionHeading : undefined}
+            sectionContent={targetScope === 'block' ? paragraphInfo.sectionContent : undefined}
             documentId={documentId}
             onContentGenerated={handleContentGenerated}
             onSessionUpdate={handleSessionUpdate}
@@ -357,10 +474,10 @@ export function ThinkModePanel({
         )}
         {activeTab === 'research' && (
           <ResearchTab
-            paragraphId={paragraphId}
-            blockContent={paragraphInfo.blockContent}
-            sectionHeading={paragraphInfo.sectionHeading}
-            sectionContent={paragraphInfo.sectionContent}
+            paragraphId={effectiveParagraphId || 'doc'}
+            blockContent={targetContentForContext}
+            sectionHeading={targetScope === 'block' ? paragraphInfo.sectionHeading : undefined}
+            sectionContent={targetScope === 'block' ? paragraphInfo.sectionContent : undefined}
             documentId={documentId}
             projectId={projectId}
             documentStyle={documentStyle}
@@ -374,10 +491,10 @@ export function ThinkModePanel({
         )}
         {activeTab === 'draft' && (
           <DraftTab
-            paragraphId={paragraphId}
-            blockContent={paragraphInfo.blockContent}
-            sectionHeading={paragraphInfo.sectionHeading}
-            sectionContent={paragraphInfo.sectionContent}
+            paragraphId={effectiveParagraphId || 'doc'}
+            blockContent={targetContentForContext}
+            sectionHeading={targetScope === 'block' ? paragraphInfo.sectionHeading : undefined}
+            sectionContent={targetScope === 'block' ? paragraphInfo.sectionContent : undefined}
             documentId={documentId}
             onContentGenerated={handleDraftContentGenerated}
           />

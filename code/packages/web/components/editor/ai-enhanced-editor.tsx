@@ -3,8 +3,11 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { CodeMirrorEditor } from './codemirror-editor';
 import { AIIndicators } from './ai-indicators';
-import { ParagraphModeToggles } from './paragraph-mode-toggles';
 import { toolbarExtension, showToolbar } from './toolbar-extension';
+import {
+  paragraphBlockControlsExtension,
+  paragraphBlockControlsTheme,
+} from './paragraph-block-controls-extension';
 import { useAIAnalysis } from '@/hooks/use-ai-analysis';
 import { api } from '@/lib/api/client';
 import type { AIActionType, AIAnalysisResponse, ParagraphMode, ChangeBlock } from '@zadoox/shared';
@@ -72,6 +75,17 @@ export function AIEnhancedEditor({
     if (!onAcceptChange || !onRejectChange) return null;
     return changeHighlightExtension(onAcceptChange, onRejectChange);
   }, [onAcceptChange, onRejectChange]);
+
+  const paragraphBlockControlsExt = useMemo(() => {
+    return [
+      paragraphBlockControlsTheme(),
+      paragraphBlockControlsExtension({
+        openParagraphId,
+        onOpenPanel: onOpenPanel || (() => {}),
+        disabled: readOnly,
+      }),
+    ];
+  }, [openParagraphId, onOpenPanel, readOnly]);
 
   // Dispatch changes to CodeMirror when they update
   useEffect(() => {
@@ -456,14 +470,27 @@ export function AIEnhancedEditor({
   
   // Helper function to safely dispatch toolbar updates
   const safeDispatchToolbar = useCallback((updateFn: () => void) => {
-    // Use requestAnimationFrame to avoid update conflicts
-    requestAnimationFrame(() => {
-      try {
-        updateFn();
-      } catch (error) {
-        console.error('Failed to dispatch toolbar update:', error);
-      }
-    });
+    // Avoid nested CodeMirror updates by deferring to a future macrotask.
+    // If CodeMirror is mid-update (rare but happens during rapid hover/DOM updates),
+    // retry a few times.
+    const maxAttempts = 6;
+    const attemptDispatch = (attempt: number) => {
+      setTimeout(() => {
+        try {
+          updateFn();
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          const isMidUpdate =
+            msg.includes('Calls to EditorView.update are not allowed while an update is in progress');
+          if (isMidUpdate && attempt < maxAttempts) {
+            attemptDispatch(attempt + 1);
+            return;
+          }
+          console.error('Failed to dispatch toolbar update:', error);
+        }
+      }, 0);
+    };
+    attemptDispatch(0);
   }, []);
   
   // Handle paragraph hover - update which paragraph is hovered
@@ -480,62 +507,9 @@ export function AIEnhancedEditor({
     }
 
     if (paragraphId && editorViewRef.current) {
-      // Mouse entered indicator - show toolbar inline
+      // Mouse entered indicator - update React state; CodeMirror toolbar is updated by effect below
       setHoveredParagraph(paragraphId);
       isMouseOverToolbarRef.current = false; // Reset toolbar hover state
-      
-      const analysis = getAnalysis(paragraphId);
-      const currentProcessing = processingParagraph;
-      const isProcessing = currentProcessing !== null && currentProcessing.id === paragraphId;
-      
-      // Dispatch effect to show toolbar widget using safe dispatch
-      safeDispatchToolbar(() => {
-        if (!editorViewRef.current) {
-          return;
-        }
-        
-        editorViewRef.current.dispatch({
-          effects: showToolbar.of({
-            paragraphId,
-            analysis: analysis?.analysis,
-            previousAnalysis: previousAnalysis.get(paragraphId),
-            lastEdited: analysis?.lastEdited,
-            onAction: (action: AIActionType) => handleAIAction(action, paragraphId),
-            isProcessing,
-            processingAction: isProcessing && currentProcessing !== null ? currentProcessing.action : undefined,
-            onMouseEnter: () => {
-              isMouseOverToolbarRef.current = true;
-              // Clear any pending hide
-              if (hideTimeoutRef.current) {
-                clearTimeout(hideTimeoutRef.current);
-                hideTimeoutRef.current = null;
-              }
-            },
-            onMouseLeave: () => {
-              isMouseOverToolbarRef.current = false;
-              // Don't hide if processing
-              if (!processingParagraph) {
-              // Hide after delay if not hovering over indicator
-              hideTimeoutRef.current = setTimeout(() => {
-                  if (!isMouseOverToolbarRef.current && !processingParagraph) {
-                  setHoveredParagraph(null);
-                    if (editorViewRef.current) {
-                      safeDispatchToolbar(() => {
-                  if (editorViewRef.current) {
-                    editorViewRef.current.dispatch({
-                      effects: showToolbar.of(null),
-                          });
-                        }
-                    });
-                  }
-                }
-                hideTimeoutRef.current = null;
-              }, 300);
-              }
-            },
-          }),
-        });
-      });
     } else {
       // Mouse left indicator - hide after delay if not over toolbar
       // But don't hide if processing
@@ -668,6 +642,7 @@ export function AIEnhancedEditor({
             toolbarExt,
             ...disableSelectionExt,
             ...(changeHighlightExt ? [changeHighlightExt] : []),
+            ...paragraphBlockControlsExt,
           ]}
           onEditorViewReady={(view) => {
             editorViewRef.current = view;
@@ -691,15 +666,7 @@ export function AIEnhancedEditor({
           />
         </div>
         
-        {/* Paragraph Mode Toggles Column (overlay on right) */}
-        <div className="absolute right-0 top-0 h-full z-20 pointer-events-none">
-          <ParagraphModeToggles
-            content={value}
-            editorView={editorViewRef.current}
-            openParagraphId={openParagraphId}
-            onOpenPanel={onOpenPanel || (() => {})}
-          />
-        </div>
+        {/* Paragraph Block Controls are now rendered inline via CodeMirror widgets */}
       </div>
 
       {/* Toolbar is now rendered inline via CodeMirror widgets */}

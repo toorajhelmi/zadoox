@@ -154,14 +154,20 @@ export function VersionHistoryPanel({ documentId, onRollback, onVersionSelect, r
               >
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-vscode-text font-semibold text-sm">v{version.versionNumber}</span>
-                  {version.isSnapshot && (
-                    <span className="text-xs text-vscode-text-secondary bg-vscode-active px-1.5 py-0.5 rounded">
-                      Snapshot
-                    </span>
-                  )}
-                </div>
-                <div className={`text-xs px-1.5 py-0.5 rounded inline-block mb-1 ${getChangeTypeColor(version.changeType)}`}>
-                  {getChangeTypeLabel(version.changeType)}
+                  <div className="flex items-center gap-1">
+                    {version.isSnapshot && (
+                      <span className="text-xs text-vscode-text-secondary bg-vscode-active px-1.5 py-0.5 rounded">
+                        Snapshot
+                      </span>
+                    )}
+                    {version.changeType === 'ai-action' && (
+                      <span
+                        className={`text-xs px-1.5 py-0.5 rounded ${getChangeTypeColor(version.changeType)}`}
+                      >
+                        {getChangeTypeLabel(version.changeType)}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="text-xs text-vscode-text-secondary mt-1">
                   {formatDistanceToNow(new Date(version.createdAt), { addSuffix: true })}

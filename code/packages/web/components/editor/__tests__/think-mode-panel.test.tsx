@@ -26,7 +26,7 @@ describe('ThinkModePanel', () => {
   it('should render when isOpen is true', () => {
     render(<ThinkModePanel {...defaultProps} />);
     
-    expect(screen.getByText('Think Mode')).toBeInTheDocument();
+    expect(screen.getByText("Let's think about")).toBeInTheDocument();
     expect(screen.getByText('Brainstorm')).toBeInTheDocument();
     expect(screen.getByText('Research')).toBeInTheDocument();
     expect(screen.getByText('Draft')).toBeInTheDocument();

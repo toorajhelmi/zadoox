@@ -382,44 +382,92 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     if (selectedVersion !== null && latestVersion !== null && selectedVersion !== latestVersion) {
       return; // Don't allow formatting older versions
     }
+
+    // Formatting is a user edit: route through undo/redo + prevent external-change history reset
+    const applyUserEdit = (newContent: string) => {
+      // Mark as user input so the "external content change" effect does not clear history
+      isUserInputRef.current = true;
+
+      // Cancel any pending debounced history entry (typing) to avoid weird ordering
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+        debounceTimeoutRef.current = null;
+      }
+
+      updateContent(newContent);
+
+      // Add to undo history immediately (formatting is an intentional edit)
+      if (!changeTracking.isTracking) {
+        // Capture cursor position if available
+        let currentCursorPos = cursorPosition;
+        if (editorViewRef.current && !currentCursorPos) {
+          try {
+            const selection = editorViewRef.current.state.selection.main;
+            const line = editorViewRef.current.state.doc.lineAt(selection.head);
+            currentCursorPos = { line: line.number, column: selection.head - line.from + 1 };
+          } catch {
+            // ignore
+          }
+        }
+
+        undoRedo.addToHistory({
+          content: newContent,
+          cursorPosition: currentCursorPos,
+          selection: currentSelectionRef.current,
+          timestamp: Date.now(),
+        });
+        previousContentForHistoryRef.current = newContent;
+      }
+    };
     
-    const selection = currentSelectionRef.current;
+    // Always prefer CodeMirror's current doc + selection to avoid stale indices/content
+    const view = editorViewRef.current;
+    const baseContent = view ? view.state.doc.toString() : content;
+    const cmSelection = view?.state.selection.main ?? null;
     
-    if (selection && selection.text) {
-      // Format selected text using exact positions
+    // Resolve a selection range in document coordinates (prefer stored selection, fallback to CodeMirror selection)
+    const from = cmSelection ? Math.min(cmSelection.from, cmSelection.to) : null;
+    const to = cmSelection ? Math.max(cmSelection.from, cmSelection.to) : null;
+
+    const hasRange = typeof from === 'number' && typeof to === 'number' && from >= 0 && to >= 0 && to > from;
+
+    if (hasRange) {
+      // Format selected text using exact positions from CodeMirror
       let formattedText = '';
+      const selectedText = baseContent.slice(from!, to!);
       switch (format) {
         case 'bold':
-          formattedText = `**${selection.text}**`;
+          formattedText = `**${selectedText}**`;
           break;
         case 'italic':
-          formattedText = `*${selection.text}*`;
+          formattedText = `*${selectedText}*`;
           break;
         case 'underline':
-          formattedText = `<u>${selection.text}</u>`;
+          formattedText = `<u>${selectedText}</u>`;
           break;
         case 'superscript':
-          formattedText = `<sup>${selection.text}</sup>`;
+          formattedText = `<sup>${selectedText}</sup>`;
           break;
         case 'subscript':
-          formattedText = `<sub>${selection.text}</sub>`;
+          formattedText = `<sub>${selectedText}</sub>`;
           break;
         case 'code':
-          formattedText = `\`${selection.text}\``;
+          formattedText = `\`${selectedText}\``;
           break;
         case 'link':
-          formattedText = `[${selection.text}](url)`;
+          // Use an absolute placeholder so clicking in preview doesn't navigate the SPA route
+          formattedText = `[${selectedText}](https://example.com)`;
           break;
       }
 
       // Replace using exact positions from CodeMirror
       const newContent = 
-        content.slice(0, selection.from) + 
+        baseContent.slice(0, from!) + 
         formattedText + 
-        content.slice(selection.to);
-      updateContent(newContent);
+        baseContent.slice(to!);
+      applyUserEdit(newContent);
     } else {
-      // No selection - insert placeholder at end (for now)
+      // No selection - insert placeholder at cursor position (fallback to end)
       let placeholder = '';
       switch (format) {
         case 'bold':
@@ -444,11 +492,12 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           placeholder = '[]()';
           break;
       }
-      // Insert at end (could be improved to insert at cursor)
-      const newContent = content + placeholder;
-      updateContent(newContent);
+      const insertPos = cmSelection ? cmSelection.head : content.length;
+      const safeInsertPos = Math.min(Math.max(0, insertPos), baseContent.length);
+      const newContent = baseContent.slice(0, safeInsertPos) + placeholder + baseContent.slice(safeInsertPos);
+      applyUserEdit(newContent);
     }
-  }, [content, updateContent, selectedVersion, latestVersion]);
+  }, [content, updateContent, selectedVersion, latestVersion, cursorPosition, undoRedo, changeTracking.isTracking]);
 
   return (
     <div className="flex h-screen bg-vscode-bg text-vscode-text">
@@ -620,21 +669,17 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             documentId={actualDocumentId}
             projectId={projectId}
             onGeneratingChange={setIsGeneratingContent}
-            onContentGenerated={async (generatedContent, mode, _sources) => {
+            onContentGenerated={async (generatedContent, mode, _sources, scope = 'block') => {
               // Find the paragraph and replace/blend content
-              if (!openParagraphId) {
-                return;
-              }
+              const applyingToDocument = scope === 'document';
+              if (!applyingToDocument && !openParagraphId) return;
               
               const lines = content.split('\n');
-              const match = openParagraphId.match(/^para-(\d+)$/);
-              if (!match) {
-                return;
-              }
-              
-              const startLine = parseInt(match[1], 10);
-              if (startLine < 0 || startLine >= lines.length) {
-                return;
+              const startLine = applyingToDocument ? 0 : parseInt(openParagraphId!.match(/^para-(\d+)$/)![1], 10);
+              if (!applyingToDocument) {
+                const match = openParagraphId!.match(/^para-(\d+)$/);
+                if (!match) return;
+                if (startLine < 0 || startLine >= lines.length) return;
               }
               
               // Check if section
@@ -642,7 +687,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               const startLineIsHeading = startLine < lines.length && isHeading(lines[startLine].trim());
               
               let endLine = startLine;
-              if (startLineIsHeading) {
+              if (applyingToDocument) {
+                endLine = lines.length;
+              } else if (startLineIsHeading) {
                 endLine = startLine + 1;
                 while (endLine < lines.length) {
                   if (isHeading(lines[endLine].trim())) break;
@@ -660,14 +707,41 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               const afterLines = lines.slice(endLine); // endLine is exclusive (first line after block)
               
               let newContent: string;
-              if (mode === 'replace' || mode === 'extend' || mode === 'citation' || mode === 'summary') {
+              if (mode === 'replace' || mode === 'lead' || mode === 'conclude' || mode === 'extend' || mode === 'citation' || mode === 'summary') {
                 // Replace: use generated content directly
-                // Extend: append generated content (handled in frontend)
+                // Lead: prepend generated content (handled in frontend)
+                // Conclude: append generated content (handled in frontend)
+                // Extend: legacy append generated content (handled in frontend)
                 // Citation/Summary: insert generated content with citations
-                if (mode === 'extend') {
-                  // Extend: append generated content to the existing block content
+                if (mode === 'lead' || mode === 'conclude' || mode === 'extend') {
                   const currentBlockContent = lines.slice(startLine, endLine).join('\n');
-                  newContent = [...beforeLines, currentBlockContent + '\n\n' + generatedContent, ...afterLines].join('\n');
+
+                  // Special case: sections start with a markdown heading. "Lead" should add content
+                  // to the beginning of the section body (right after the heading), not above the heading.
+                  if (mode === 'lead' && startLineIsHeading && !applyingToDocument) {
+                    const headingLine = lines[startLine] ?? '';
+                    const bodyContent = lines.slice(startLine + 1, endLine).join('\n');
+                    const gen = generatedContent.trim();
+                    const body = bodyContent.trim();
+                    const combined =
+                      gen && body
+                        ? `${headingLine}\n\n${gen}\n\n${bodyContent}`
+                        : gen
+                          ? `${headingLine}\n\n${gen}`
+                          : body
+                            ? `${headingLine}\n\n${bodyContent}`
+                            : headingLine;
+                    newContent = [...beforeLines, combined, ...afterLines].join('\n');
+                  } else {
+                    // Regular Lead/Conclude/Extend behavior for non-heading blocks
+                    const left = mode === 'lead' ? generatedContent : currentBlockContent;
+                    const right = mode === 'lead' ? currentBlockContent : generatedContent;
+                    const combined =
+                      left.trimEnd() && right.trimStart()
+                        ? `${left.trimEnd()}\n\n${right.trimStart()}`
+                        : `${left}${right}`;
+                    newContent = [...beforeLines, combined, ...afterLines].join('\n');
+                  }
                 } else {
                   // Replace, Citation, or Summary: replace with generated content
                   newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
