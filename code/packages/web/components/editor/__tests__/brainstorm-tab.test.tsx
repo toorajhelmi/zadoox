@@ -200,8 +200,7 @@ describe('BrainstormTab', () => {
       expect(screen.getByText('Generate Content')).toBeInTheDocument();
       expect(screen.getByText('Blend')).toBeInTheDocument();
       expect(screen.getByText('Replace')).toBeInTheDocument();
-      expect(screen.getByText('Lead')).toBeInTheDocument();
-      expect(screen.getByText('Conclude')).toBeInTheDocument();
+      expect(screen.getByText('Extend')).toBeInTheDocument();
       expect(screen.getByText('Cancel')).toBeInTheDocument();
     });
   });
