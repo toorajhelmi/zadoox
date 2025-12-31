@@ -69,6 +69,37 @@ export function AIEnhancedEditor({
 
   const { paragraphs, getAnalysis, isAnalyzing, analyze: analyzeParagraph } = useAIAnalysis(value, model);
   const editorViewRef = useRef<EditorView | null>(null);
+  const isMouseOverToolbarRef = useRef(false);
+
+  // Helper function to safely dispatch CodeMirror updates
+  // Prevents nested updates by catching the error and retrying with exponential backoff
+  const safeDispatchToolbar = useCallback((updateFn: () => void, retryCount = 0) => {
+    const maxRetries = 5;
+    const retryDelay = Math.min(50 * Math.pow(2, retryCount), 200); // 50ms, 100ms, 200ms max
+    
+    // Use requestAnimationFrame to defer to next frame
+    requestAnimationFrame(() => {
+      try {
+        updateFn();
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        
+        // If it's the "update in progress" error and we haven't exceeded retries, retry
+        if (errorMessage.includes('update is not allowed while an update is in progress') && retryCount < maxRetries) {
+          // Retry after a delay with exponential backoff
+          setTimeout(() => {
+            safeDispatchToolbar(updateFn, retryCount + 1);
+          }, retryDelay);
+        } else if (retryCount >= maxRetries) {
+          // Silently ignore if we've exceeded retries (prevents console spam)
+          // The update will be lost, but this prevents infinite retry loops
+        } else {
+          // Log other errors
+          console.error('Failed to dispatch toolbar update:', error);
+        }
+      }
+    });
+  }, []);
 
   // Memoize change highlight extension
   const changeHighlightExt = useMemo(() => {
@@ -94,10 +125,15 @@ export function AIEnhancedEditor({
     }
     // Always dispatch changes (even if empty) to clear decorations when changes are cleared
     const changesToDispatch = changes || [];
-    editorViewRef.current.dispatch({
-      effects: setChanges.of(changesToDispatch),
+    safeDispatchToolbar(() => {
+      if (!editorViewRef.current) {
+        return;
+      }
+      editorViewRef.current.dispatch({
+        effects: setChanges.of(changesToDispatch),
+      });
     });
-  }, [changes]);
+  }, [changes, safeDispatchToolbar]);
   
   // Helper function to check if a line is a markdown heading
   const isHeading = (line: string): boolean => {
@@ -464,34 +500,6 @@ export function AIEnhancedEditor({
       }),
     ];
   }, [thinkPanelOpen]);
-
-  // Track if mouse is over toolbar widget
-  const isMouseOverToolbarRef = useRef(false);
-  
-  // Helper function to safely dispatch toolbar updates
-  const safeDispatchToolbar = useCallback((updateFn: () => void) => {
-    // Avoid nested CodeMirror updates by deferring to a future macrotask.
-    // If CodeMirror is mid-update (rare but happens during rapid hover/DOM updates),
-    // retry a few times.
-    const maxAttempts = 6;
-    const attemptDispatch = (attempt: number) => {
-      setTimeout(() => {
-        try {
-          updateFn();
-        } catch (error) {
-          const msg = error instanceof Error ? error.message : String(error);
-          const isMidUpdate =
-            msg.includes('Calls to EditorView.update are not allowed while an update is in progress');
-          if (isMidUpdate && attempt < maxAttempts) {
-            attemptDispatch(attempt + 1);
-            return;
-          }
-          console.error('Failed to dispatch toolbar update:', error);
-        }
-      }, 0);
-    };
-    attemptDispatch(0);
-  }, []);
   
   // Handle paragraph hover - update which paragraph is hovered
   const handleParagraphHover = useCallback((paragraphId: string | null) => {
