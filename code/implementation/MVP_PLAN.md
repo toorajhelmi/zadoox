@@ -716,40 +716,40 @@ This phase implements a Cursor-style diff view that shows AI-generated changes w
 ---
 
 ### Phase 7.8.1: Undo/Redo Functionality 🔄
-**Status**: Not Started
+**Status**: ✅ COMPLETED
 
 This phase implements undo/redo functionality for document editing, allowing users to undo and redo changes in the document.
 
 #### Core Functionality:
-- [ ] **Undo/Redo stack**:
-  - [ ] Maintain history of document states
-  - [ ] Track changes (content, cursor position, selection)
-  - [ ] Support undo/redo operations
-  - [ ] Limit history size (e.g., 50-100 operations)
+- [x] **Undo/Redo stack**:
+  - [x] Maintain history of document states
+  - [x] Track changes (content, cursor position, selection)
+  - [x] Support undo/redo operations
+  - [x] Limit history size (e.g., 50-100 operations)
 
 #### User Interface:
-- [ ] **Keyboard shortcuts**:
-  - [ ] Cmd/Ctrl+Z for undo
-  - [ ] Cmd/Ctrl+Shift+Z or Cmd/Ctrl+Y for redo
-  - [ ] Visual feedback when undo/redo is performed
+- [x] **Keyboard shortcuts**:
+  - [x] Cmd/Ctrl+Z for undo
+  - [x] Cmd/Ctrl+Shift+Z or Cmd/Ctrl+Y for redo
+  - [x] Visual feedback when undo/redo is performed
 
-- [ ] **Toolbar buttons** (optional):
-  - [ ] Undo button in editor toolbar
-  - [ ] Redo button in editor toolbar
-  - [ ] Disable buttons when undo/redo stack is empty
-  - [ ] Show tooltips with action descriptions
+- [x] **Toolbar buttons** (optional):
+  - [x] Undo button in editor toolbar
+  - [x] Redo button in editor toolbar
+  - [x] Disable buttons when undo/redo stack is empty
+  - [x] Show tooltips with action descriptions
 
 #### Integration:
-- [ ] **Editor integration**:
-  - [ ] Integrate with CodeMirror editor
-  - [ ] Track content changes
-  - [ ] Track cursor position and selection
-  - [ ] Restore editor state on undo/redo
+- [x] **Editor integration**:
+  - [x] Integrate with CodeMirror editor
+  - [x] Track content changes
+  - [x] Track cursor position and selection
+  - [x] Restore editor state on undo/redo
 
-- [ ] **Change tracking integration**:
-  - [ ] Clear change tracking when undo/redo is performed
-  - [ ] Handle undo/redo of AI-generated changes
-  - [ ] Preserve change tracking state appropriately
+- [x] **Change tracking integration**:
+  - [x] Clear change tracking when undo/redo is performed
+  - [x] Handle undo/redo of AI-generated changes
+  - [x] Preserve change tracking state appropriately
 
 #### Implementation Details:
 - [ ] **State management**:
@@ -832,7 +832,7 @@ This phase implements undo/redo functionality for document editing, allowing use
 ---
 
 ### Phase 10: Web App - Editor Features ✅
-**Status**: Not Started
+**Status**: In Progress
 
 - [ ] Extended Markdown support
 - [ ] Placeholder support ({REF}, {CH})
