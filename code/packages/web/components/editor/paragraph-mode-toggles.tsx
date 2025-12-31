@@ -215,7 +215,7 @@ export function ParagraphModeToggles({
           <div
             key={paragraph.id}
             data-paragraph-id={paragraph.id}
-            className="absolute right-0 pointer-events-auto"
+            className="absolute right-0 pointer-events-auto mr-2"
             style={{
               top: `${topOffset}px`,
               height: `${toggleHeight}px`,
