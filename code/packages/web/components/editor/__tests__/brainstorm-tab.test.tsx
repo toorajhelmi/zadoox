@@ -239,7 +239,7 @@ describe('BrainstormTab', () => {
       // When there's no existing content, 'replace' mode is handled in frontend
       // No API call is made - it uses the idea description directly
       expect(api.ai.brainstorm.generate).not.toHaveBeenCalled();
-      expect(onContentGenerated).toHaveBeenCalledWith('Test idea description', 'replace');
+      expect(onContentGenerated).toHaveBeenCalledWith('Test description', 'replace');
     });
   });
 
