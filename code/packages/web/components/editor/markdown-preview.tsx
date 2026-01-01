@@ -2,8 +2,7 @@
 
 import { renderMarkdownToHtml, extractHeadings } from '@zadoox/shared';
 import { useMemo, useEffect, useRef } from 'react';
-
-const ASSET_PROXY_BASE = '/api/assets';
+import { createClient } from '@/lib/supabase/client';
 
 interface MarkdownPreviewProps {
   content: string;
@@ -21,13 +20,6 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
     
     // Render markdown to HTML
     let htmlContent = renderMarkdownToHtml(content);
-
-    // Resolve zadoox asset refs to backend URLs so images load after refresh.
-    // We keep the markdown stored with stable refs like: zadoox-asset://<key>
-    htmlContent = htmlContent.replace(
-      /src="zadoox-asset:\/\/([^"]+)"/g,
-      (_m, key) => `src="${ASSET_PROXY_BASE}/${encodeURIComponent(String(key))}"`
-    );
     
     // Add IDs to headings for outline navigation
     // Replace headings in order, matching by level and text
@@ -185,6 +177,58 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
     
     return htmlContent;
   }, [content]);
+
+  // Resolve zadoox-asset:// images by fetching from backend with Authorization header.
+  // This avoids relying on cookie-based sessions for <img src> requests.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const imgs = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
+    const assetImgs = imgs.filter((img) => (img.getAttribute('src') || '').startsWith('zadoox-asset://'));
+    if (assetImgs.length === 0) return;
+
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
+    const supabase = createClient();
+    const abort = new AbortController();
+
+    const objectUrls: string[] = [];
+
+    (async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return;
+
+      await Promise.all(
+        assetImgs.map(async (img) => {
+          const raw = img.getAttribute('src') || '';
+          const key = raw.replace('zadoox-asset://', '');
+          if (!key) return;
+
+          try {
+            const res = await fetch(`${API_BASE}/assets/${encodeURIComponent(key)}`, {
+              headers: { Authorization: `Bearer ${token}` },
+              signal: abort.signal,
+            });
+            if (!res.ok) return;
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            objectUrls.push(url);
+            img.src = url;
+          } catch {
+            // ignore
+          }
+        })
+      );
+    })();
+
+    return () => {
+      abort.abort();
+      for (const u of objectUrls) URL.revokeObjectURL(u);
+    };
+  }, [html]);
 
   // Handle citation link clicks
   useEffect(() => {

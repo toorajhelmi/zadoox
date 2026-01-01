@@ -1,8 +1,7 @@
 import { StateField } from '@codemirror/state';
 import { Decoration, type DecorationSet, WidgetType, EditorView } from '@codemirror/view';
 import { api } from '@/lib/api/client';
-
-const ASSET_PROXY_BASE = '/api/assets';
+import { createClient } from '@/lib/supabase/client';
 
 function parseAttrValue(attrs: string, key: string): string | null {
   const re = new RegExp(`${key}="([^"]*)"`);
@@ -110,7 +109,7 @@ class FigureCardWidget extends WidgetType {
     }
 
     const img = document.createElement('img');
-    img.src = this.displaySrc;
+    img.src = this.displaySrc || '';
     img.alt = this.alt || 'Figure';
     img.style.display = 'block';
     // Default: allow the image to size naturally but never overflow the container.
@@ -135,6 +134,39 @@ class FigureCardWidget extends WidgetType {
     if (align === 'right') img.style.marginLeft = 'auto';
     if (align === 'left') img.style.marginRight = 'auto';
     wrap.appendChild(img);
+
+    // If this is an asset reference, fetch it with Authorization and convert to a blob URL.
+    // This avoids relying on cookie-based auth for <img src>.
+    if (this.rawUrl.startsWith('zadoox-asset://')) {
+      const key = this.rawUrl.slice('zadoox-asset://'.length);
+      if (key) {
+        const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
+        const supabase = createClient();
+        // Prevent duplicate loads if CodeMirror reuses DOM nodes.
+        (img as unknown as { __assetLoading?: boolean }).__assetLoading = true;
+        void (async () => {
+          try {
+            const {
+              data: { session },
+            } = await supabase.auth.getSession();
+            const token = session?.access_token;
+            if (!token) return;
+            const res = await fetch(`${API_BASE}/assets/${encodeURIComponent(key)}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) return;
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            (img as unknown as { __assetBlobUrl?: string }).__assetBlobUrl = url;
+            img.src = url;
+          } catch {
+            // ignore
+          } finally {
+            (img as unknown as { __assetLoading?: boolean }).__assetLoading = false;
+          }
+        })();
+      }
+    }
 
     if (placement === 'inline') {
       // Inline-wrap hint: subtle side fades indicating text will flow around the figure in preview.
@@ -619,9 +651,8 @@ export function embeddedImagePreviewExtension() {
     const resolveSrc = (url: string): string => {
       const trimmed = (url || '').trim();
       if (trimmed.startsWith('zadoox-asset://')) {
-        const key = trimmed.slice('zadoox-asset://'.length);
-        // Proxy through Next.js so the request carries cookies; the route handler will attach the Supabase bearer token.
-        return `${ASSET_PROXY_BASE}/${encodeURIComponent(key)}`;
+        // We'll load this via fetch+Authorization and set a blob URL on the client.
+        return '';
       }
       return trimmed;
     };
