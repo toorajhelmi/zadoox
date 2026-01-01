@@ -18,7 +18,6 @@ interface CodeMirrorEditorProps {
   onChange: (value: string) => void;
   onSelectionChange?: (selection: { from: number; to: number; text: string } | null) => void;
   onCursorPositionChange?: (position: { line: number; column: number } | null) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   extensions?: any[];
   onEditorViewReady?: (view: EditorView | null) => void;
   readOnly?: boolean;
