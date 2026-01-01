@@ -1,7 +1,5 @@
 'use client';
 
-export const dynamic = 'force-dynamic';
-
 import { useEffect, useState } from 'react';
 import { DashboardLayout, ProjectCard, CreateProjectModal, ProjectsIcon, PlusIcon, SparkleIcon, LoaderIcon } from '@/components/dashboard';
 import { api } from '@/lib/api/client';
