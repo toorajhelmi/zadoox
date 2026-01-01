@@ -568,22 +568,51 @@ ${JSON.stringify(params.blocks, null, 2)}`;
       size?: '256x256' | '512x512' | '1024x1024';
     }
   ): Promise<{ b64: string; mimeType: string }> {
-    const size = options?.size || '1024x1024';
+    const size = options?.size || '512x512';
 
-    // OpenAI Images API (base64)
-    const response = await this.client.images.generate({
-      model: 'gpt-image-1',
-      prompt,
-      size,
-      response_format: 'b64_json',
-    });
+    // OpenAI Images API.
+    // Some deployments/models reject `response_format` (e.g. "Unknown parameter: 'response_format'"),
+    // so we attempt base64 first, then fall back gracefully.
+    const makeRequest = async (includeResponseFormat: boolean) => {
+      return this.client.images.generate({
+        // Keep in sync with our API/UI which supports 256/512/1024 sizes.
+        model: 'dall-e-2',
+        prompt,
+        size,
+        ...(includeResponseFormat ? { response_format: 'b64_json' as const } : {}),
+      });
+    };
 
-    const b64 = response.data?.[0]?.b64_json;
-    if (!b64) {
-      throw new Error('No image returned from OpenAI');
+    let response: Awaited<ReturnType<typeof makeRequest>>;
+    try {
+      response = await makeRequest(true);
+    } catch (err: unknown) {
+      const anyErr = err as { message?: string; param?: string; code?: string };
+      const isResponseFormatError =
+        anyErr?.param === 'response_format' ||
+        anyErr?.code === 'unknown_parameter' ||
+        (typeof anyErr?.message === 'string' && anyErr.message.includes("response_format"));
+      if (!isResponseFormatError) throw err;
+      response = await makeRequest(false);
     }
 
-    return { b64, mimeType: 'image/png' };
+    const first = response.data?.[0] as { b64_json?: string; url?: string } | undefined;
+    if (first?.b64_json) {
+      return { b64: first.b64_json, mimeType: 'image/png' };
+    }
+
+    // Fallback: if the API returns a URL, fetch and convert to base64.
+    if (first?.url) {
+      const res = await fetch(first.url);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch generated image (${res.status})`);
+      }
+      const mimeType = res.headers.get('content-type') || 'image/png';
+      const buf = Buffer.from(await res.arrayBuffer());
+      return { b64: buf.toString('base64'), mimeType };
+    }
+
+    throw new Error('No image returned from OpenAI');
   }
 
   getModelInfo(): AIModelInfo {

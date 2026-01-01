@@ -354,6 +354,11 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
         .markdown-content em {
           font-style: italic;
         }
+        .markdown-content .figure-caption {
+          display: inline-block;
+          margin-top: 0.25em;
+          color: #9aa0a6;
+        }
         .markdown-content a {
           color: #4ec9b0;
           text-decoration: underline;

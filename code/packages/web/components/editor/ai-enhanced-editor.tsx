@@ -13,6 +13,7 @@ import { api } from '@/lib/api/client';
 import type { AIActionType, AIAnalysisResponse, ParagraphMode, ChangeBlock } from '@zadoox/shared';
 import { EditorView } from '@codemirror/view';
 import { changeHighlightExtension, setChanges } from './change-highlight-extension';
+import { embeddedImagePreviewExtension } from './embedded-image-preview-extension';
 
 interface AIEnhancedEditorProps {
   value: string;
@@ -115,6 +116,10 @@ export function AIEnhancedEditor({
       }),
     ];
   }, [openParagraphId, onOpenPanel, readOnly]);
+
+  const embeddedImagePreviewExt = useMemo(() => {
+    return embeddedImagePreviewExtension();
+  }, []);
 
   // Dispatch changes to CodeMirror when they update
   useEffect(() => {
@@ -649,6 +654,7 @@ export function AIEnhancedEditor({
             ...disableSelectionExt,
             ...(changeHighlightExt ? [changeHighlightExt] : []),
             ...paragraphBlockControlsExt,
+            ...embeddedImagePreviewExt,
           ]}
           onEditorViewReady={(view) => {
             editorViewRef.current = view;
