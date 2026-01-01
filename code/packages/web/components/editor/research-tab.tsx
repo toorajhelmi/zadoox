@@ -296,8 +296,7 @@ export function ResearchTab({
     try {
       const currentDocument = await api.documents.get(documentId);
       const currentSessions = currentDocument.metadata.researchSessions || {};
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { [paragraphId]: _, ...remainingSessions } = currentSessions;
+      const { [paragraphId]: _unused, ...remainingSessions } = currentSessions;
       const updatedMetadata = {
         ...currentDocument.metadata,
         researchSessions: remainingSessions,

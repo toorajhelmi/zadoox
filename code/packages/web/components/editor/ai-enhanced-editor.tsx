@@ -58,7 +58,6 @@ export function AIEnhancedEditor({
   onAcceptChange,
   onRejectChange,
 }: AIEnhancedEditorProps) {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_hoveredParagraph, setHoveredParagraph] = useState<string | null>(null);
   const [processingParagraph, setProcessingParagraph] = useState<{ id: string; action: AIActionType } | null>(null);
   const [previousAnalysis, setPreviousAnalysis] = useState<Map<string, AIAnalysisResponse>>(new Map());

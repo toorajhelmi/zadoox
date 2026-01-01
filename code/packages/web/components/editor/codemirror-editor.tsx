@@ -18,8 +18,7 @@ interface CodeMirrorEditorProps {
   onChange: (value: string) => void;
   onSelectionChange?: (selection: { from: number; to: number; text: string } | null) => void;
   onCursorPositionChange?: (position: { line: number; column: number } | null) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  extensions?: any[];
+  extensions?: unknown[];
   onEditorViewReady?: (view: EditorView | null) => void;
   readOnly?: boolean;
 }
@@ -211,8 +210,8 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange, onCursorP
         const cmEditor = editorContainerRef.current.querySelector('.cm-editor');
         if (cmEditor) {
           // @uiw/react-codemirror stores view in a specific way
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const view = (cmEditor as any).__cm_view?.view || (cmEditor as any).cmView?.view;
+          const cmEditorWithView = cmEditor as unknown as { __cm_view?: { view?: EditorView }; cmView?: { view?: EditorView } };
+          const view = cmEditorWithView.__cm_view?.view || cmEditorWithView.cmView?.view;
           if (view && onEditorViewReady) {
             editorViewRef.current = view;
             editorViewReadyCalledRef.current = true;
