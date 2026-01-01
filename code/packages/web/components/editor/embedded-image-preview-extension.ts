@@ -26,6 +26,23 @@ function upsertAttr(attrs: string, key: string, value: string | null): string {
   return `${cleaned} ${key}="${escapeAttrValue(value)}"`.trim();
 }
 
+function clamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n));
+}
+
+function parsePercentWidth(width: string | null): number | null {
+  if (!width) return null;
+  const m = /^\s*(\d+(?:\.\d+)?)\s*%\s*$/.exec(width);
+  if (!m) return null;
+  const v = Number(m[1]);
+  return Number.isFinite(v) ? v : null;
+}
+
+function formatPercentWidth(pct: number): string {
+  // Keep it simple and stable for diffs/widgets.
+  return `${Math.round(pct)}%`;
+}
+
 class FigureCardWidget extends WidgetType {
   constructor(
     private readonly src: string,
@@ -311,6 +328,40 @@ class FigureCardWidget extends WidgetType {
     btnM.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '50%' }); });
     btnL.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '100%' }); });
 
+    const iconMinus =
+      '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+      '<path d="M3.5 8h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+      '</svg>';
+    const iconPlus =
+      '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+      '<path d="M8 3.5v9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+      '<path d="M3.5 8h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+      '</svg>';
+
+    const btnSmaller = makeIconBtn({ label: 'Decrease size (-10%)', svg: iconMinus });
+    const btnLarger = makeIconBtn({ label: 'Increase size (+10%)', svg: iconPlus });
+    const stepPct = 10;
+    const minPct = 10;
+    const maxPct = 100;
+
+    const stepWidth = (delta: number) => {
+      const currentPct = parsePercentWidth(width) ?? 50;
+      const nextPct = clamp(currentPct + delta, minPct, maxPct);
+      applyAttrUpdate({ width: formatPercentWidth(nextPct) });
+    };
+
+    btnSmaller.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      stepWidth(-stepPct);
+    });
+
+    btnLarger.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      stepWidth(stepPct);
+    });
+
     const btnInline = makeIconBtn({ label: 'Placement inline', svg: icon.inline });
     const btnBlock = makeIconBtn({ label: 'Placement block', svg: icon.block });
     btnInline.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ placement: 'inline' }); });
@@ -327,9 +378,11 @@ class FigureCardWidget extends WidgetType {
     rowAlign.appendChild(btnRight);
 
     const rowSize = makeRow();
+    rowSize.appendChild(btnSmaller);
     rowSize.appendChild(btnS);
     rowSize.appendChild(btnM);
     rowSize.appendChild(btnL);
+    rowSize.appendChild(btnLarger);
 
     const rowPlacement = makeRow();
     rowPlacement.appendChild(btnInline);
