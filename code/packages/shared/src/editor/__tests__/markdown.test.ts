@@ -95,8 +95,9 @@ describe('Markdown Utilities', () => {
       const markdown = '![Caption](image.png){#fig:generated-123 label="Figure {REF}.1"}';
       const html = renderMarkdownToHtml(markdown);
 
-      expect(html).toContain('<img src="image.png" alt="Caption" />');
+      expect(html).toContain('<img src="image.png" alt="Caption"');
       expect(html).toContain('class="figure-caption"');
+      expect(html).toContain('class="figure"');
       expect(html).not.toContain('{#fig:');
       expect(html).not.toContain('label="Figure');
       expect(html).not.toContain('.1"}');
