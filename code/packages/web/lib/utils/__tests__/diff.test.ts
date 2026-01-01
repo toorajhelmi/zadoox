@@ -47,20 +47,6 @@ describe('calculateChanges', () => {
     expect(changes.length).toBeLessThanOrEqual(2); // May be 1 or 2 depending on diff algorithm
   });
 
-  it('should preserve small unchanged gaps when merging nearby changes', () => {
-    // Two small edits with an unchanged gap between them ("XY").
-    // When merged, newText should include the gap so highlight spans the full visible region.
-    const original = 'abcXYZdef';
-    const newContent = 'abqXYWdef';
-    const changes = calculateChanges(original, newContent);
-
-    // Depending on diff output, it may merge into one modify.
-    const merged = changes.find((c) => c.type === 'modify');
-    if (merged?.newText) {
-      expect(merged.newText).toContain('XY');
-    }
-  });
-
   it('should handle multiple separate changes', () => {
     const original = 'First paragraph.\n\nSecond paragraph.';
     const newContent = 'First paragraph updated.\n\nSecond paragraph updated.';

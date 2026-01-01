@@ -54,7 +54,7 @@ export function changeHighlightExtension(
           if (change.accepted === undefined) {
             // Only show pending changes
             const from = change.startPosition;
-            const to = change.endPosition ?? change.startPosition;
+            const to = change.endPosition || change.startPosition;
 
             // Skip invalid ranges
             if (from > to || from >= docLength || to > docLength) continue;

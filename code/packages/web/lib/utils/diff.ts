@@ -110,10 +110,7 @@ export function calculateChanges(originalContent: string, newContent: string): C
       // Combine new text (for additions/modifications)
       const lastNew = last.type === 'add' || last.type === 'modify' ? (last.newText || '') : '';
       const currentNew = current.type === 'add' || current.type === 'modify' ? (current.newText || '') : '';
-      // IMPORTANT: If we're merging changes across an unchanged "gap" (diff-match-patch often
-      // emits small equal segments), include that gap so the merged change covers the full
-      // visible range in the new content for highlighting.
-      const combinedNew = lastNew + gapText + currentNew;
+      const combinedNew = lastNew + currentNew;
       
       // Replace last change with merged change
       mergedChanges[mergedChanges.length - 1] = {
