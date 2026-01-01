@@ -393,7 +393,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     }
   }, []);
 
-  // Update cursor screen position when cursor moves
+  // Update cursor screen position when cursor moves or sidebar state changes
   // Use requestAnimationFrame to defer update and avoid nested CodeMirror updates
   useEffect(() => {
     if (cursorPosition && !thinkPanelOpen && !inlineAIChatOpen) {
@@ -409,7 +409,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         }
       });
     }
-  }, [cursorPosition, thinkPanelOpen, inlineAIChatOpen, getCursorScreenPosition]);
+  }, [cursorPosition, thinkPanelOpen, inlineAIChatOpen, sidebarOpen, sidebarWidth, getCursorScreenPosition]);
 
   // Undo/Redo hook (defined first to avoid circular dependencies)
   const undoRedo = useUndoRedo(content, {
