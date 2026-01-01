@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { ArrowRightIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { getAllQuickOptions, getContextOptions, getAdjacentBlocks, type QuickOption } from '@/lib/services/context-options';
+import { getAllQuickOptions, getContextOptions, getAdjacentBlocks, type QuickOption, type QuickOptionGroup } from '@/lib/services/context-options';
 import type { DocumentStyle } from '@zadoox/shared';
 
 interface InlineAIChatProps {
@@ -170,6 +170,15 @@ export function InlineAIChat({
     })
     .slice(0, 50);
 
+  const groupedOptions: Array<{ group: QuickOptionGroup; options: QuickOption[] }> = (
+    ['Generation', 'Transformation', 'Structure', 'Tone'] as const
+  )
+    .map((group) => ({
+      group,
+      options: filteredAllOptions.filter((o) => o.group === group),
+    }))
+    .filter((g) => g.options.length > 0);
+
   const flowPrompt = (() => {
     if (!activeFlow) return null;
     if (activeFlow.key === 'translate') {
@@ -264,21 +273,31 @@ export function InlineAIChat({
                 className="w-full bg-gray-950 text-xs text-gray-200 placeholder-gray-500 border border-gray-700 rounded px-2 py-1 focus:outline-none focus:border-gray-600"
               />
 
-              <div className="mt-2 max-h-48 overflow-auto space-y-1">
-                {filteredAllOptions.map((opt) => (
-                  <button
-                    key={opt.id}
-                    onClick={() => handleQuickOption(opt)}
-                    className="w-full text-left px-2 py-1 rounded border border-gray-800 hover:border-gray-700 hover:bg-gray-800/40 transition-colors"
-                    title={opt.description}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs text-gray-200">{opt.label}</span>
-                      <span className="text-[10px] text-gray-400">{opt.group}</span>
+              <div className="mt-2 max-h-56 overflow-auto space-y-3">
+                {groupedOptions.map(({ group, options }) => (
+                  <div key={group}>
+                    <div className="px-1 mb-1 text-[10px] tracking-wide uppercase text-gray-500">{group}</div>
+                    <div className="space-y-1">
+                      {options.map((opt) => (
+                        <button
+                          key={opt.id}
+                          onClick={() => handleQuickOption(opt)}
+                          className="w-full text-left px-2 py-1 rounded border border-gray-800 hover:border-gray-700 hover:bg-gray-800/40 transition-colors"
+                          title={opt.description}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs text-gray-200">{opt.label}</span>
+                          </div>
+                          {opt.description && <div className="text-[10px] text-gray-400 mt-0.5">{opt.description}</div>}
+                        </button>
+                      ))}
                     </div>
-                    {opt.description && <div className="text-[10px] text-gray-400 mt-0.5">{opt.description}</div>}
-                  </button>
+                  </div>
                 ))}
+
+                {groupedOptions.length === 0 && (
+                  <div className="text-xs text-gray-400 px-1">No matching actions.</div>
+                )}
               </div>
             </div>
           )}
