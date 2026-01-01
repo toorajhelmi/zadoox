@@ -11,8 +11,7 @@ module.exports = {
     sourceType: 'module',
   },
   extends: [
-    'next/recommended',
-    'next/core-web-vitals',
+    'next',
   ],
 };
 
