@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { ChevronRightIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
 import { EditorSidebar } from './editor-sidebar';
 import { EditorToolbar } from './editor-toolbar';
 import { EditorStatusBar } from './editor-status-bar';
@@ -8,13 +9,17 @@ import { AIEnhancedEditor } from './ai-enhanced-editor';
 import { MarkdownPreview } from './markdown-preview';
 import { FormattingToolbar } from './formatting-toolbar';
 import { ThinkModePanel } from './think-mode-panel';
+import { InlineAIChat } from './inline-ai-chat';
+import { InlineAIHint } from './inline-ai-hint';
 import { useDocumentState } from '@/hooks/use-document-state';
 import { api } from '@/lib/api/client';
 import type { FormatType } from './floating-format-menu';
 import { useChangeTracking } from '@/hooks/use-change-tracking';
 import { useUndoRedo } from '@/hooks/use-undo-redo';
-import type { ResearchSource } from '@zadoox/shared';
+import type { ResearchSource, DocumentStyle } from '@zadoox/shared';
+import type { InlineEditBlock, InlineEditOperation } from '@zadoox/shared';
 import { extractCitedSourceIds } from '@/lib/utils/citation';
+import type { QuickOption } from '@/lib/services/context-options';
 
 interface EditorLayoutProps {
   projectId: string;
@@ -36,19 +41,251 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('outline');
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('editor-sidebar-width');
+      return saved ? parseInt(saved, 10) : 256; // Default 256px (w-64)
+    }
+    return 256;
+  });
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
   const [latestVersion, setLatestVersion] = useState<number | null>(null);
   const [cursorPosition, setCursorPosition] = useState<{ line: number; column: number } | null>(null);
+  const [cursorScreenPosition, setCursorScreenPosition] = useState<{ top: number; left: number } | null>(null);
   const [thinkPanelOpen, setThinkPanelOpen] = useState(false);
   const [openParagraphId, setOpenParagraphId] = useState<string | null>(null);
+  const [inlineAIChatOpen, setInlineAIChatOpen] = useState(false);
+  const [documentStyle, setDocumentStyle] = useState<DocumentStyle>('other');
   const currentSelectionRef = useRef<{ from: number; to: number; text: string } | null>(null);
   const [pendingChangeContent, setPendingChangeContent] = useState<{ original: string; new: string } | null>(null);
   const [isGeneratingContent, setIsGeneratingContent] = useState(false);
+  const [busyOverlayMessage, setBusyOverlayMessage] = useState<string>('Generating content...');
   const previousContentForHistoryRef = useRef<string>(content);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const editorViewRef = useRef<import('@codemirror/view').EditorView | null>(null);
+  const editorContainerRef = useRef<HTMLDivElement | null>(null);
+  const sidebarRef = useRef<HTMLDivElement>(null);
   const isUserInputRef = useRef<boolean>(false); // Track if content change is from user input
+
+  // Sidebar resize handlers
+  const handleSidebarResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizingSidebar(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isResizingSidebar) return;
+
+    const MIN_SIDEBAR_WIDTH = 150;
+    const MAX_SIDEBAR_WIDTH = typeof window !== 'undefined' ? window.innerWidth * 0.5 : 600;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      e.preventDefault();
+      if (!sidebarRef.current) return;
+      
+      // Get the sidebar container's left position
+      const sidebarRect = sidebarRef.current.getBoundingClientRect();
+      const newWidth = e.clientX - sidebarRect.left;
+      const clampedWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, newWidth));
+      setSidebarWidth(clampedWidth);
+      localStorage.setItem('editor-sidebar-width', clampedWidth.toString());
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingSidebar(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove, { passive: false });
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingSidebar]);
+
+  function buildInlineBlocksAroundCursor(fullText: string, cursorLine0: number) {
+    const lines = fullText.split('\n');
+    const startLine = Math.max(0, cursorLine0 - 40);
+    const endLine = Math.min(lines.length - 1, cursorLine0 + 40);
+
+    let prefixOffset = 0;
+    for (let i = 0; i < startLine; i++) prefixOffset += (lines[i]?.length || 0) + 1;
+
+    const windowLines = lines.slice(startLine, endLine + 1);
+    const windowText = windowLines.join('\n');
+
+    const blocks: InlineEditBlock[] = [];
+    const isBlank = (s: string) => s.trim().length === 0;
+
+    const windowOffsets: number[] = [];
+    {
+      let off = 0;
+      for (const l of windowLines) {
+        windowOffsets.push(off);
+        off += l.length + 1;
+      }
+    }
+
+    let i = 0;
+    let blockIndex = 0;
+    while (i < windowLines.length) {
+      const line = windowLines[i] ?? '';
+      const lineTrim = line.trim();
+
+      const startInWindow = windowOffsets[i] ?? 0;
+
+      // Code fence block
+      if (lineTrim.startsWith('```')) {
+        let j = i + 1;
+        while (j < windowLines.length) {
+          const t = (windowLines[j] ?? '').trim();
+          if (t.startsWith('```')) {
+            j++;
+            break;
+          }
+          j++;
+        }
+        const endInWindow = j < windowLines.length ? (windowOffsets[j] ?? windowText.length) : windowText.length;
+        const text = windowText.slice(startInWindow, endInWindow);
+        blocks.push({
+          id: `b${blockIndex++}`,
+          kind: 'code',
+          text,
+          start: prefixOffset + startInWindow,
+          end: prefixOffset + endInWindow,
+        });
+        i = j;
+        continue;
+      }
+
+      // Heading as its own block (include following blank line if present)
+      if (lineTrim.startsWith('#')) {
+        let j = i + 1;
+        while (j < windowLines.length && isBlank(windowLines[j] ?? '')) j++;
+        const endInWindow = j < windowLines.length ? (windowOffsets[j] ?? windowText.length) : windowText.length;
+        const text = windowText.slice(startInWindow, endInWindow);
+        blocks.push({
+          id: `b${blockIndex++}`,
+          kind: 'heading',
+          text,
+          start: prefixOffset + startInWindow,
+          end: prefixOffset + endInWindow,
+        });
+        i = j;
+        continue;
+      }
+
+      // Blank block (collapse contiguous blanks)
+      if (isBlank(line)) {
+        let j = i + 1;
+        while (j < windowLines.length && isBlank(windowLines[j] ?? '')) j++;
+        const endInWindow = j < windowLines.length ? (windowOffsets[j] ?? windowText.length) : windowText.length;
+        const text = windowText.slice(startInWindow, endInWindow);
+        blocks.push({
+          id: `b${blockIndex++}`,
+          kind: 'blank',
+          text,
+          start: prefixOffset + startInWindow,
+          end: prefixOffset + endInWindow,
+        });
+        i = j;
+        continue;
+      }
+
+      // List block (basic)
+      const isListLine = (s: string) => {
+        const t = s.trim();
+        return /^([-*+])\s+/.test(t) || /^\d+\.\s+/.test(t);
+      };
+      if (isListLine(line)) {
+        let j = i + 1;
+        while (j < windowLines.length) {
+          const l2 = windowLines[j] ?? '';
+          if (isBlank(l2)) {
+            j++;
+            break;
+          }
+          if (!isListLine(l2)) break;
+          j++;
+        }
+        const endInWindow = j < windowLines.length ? (windowOffsets[j] ?? windowText.length) : windowText.length;
+        const text = windowText.slice(startInWindow, endInWindow);
+        blocks.push({
+          id: `b${blockIndex++}`,
+          kind: 'list',
+          text,
+          start: prefixOffset + startInWindow,
+          end: prefixOffset + endInWindow,
+        });
+        i = j;
+        continue;
+      }
+
+      // Paragraph/other: consume until blank line
+      let j = i + 1;
+      while (j < windowLines.length && !isBlank(windowLines[j] ?? '')) {
+        const t = (windowLines[j] ?? '').trim();
+        if (t.startsWith('#') || t.startsWith('```')) break;
+        j++;
+      }
+      if (j < windowLines.length && isBlank(windowLines[j] ?? '')) j++;
+      const endInWindow = j < windowLines.length ? (windowOffsets[j] ?? windowText.length) : windowText.length;
+      const text = windowText.slice(startInWindow, endInWindow);
+      blocks.push({
+        id: `b${blockIndex++}`,
+        kind: 'paragraph',
+        text,
+        start: prefixOffset + startInWindow,
+        end: prefixOffset + endInWindow,
+      });
+      i = j;
+    }
+
+    // Identify cursor block by absolute character offset
+    let cursorPos = 0;
+    for (let li = 0; li < cursorLine0 && li < lines.length; li++) cursorPos += (lines[li]?.length || 0) + 1;
+    const cursorBlock = blocks.find(b => cursorPos >= b.start && cursorPos < b.end) || blocks[0];
+    return { blocks, cursorBlockId: cursorBlock?.id };
+  }
+
+  function applyInlineOperations(fullText: string, blocks: InlineEditBlock[], operations: InlineEditOperation[]) {
+    const byId = new Map(blocks.map(b => [b.id, b]));
+    let text = fullText;
+
+    // Apply from end to start (stable offsets)
+    const toSpan = (op: InlineEditOperation) => {
+      if (op.type === 'replace_range') {
+        const a = byId.get(op.startBlockId);
+        const b = byId.get(op.endBlockId);
+        if (!a || !b) return null;
+        const start = Math.min(a.start, b.start);
+        const end = Math.max(a.end, b.end);
+        return { start, end, insert: op.content };
+      }
+      if (op.type === 'insert_before') {
+        const a = byId.get(op.anchorBlockId);
+        if (!a) return null;
+        return { start: a.start, end: a.start, insert: op.content };
+      }
+      if (op.type === 'insert_after') {
+        const a = byId.get(op.anchorBlockId);
+        if (!a) return null;
+        return { start: a.end, end: a.end, insert: op.content };
+      }
+      return null;
+    };
+
+    const spans = operations.map(toSpan).filter((x): x is { start: number; end: number; insert: string } => !!x);
+    spans.sort((s1, s2) => s2.start - s1.start);
+
+    for (const s of spans) {
+      text = text.slice(0, s.start) + s.insert + text.slice(s.end);
+    }
+    return text;
+  }
 
 
   // Helper to clean up insertedSources when citations are removed
@@ -82,6 +319,98 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     previousContentRef.current = contentToSave;
     await originalSaveDocument(contentToSave, changeType);
   }, [originalSaveDocument, cleanupInsertedSources]);
+
+  // Load project settings for document style
+  useEffect(() => {
+    let cancelled = false;
+    async function loadProjectSettings() {
+      try {
+        const project = await api.projects.get(projectId);
+        if (cancelled) return;
+        
+        // FIX: If documentStyle is missing, update it based on project type
+        // This handles the case where the database has it but the API doesn't return it properly
+        if (!project.settings.documentStyle) {
+          const defaultDocumentStyle = project.type === 'academic' ? 'academic' : 'other';
+          try {
+            await api.projects.update(projectId, {
+              settings: {
+                ...project.settings,
+                documentStyle: defaultDocumentStyle,
+              },
+            });
+            // Reload project to get updated settings
+            const updatedProject = await api.projects.get(projectId);
+            if (cancelled) return;
+            const loadedStyle = updatedProject.settings.documentStyle || defaultDocumentStyle;
+            setDocumentStyle(loadedStyle);
+            return;
+          } catch (updateError) {
+            console.error('Failed to update project documentStyle:', updateError);
+            // Fall through to use default
+          }
+        }
+        
+        const loadedStyle = project.settings.documentStyle || 'other';
+        setDocumentStyle(loadedStyle);
+      } catch (error) {
+        console.error('Failed to load project settings:', error);
+      }
+    }
+
+    if (projectId) {
+      loadProjectSettings();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  // Helper to get cursor screen coordinates from CodeMirror
+  const getCursorScreenPosition = useCallback((): { top: number; left: number } | null => {
+    if (!editorViewRef.current || !editorContainerRef.current) return null;
+
+    try {
+      const view = editorViewRef.current;
+      const selection = view.state.selection.main;
+      const pos = selection.head;
+      
+      // Get coordinates at cursor position
+      const coords = view.coordsAtPos(pos);
+      if (!coords) return null;
+
+      // Get editor container bounding rect
+      const containerRect = editorContainerRef.current.getBoundingClientRect();
+      
+      // Calculate position relative to viewport
+      return {
+        top: coords.top,
+        left: coords.left,
+      };
+    } catch (error) {
+      console.error('Failed to get cursor screen position:', error);
+      return null;
+    }
+  }, []);
+
+  // Update cursor screen position when cursor moves or sidebar state changes
+  // Use requestAnimationFrame to defer update and avoid nested CodeMirror updates
+  useEffect(() => {
+    if (cursorPosition && !thinkPanelOpen && !inlineAIChatOpen) {
+      requestAnimationFrame(() => {
+        try {
+          const screenPos = getCursorScreenPosition();
+          if (screenPos) {
+            setCursorScreenPosition(screenPos);
+          }
+        } catch (error) {
+          // Silently ignore errors during cursor position updates
+          // This can happen if CodeMirror is updating
+        }
+      });
+    }
+  }, [cursorPosition, thinkPanelOpen, inlineAIChatOpen, sidebarOpen, sidebarWidth, getCursorScreenPosition]);
 
   // Undo/Redo hook (defined first to avoid circular dependencies)
   const undoRedo = useUndoRedo(content, {
@@ -327,6 +656,20 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         }
       }
       
+      // Cmd+K / Ctrl+K for inline AI chat
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        // Don't open if Think panel is open
+        if (thinkPanelOpen) return;
+        // Get cursor screen position
+        const screenPos = getCursorScreenPosition();
+        if (screenPos) {
+          setCursorScreenPosition(screenPos);
+          setInlineAIChatOpen(true);
+        }
+        return;
+      }
+
       // Ctrl+T / Cmd+T to open Think panel for paragraph at cursor
       if ((e.ctrlKey || e.metaKey) && e.key === 't') {
         e.preventDefault();
@@ -373,7 +716,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [content, saveDocument, selectedVersion, latestVersion, cursorPosition, handleOpenPanel, undoRedo, changeTracking]);
+  }, [content, saveDocument, selectedVersion, latestVersion, cursorPosition, handleOpenPanel, undoRedo, changeTracking, thinkPanelOpen, getCursorScreenPosition]);
 
   // Handle formatting from toolbar
   const handleFormat = useCallback((format: FormatType) => {
@@ -502,14 +845,32 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   return (
     <div className="flex h-screen bg-vscode-bg text-vscode-text">
       {/* Sidebar */}
-      <EditorSidebar
-        isOpen={sidebarOpen}
-        onToggle={() => setSidebarOpen(!sidebarOpen)}
-        content={content}
-        documentId={actualDocumentId}
-        lastSaved={lastSaved}
-        activeTab={sidebarTab}
-        onTabChange={setSidebarTab}
+      <div ref={sidebarRef} className="flex items-stretch relative">
+        {/* Overlay for sidebar - prevents interaction when inline chat or think panel is open */}
+        {sidebarOpen && (inlineAIChatOpen || thinkPanelOpen) && (
+          <div className="absolute inset-0 bg-black/30 pointer-events-auto" style={{ zIndex: 45 }} />
+        )}
+        
+        {/* Collapsed sidebar chevron button - just the chevron, no full height */}
+        {!sidebarOpen && (
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="absolute left-0 top-1/2 -translate-y-1/2 w-8 h-12 bg-vscode-sidebar border-r border-vscode-border hover:bg-vscode-active transition-colors flex items-center justify-center z-10"
+            aria-label="Expand sidebar"
+          >
+            <ChevronRightIcon className="w-5 h-5 text-vscode-text-secondary" />
+          </button>
+        )}
+        {sidebarOpen && (
+          <div style={{ width: `${sidebarWidth}px`, minWidth: `${sidebarWidth}px` }} className="relative">
+            <EditorSidebar
+          isOpen={sidebarOpen}
+          onToggle={() => setSidebarOpen(!sidebarOpen)}
+          content={content}
+          documentId={actualDocumentId}
+          lastSaved={lastSaved}
+          activeTab={sidebarTab}
+          onTabChange={setSidebarTab}
         onRollback={async (versionNumber: number) => {
           const content = await api.versions.reconstruct(actualDocumentId, versionNumber);
           setSelectedVersion(null); // Reset to latest after rollback
@@ -549,9 +910,42 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           }
         }}
       />
+          </div>
+        )}
+      {/* Resizable Splitter with Chevron */}
+      {sidebarOpen && (
+        <div className="flex-shrink-0 relative group h-full">
+          {/* Chevron button attached to splitter */}
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            onMouseDown={(e) => {
+              // Prevent resize from starting when clicking chevron
+              e.stopPropagation();
+            }}
+            className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full w-6 h-12 bg-vscode-sidebar border-r border-vscode-border hover:bg-vscode-active transition-colors flex items-center justify-center z-20 rounded-l pointer-events-auto"
+            aria-label="Collapse sidebar"
+          >
+            <ChevronLeftIcon className="w-4 h-4 text-vscode-text-secondary" />
+          </button>
+          {/* Resizable splitter */}
+          <div
+            onMouseDown={handleSidebarResizeStart}
+            className={`w-1 h-full cursor-col-resize hover:bg-vscode-blue transition-colors z-10 ${
+              isResizingSidebar ? 'bg-vscode-blue' : ''
+            }`}
+            style={{ userSelect: 'none' }}
+          />
+        </div>
+      )}
+      </div>
 
       {/* Main Editor Area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col relative">
+        {/* Overlay for toolbars and editor - prevents interaction when inline chat or think panel is open */}
+        {(inlineAIChatOpen || thinkPanelOpen) && (
+          <div className="absolute inset-0 bg-black/30 pointer-events-auto" style={{ zIndex: 45 }} />
+        )}
+        
         {/* Toolbar */}
         <EditorToolbar
           projectId={projectId}
@@ -613,16 +1007,233 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         )}
 
         {/* Editor/Preview */}
-        <div className="flex-1 overflow-hidden flex relative">
+        <div className="flex-1 overflow-hidden flex relative" ref={editorContainerRef}>
           {(viewMode === 'edit' || viewMode === 'split') && (
             <div className={viewMode === 'split' ? 'flex-1 border-r border-vscode-border overflow-hidden relative' : 'flex-1 overflow-hidden relative'}>
+              {/* Inline AI Hint - Shows toned-down prompt */}
+              {!thinkPanelOpen && !inlineAIChatOpen && cursorScreenPosition && cursorPosition && (
+                <InlineAIHint
+                  position={cursorScreenPosition}
+                  visible={true}
+                  onActivate={() => {
+                    setInlineAIChatOpen(true);
+                  }}
+                />
+              )}
+
+              {/* Inline AI Chat - Cmd+K interface */}
+              {inlineAIChatOpen && cursorScreenPosition && cursorPosition && (
+                <InlineAIChat
+                  position={cursorScreenPosition}
+                  content={content}
+                  cursorPosition={cursorPosition}
+                  selection={currentSelectionRef.current}
+                  scopeKind={currentSelectionRef.current?.text?.trim() ? 'selection' : 'cursor_paragraph'}
+                  scopeText={(() => {
+                    const sel = currentSelectionRef.current;
+                    if (sel && sel.text && sel.text.trim().length > 0) return sel.text;
+
+                    if (!cursorPosition) return '';
+                    const cursorLine = cursorPosition.line - 1;
+                    const { blocks, cursorBlockId } = buildInlineBlocksAroundCursor(content, cursorLine);
+                    const cursorBlock = blocks.find((b) => b.id === cursorBlockId);
+                    if (cursorBlock?.kind === 'paragraph') return cursorBlock.text;
+
+                    // Fallback: nearest previous paragraph in window
+                    const idx = blocks.findIndex((b) => b.id === cursorBlockId);
+                    for (let i = idx - 1; i >= 0; i--) {
+                      if (blocks[i]?.kind === 'paragraph') return blocks[i].text;
+                    }
+                    return cursorBlock?.text || '';
+                  })()}
+                  documentStyle={documentStyle}
+                  onClose={() => {
+                    setInlineAIChatOpen(false);
+                  }}
+                  onPreviewInlineEdit={async ({ prompt, mode, scopeStrategy = 'selection-or-prev-paragraph' }) => {
+                    if (!cursorPosition) {
+                      return { operations: [], previewText: '', newContent: content };
+                    }
+
+                    const selection = currentSelectionRef.current;
+                    const cursorLine = cursorPosition.line - 1; // Convert to 0-based
+
+                    // If we have a selection, prefer applying operations to that exact span.
+                    if (selection && selection.text && selection.text.trim().length > 0) {
+                      const blocks: InlineEditBlock[] = [
+                        {
+                          id: 'sel',
+                          kind: 'paragraph',
+                          text: selection.text,
+                          start: selection.from,
+                          end: selection.to,
+                        },
+                      ];
+
+                      const result = await api.ai.inline.edit({
+                        prompt,
+                        mode: 'update',
+                        blocks,
+                        cursorBlockId: 'sel',
+                      });
+
+                      const operations = result.operations || [];
+                      const previewText = operations.map((op) => op.content).join('\n\n').trim();
+                      const newContent = applyInlineOperations(content, blocks, operations);
+                      return { operations, previewText, newContent };
+                    }
+
+                    // No selection: use block-based targeting.
+                    const { blocks, cursorBlockId } = buildInlineBlocksAroundCursor(content, cursorLine);
+                    let targetBlockId = cursorBlockId;
+
+                    if (scopeStrategy === 'selection-or-prev-paragraph') {
+                      // Previous paragraph block if available.
+                      const idx = blocks.findIndex((b) => b.id === cursorBlockId);
+                      for (let i = idx - 1; i >= 0; i--) {
+                        if (blocks[i]?.kind === 'paragraph') {
+                          targetBlockId = blocks[i].id;
+                          break;
+                        }
+                      }
+                    }
+
+                    if (scopeStrategy === 'selection-or-cursor-paragraph') {
+                      // Cursor paragraph block if available; otherwise fall back to previous paragraph.
+                      const cursorBlock = blocks.find((b) => b.id === cursorBlockId);
+                      if (cursorBlock?.kind === 'paragraph') {
+                        targetBlockId = cursorBlockId;
+                      } else {
+                        const idx = blocks.findIndex((b) => b.id === cursorBlockId);
+                        for (let i = idx - 1; i >= 0; i--) {
+                          if (blocks[i]?.kind === 'paragraph') {
+                            targetBlockId = blocks[i].id;
+                            break;
+                          }
+                        }
+                      }
+                    }
+
+                    // scopeStrategy === 'cursor' keeps cursorBlockId as-is (insert figure/table/etc.)
+
+                    // For update-style operations, constrain the model to ONLY the target block
+                    // by sending just that block as the editable surface.
+                    if (mode === 'update') {
+                      const target = blocks.find((b) => b.id === targetBlockId) || blocks.find((b) => b.id === cursorBlockId);
+                      if (!target) {
+                        return { operations: [], previewText: '', newContent: content };
+                      }
+                      const single: InlineEditBlock[] = [
+                        { id: 'target', kind: target.kind, text: target.text, start: target.start, end: target.end },
+                      ];
+                      const result = await api.ai.inline.edit({
+                        prompt,
+                        mode: 'update',
+                        blocks: single,
+                        cursorBlockId: 'target',
+                      });
+                      const operations = result.operations || [];
+                      const previewText = operations.map((op) => op.content).join('\n\n').trim();
+                      const newContent = applyInlineOperations(content, single, operations);
+                      return { operations, previewText, newContent };
+                    }
+
+                    const result = await api.ai.inline.edit({
+                      prompt,
+                      mode,
+                      blocks,
+                      cursorBlockId: targetBlockId,
+                    });
+
+                    const operations = result.operations || [];
+                    const previewText = operations.map((op) => op.content).join('\n\n').trim();
+                    const newContent = applyInlineOperations(content, blocks, operations);
+                    return { operations, previewText, newContent };
+                  }}
+                  onApplyInlinePreview={async (preview) => {
+                    // Apply the already-previewed content without another AI call
+                    setPendingChangeContent({ original: content, new: preview.newContent });
+                    changeTracking.startTracking(preview.newContent, content);
+                    setInlineAIChatOpen(false);
+                  }}
+                  onSend={async (message) => {
+                    if (!cursorPosition) return;
+                    
+                    try {
+                      setIsGeneratingContent(true);
+                      
+                      const lines = content.split('\n');
+                      const cursorLine = cursorPosition.line - 1; // Convert to 0-based
+
+                      const { blocks, cursorBlockId } = buildInlineBlocksAroundCursor(content, cursorLine);
+                      const result = await api.ai.inline.edit({
+                        prompt: message,
+                        mode: 'insert',
+                        blocks,
+                        cursorBlockId,
+                      });
+
+                      const newContent = applyInlineOperations(content, blocks, result.operations || []);
+                      
+                      // Use change tracking like brainstorming does
+                      setPendingChangeContent({ original: content, new: newContent });
+                      changeTracking.startTracking(newContent, content);
+                      setInlineAIChatOpen(false);
+                      setIsGeneratingContent(false);
+                    } catch (error) {
+                      console.error('Failed to generate content:', error);
+                      if (error instanceof Error) {
+                        console.error('Error details:', error.message, error);
+                      }
+                      // TODO: Show error to user
+                      setInlineAIChatOpen(false);
+                      setIsGeneratingContent(false);
+                    }
+                  }}
+                  onQuickOption={async (option: QuickOption) => {
+                    if (!cursorPosition) return;
+                    
+                    try {
+                      setIsGeneratingContent(true);
+                      
+                      const lines = content.split('\n');
+                      const cursorLine = cursorPosition.line - 1; // Convert to 0-based
+
+                      const { blocks, cursorBlockId } = buildInlineBlocksAroundCursor(content, cursorLine);
+                      // Use the action from the quick option as the prompt
+                      const result = await api.ai.inline.edit({
+                        prompt: option.action,
+                        mode: 'update',
+                        blocks,
+                        cursorBlockId,
+                      });
+
+                      const newContent = applyInlineOperations(content, blocks, result.operations || []);
+                      
+                      // Use change tracking like brainstorming does
+                      setPendingChangeContent({ original: content, new: newContent });
+                      changeTracking.startTracking(newContent, content);
+                      setInlineAIChatOpen(false);
+                      setIsGeneratingContent(false);
+                    } catch (error) {
+                      console.error('Failed to generate content:', error);
+                      if (error instanceof Error) {
+                        console.error('Error details:', error.message, error);
+                      }
+                      // TODO: Show error to user
+                      setInlineAIChatOpen(false);
+                      setIsGeneratingContent(false);
+                    }
+                  }}
+                />
+              )}
+
               <AIEnhancedEditor
                 value={pendingChangeContent?.new ?? content}
                 onChange={handleContentChange}
                 onSelectionChange={handleSelectionChange}
                 onCursorPositionChange={handleCursorPositionChange}
                 model="auto"
-                sidebarOpen={sidebarOpen}
                 paragraphModes={paragraphModes}
                 documentId={actualDocumentId}
                 thinkPanelOpen={thinkPanelOpen}
@@ -638,6 +1249,10 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                   }
                   // Disable editing when Think panel is open
                   if (thinkPanelOpen) {
+                    return true;
+                  }
+                  // Disable editing when inline AI chat is open
+                  if (inlineAIChatOpen) {
                     return true;
                   }
                   // Handle undefined/null latestVersion and ensure it's a valid number
@@ -657,6 +1272,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                   await saveDocument(contentToSave, changeType);
                 }}
               />
+              
             </div>
           )}
           
@@ -774,7 +1390,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] pointer-events-none">
               <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 flex flex-col items-center gap-4 min-w-[200px] pointer-events-auto">
                 <div className="w-8 h-8 border-4 border-gray-600 border-t-vscode-blue rounded-full animate-spin" />
-                <div className="text-sm text-gray-400">Generating content...</div>
+                <div className="text-sm text-gray-400">{busyOverlayMessage}</div>
               </div>
             </div>
           )}

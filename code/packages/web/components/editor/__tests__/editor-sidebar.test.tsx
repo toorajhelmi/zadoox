@@ -23,10 +23,11 @@ describe('EditorSidebar', () => {
     vi.mocked(shared.extractHeadings).mockReturnValueOnce([]);
   });
 
-  it('should render collapsed button when sidebar is closed', () => {
-    render(<EditorSidebar isOpen={false} onToggle={mockOnToggle} content="" />);
+  it('should not render sidebar content when sidebar is closed', () => {
+    const { container } = render(<EditorSidebar isOpen={false} onToggle={mockOnToggle} content="" />);
 
-    expect(screen.getByLabelText('Open sidebar')).toBeInTheDocument();
+    // When closed, EditorSidebar returns empty fragment (collapsed button is now in editor-layout)
+    expect(container.firstChild).toBeNull();
   });
 
   it('should render expanded sidebar when isOpen is true', () => {
@@ -35,12 +36,11 @@ describe('EditorSidebar', () => {
     expect(screen.getByText('Outline')).toBeInTheDocument();
   });
 
-  it('should call onToggle when collapsed button is clicked', () => {
-    render(<EditorSidebar isOpen={false} onToggle={mockOnToggle} content="" />);
+  it('should render expanded sidebar content when isOpen is true', () => {
+    render(<EditorSidebar isOpen={true} onToggle={mockOnToggle} content="# Test" />);
 
-    const toggleButton = screen.getByLabelText('Open sidebar');
-    fireEvent.click(toggleButton);
-
-    expect(mockOnToggle).toHaveBeenCalledTimes(1);
+    // The collapse button is now in editor-layout, not in EditorSidebar
+    // This test verifies the component renders correctly when open
+    expect(screen.getByText('Outline')).toBeInTheDocument();
   });
 });

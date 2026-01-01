@@ -27,3 +27,4 @@ export interface DocumentChanges {
   blockId?: string; // Optional paragraph/block ID this change applies to
 }
 
+

@@ -87,6 +87,39 @@ export interface AIProvider {
   ): Promise<string>;
 
   /**
+   * Inline generation from a raw prompt + context.
+   * Used by /ai/inline/generate.
+   */
+  generateFromPrompt(
+    prompt: string,
+    context: {
+      blockContent: string;
+      sectionHeading?: string;
+      sectionContent?: string;
+    },
+    mode: 'blend' | 'replace' | 'extend'
+  ): Promise<string>;
+
+  /**
+   * Generate an inline edit plan as JSON string containing operations.
+   * Used by /ai/inline/edit.
+   */
+  generateInlineEditPlan(
+    prompt: string,
+    params: {
+      mode: 'update' | 'insert';
+      blocks: Array<{
+        id: string;
+        text: string;
+        kind?: 'heading' | 'paragraph' | 'list' | 'code' | 'blank' | 'other';
+        start: number;
+        end: number;
+      }>;
+      cursorBlockId?: string;
+    }
+  ): Promise<string>;
+
+  /**
    * Get model information
    */
   getModelInfo(): AIModelInfo;

@@ -20,7 +20,6 @@ interface AIEnhancedEditorProps {
   onSelectionChange?: (selection: { from: number; to: number; text: string } | null) => void;
   onCursorPositionChange?: (position: { line: number; column: number } | null) => void;
   model?: 'openai' | 'auto';
-  sidebarOpen?: boolean;
   onSaveWithType?: (content: string, changeType: 'auto-save' | 'ai-action') => Promise<void>;
   readOnly?: boolean;
   paragraphModes?: Record<string, ParagraphMode>;
@@ -45,7 +44,6 @@ export function AIEnhancedEditor({
   onSelectionChange,
   onCursorPositionChange,
   model = 'auto',
-  sidebarOpen: _sidebarOpen = true,
   onSaveWithType,
   readOnly = false,
   paragraphModes: _paragraphModes = {},
