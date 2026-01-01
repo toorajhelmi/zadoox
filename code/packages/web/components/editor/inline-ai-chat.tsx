@@ -18,6 +18,7 @@ import { TodoWizard } from './inline-wizards/todo-wizard';
 
 interface InlineAIChatProps {
   position: { top: number; left: number };
+  documentId: string;
   content: string;
   cursorPosition: { line: number; column: number };
   selection?: { from: number; to: number; text: string } | null;
@@ -38,6 +39,7 @@ interface InlineAIChatProps {
 
 export function InlineAIChat({
   position,
+  documentId,
   content,
   cursorPosition,
   selection,
@@ -210,7 +212,13 @@ export function InlineAIChat({
       {WizardComponent && activeWizard ? (
         <div className="border-b border-gray-800">
           <WizardComponent
-            ctx={{ option: activeWizard.option, content, cursorPosition, scope: { kind: derivedScopeKind, text: derivedScopeText } }}
+            ctx={{
+              option: activeWizard.option,
+              documentId,
+              content,
+              cursorPosition,
+              scope: { kind: derivedScopeKind, text: derivedScopeText },
+            }}
             onCancel={() => setActiveWizard(null)}
             onCloseAll={onClose}
             onPreview={onPreviewInlineEdit}

@@ -8,6 +8,9 @@ import { swaggerConfig, swaggerUiConfig } from './config/swagger.js';
 
 const server = Fastify({
   logger: true,
+  // Support image uploads (base64) without immediately hitting the default 1MB body limit.
+  // For large media (video), we'll move to direct-to-storage uploads instead of base64 JSON.
+  bodyLimit: 25 * 1024 * 1024, // 25MB
 });
 
 const start = async () => {

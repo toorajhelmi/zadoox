@@ -14,6 +14,7 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
   const [includeCaption, setIncludeCaption] = useState(false);
   const [caption, setCaption] = useState('');
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
+  const [imageAssetRef, setImageAssetRef] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,12 +53,20 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
   const insertMarkdown = useMemo(() => {
     const altRaw = caption.trim() || 'Figure';
     const alt = altRaw.replace(/\n/g, ' ').trim();
-    const url = imageDataUrl || 'assets/figure.png';
+    const url = imageAssetRef || imageDataUrl || 'assets/figure.png';
     const label = `label="Figure {REF}.1"`;
     const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').trim();
     const desc = what.trim().length > 0 ? ` desc="${esc(what)}"` : '';
     return `\n\n![${alt}](${url}){#${effectiveFigureId} ${label}${desc}}\n\n`;
-  }, [caption, imageDataUrl, effectiveFigureId, what]);
+  }, [caption, imageAssetRef, imageDataUrl, effectiveFigureId, what]);
+
+  const parseDataUrl = (dataUrl: string): { mimeType: string; b64: string } => {
+    const m = /^data:([^;]+);base64,(.*)$/.exec(dataUrl);
+    if (!m) {
+      throw new Error('Invalid data URL');
+    }
+    return { mimeType: m[1], b64: m[2] };
+  };
 
   const doGenerate = async () => {
     setIsLoading(true);
@@ -65,13 +74,23 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
     try {
       // Reset previous outputs for a clean run
       setImageDataUrl(null);
+      setImageAssetRef(null);
       if (includeCaption) setCaption('');
 
       const res = await api.ai.images.generate({
         prompt: generatedPrompt,
         model: 'auto',
       });
-      setImageDataUrl(`data:${res.mimeType};base64,${res.b64}`);
+      const dataUrl = `data:${res.mimeType};base64,${res.b64}`;
+      setImageDataUrl(dataUrl);
+
+      // Persist the image as an asset (Option B) and embed a stable ref in markdown.
+      const asset = await api.assets.upload({
+        documentId: ctx.documentId,
+        b64: res.b64,
+        mimeType: res.mimeType,
+      });
+      setImageAssetRef(asset.ref);
 
       if (includeCaption) {
         const captionPrompt =
@@ -102,6 +121,8 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
     setIsLoading(true);
     setError(null);
     try {
+      setImageDataUrl(null);
+      setImageAssetRef(null);
       const reader = new FileReader();
       const dataUrl: string = await new Promise((resolve, reject) => {
         reader.onerror = () => reject(new Error('Failed to read file'));
@@ -109,6 +130,14 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
         reader.readAsDataURL(file);
       });
       setImageDataUrl(dataUrl);
+
+      const { mimeType, b64 } = parseDataUrl(dataUrl);
+      const asset = await api.assets.upload({
+        documentId: ctx.documentId,
+        b64,
+        mimeType,
+      });
+      setImageAssetRef(asset.ref);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -125,6 +154,9 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
       }
       if (!imageDataUrl) {
         throw new Error(mode === 'generate' ? 'Generate an image first' : 'Upload an image first');
+      }
+      if (!imageAssetRef) {
+        throw new Error('Image is not saved yet. Please try again.');
       }
       const p = await onPreviewInsert({ content: insertMarkdown, placement: 'after' });
       await onApply(p);

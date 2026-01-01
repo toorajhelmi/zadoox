@@ -16,6 +16,7 @@ export type InlineWizardScopeStrategy =
 
 export interface InlineWizardContext {
   option: QuickOption;
+  documentId: string;
   content: string;
   cursorPosition: { line: number; column: number };
   scope: {

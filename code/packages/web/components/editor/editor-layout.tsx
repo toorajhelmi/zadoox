@@ -1026,6 +1026,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               {inlineAIChatOpen && cursorScreenPosition && cursorPosition && (
                 <InlineAIChat
                   position={cursorScreenPosition}
+                  documentId={actualDocumentId}
                   content={content}
                   cursorPosition={cursorPosition}
                   selection={currentSelectionRef.current}

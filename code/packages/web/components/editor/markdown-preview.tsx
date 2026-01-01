@@ -3,6 +3,8 @@
 import { renderMarkdownToHtml, extractHeadings } from '@zadoox/shared';
 import { useMemo, useEffect, useRef } from 'react';
 
+const ASSET_PROXY_BASE = '/api/assets';
+
 interface MarkdownPreviewProps {
   content: string;
 }
@@ -19,6 +21,13 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
     
     // Render markdown to HTML
     let htmlContent = renderMarkdownToHtml(content);
+
+    // Resolve zadoox asset refs to backend URLs so images load after refresh.
+    // We keep the markdown stored with stable refs like: zadoox-asset://<key>
+    htmlContent = htmlContent.replace(
+      /src="zadoox-asset:\/\/([^"]+)"/g,
+      (_m, key) => `src="${ASSET_PROXY_BASE}/${encodeURIComponent(String(key))}"`
+    );
     
     // Add IDs to headings for outline navigation
     // Replace headings in order, matching by level and text

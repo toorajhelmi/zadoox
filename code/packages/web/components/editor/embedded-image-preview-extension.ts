@@ -2,6 +2,8 @@ import { StateField } from '@codemirror/state';
 import { Decoration, type DecorationSet, WidgetType, EditorView } from '@codemirror/view';
 import { api } from '@/lib/api/client';
 
+const ASSET_PROXY_BASE = '/api/assets';
+
 function parseAttrValue(attrs: string, key: string): string | null {
   const re = new RegExp(`${key}="([^"]*)"`);
   const m = re.exec(attrs);
@@ -596,29 +598,39 @@ export function embeddedImagePreviewExtension() {
   const buildDecorations = (state: EditorView['state']): DecorationSet => {
     const doc = state.doc;
     const text = doc.toString();
-    if (!text.includes('data:image/')) {
+    if (!text.includes('data:image/') && !text.includes('zadoox-asset://')) {
       return Decoration.none;
     }
 
-    // Capture optional attribute block after the image
+    const resolveSrc = (url: string): string => {
+      const trimmed = (url || '').trim();
+      if (trimmed.startsWith('zadoox-asset://')) {
+        const key = trimmed.slice('zadoox-asset://'.length);
+        // Proxy through Next.js so the request carries cookies; the route handler will attach the Supabase bearer token.
+        return `${ASSET_PROXY_BASE}/${encodeURIComponent(key)}`;
+      }
+      return trimmed;
+    };
+
+    // Capture optional attribute block after the image.
+    // Supports:
+    // - data:image/...;base64,...
+    // - zadoox-asset://<key> (stored in Supabase Storage, fetched via backend)
     const re =
-      /!\[([^\]]*)\]\((data:image\/[a-zA-Z0-9.+-]+;base64,)([A-Za-z0-9+/=]+)\)\s*(\{(?:\{REF\}|\{CH\}|[^}])*\})?/g;
+      /!\[([^\]]*)\]\(((?:data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+)|(?:zadoox-asset:\/\/[^)\s]+))\)\s*(\{(?:\{REF\}|\{CH\}|[^}])*\})?/g;
 
     const decos = [];
     let m: RegExpExecArray | null;
     while ((m = re.exec(text))) {
       const alt = (m[1] || '').trim();
-      const prefix = m[2] || '';
-      const b64 = m[3] || '';
-      const src = `${prefix}${b64}`;
-      const attrs = (m[4] || '').trim();
+      const rawUrl = (m[2] || '').trim();
+      const src = resolveSrc(rawUrl);
+      const attrs = (m[3] || '').trim();
       const desc = attrs ? parseAttrValue(attrs, 'desc') : null;
       const placement = attrs ? parseAttrValue(attrs, 'placement') : null;
 
       const matchStart = m.index;
       const matchText = m[0] || '';
-      const prefixIndex = matchText.indexOf(prefix);
-      if (prefixIndex === -1) continue;
 
       const matchEnd = matchStart + matchText.length;
 

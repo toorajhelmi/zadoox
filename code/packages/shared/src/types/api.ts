@@ -297,6 +297,21 @@ export interface AIImageGenerateResponse {
   mimeType: string;
 }
 
+// Asset API types
+export interface AssetUploadRequest {
+  documentId: string;
+  b64: string;
+  mimeType: string;
+}
+
+export interface AssetUploadResponse {
+  key: string;
+  /**
+   * Stable reference to embed in markdown, e.g. zadoox-asset://<key>
+   */
+  ref: string;
+}
+
 // Research API types
 export interface ResearchRequest {
   paragraphId: string;

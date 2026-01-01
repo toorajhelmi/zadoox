@@ -92,6 +92,8 @@ export function renderMarkdownToHtml(content: string): string {
       // Parse rendering hints from attribute block (if present)
       const rawAttrs = String(attrBlock || '').trim();
       const attrs = rawAttrs.startsWith('{') && rawAttrs.endsWith('}') ? rawAttrs.slice(1, -1) : rawAttrs;
+      const figIdMatch = /#(fig:[^\s}]+)/i.exec(attrs);
+      const figureDomId = figIdMatch?.[1] ? `figure-${sanitizeDomId(figIdMatch[1])}` : null;
       const align = parseAttr(attrs, 'align'); // left|center|right
       const width = parseAttr(attrs, 'width'); // e.g. 50% or 320px
       const placement = parseAttr(attrs, 'placement'); // inline|block
@@ -141,7 +143,8 @@ export function renderMarkdownToHtml(content: string): string {
           ? `<em class="figure-caption"${captionStyle}>${safeAlt}</em>`
           : '';
 
-      return `<span class="figure"${wrapperStyle}><img src="${safeUrl}" alt="${safeAlt}"${imgStyle} />${caption}</span>`;
+      const idAttr = figureDomId ? ` id="${figureDomId}"` : '';
+      return `<span class="figure"${idAttr}${wrapperStyle}><img src="${safeUrl}" alt="${safeAlt}"${imgStyle} />${caption}</span>`;
     }
   );
 
@@ -199,6 +202,69 @@ export function extractHeadings(content: string): Heading[] {
   }
   
   return headings;
+}
+
+export type OutlineItem =
+  | { kind: 'heading'; level: number; text: string; id: string }
+  | { kind: 'figure'; text: string; id: string; figureNumber: number; caption: string | null };
+
+function slugifyId(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function sanitizeDomId(raw: string): string {
+  // HTML ids can include more chars, but we keep this conservative for querySelector/getElementById.
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+/**
+ * Extract an outline consisting of headings + figures.
+ * A "figure" is any markdown image with an attribute block containing a `#fig:` identifier.
+ */
+export function extractOutlineItems(content: string): OutlineItem[] {
+  const items: OutlineItem[] = [];
+  const lines = content.split('\n');
+
+  let figureCount = 0;
+
+  for (const line of lines) {
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const text = headingMatch[2].trim();
+      const id = slugifyId(text);
+      items.push({ kind: 'heading', level, text, id });
+      continue;
+    }
+
+    // Figure: ![caption](url){#fig:xyz ...}
+    const figMatch = line.match(/!\[([^\]]*)\]\([^)]+\)\s*(\{(?:\{REF\}|\{CH\}|[^}])*\})/i);
+    if (figMatch) {
+      const captionRaw = (figMatch[1] || '').trim();
+      const attrBlock = String(figMatch[2] || '').trim();
+      const attrs = attrBlock.startsWith('{') && attrBlock.endsWith('}') ? attrBlock.slice(1, -1) : attrBlock;
+      const idMatch = /#(fig:[^\s}]+)/i.exec(attrs);
+      if (idMatch) {
+        figureCount += 1;
+        const rawId = idMatch[1];
+        const id = `figure-${sanitizeDomId(rawId)}`;
+        const caption = captionRaw.length > 0 ? captionRaw : null;
+        const text = caption ? `Figure — ${caption}` : `Figure ${figureCount}`;
+        items.push({ kind: 'figure', id, text, figureNumber: figureCount, caption });
+      }
+    }
+  }
+
+  return items;
 }
 
 /**
