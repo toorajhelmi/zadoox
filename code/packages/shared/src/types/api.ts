@@ -221,6 +221,70 @@ export interface DraftTransformResponse {
   content: string;
 }
 
+// Inline AI API types
+export interface InlineGenerateRequest {
+  prompt: string;
+  context: {
+    blockContent: string;
+    sectionHeading?: string;
+    sectionContent?: string;
+  };
+  mode?: 'blend' | 'replace' | 'extend';
+  model?: AIModel;
+}
+
+export interface InlineGenerateResponse {
+  content: string;
+  model?: string;
+}
+
+export type InlineEditBlockKind =
+  | 'heading'
+  | 'paragraph'
+  | 'list'
+  | 'code'
+  | 'blank'
+  | 'other';
+
+export interface InlineEditBlock {
+  id: string;
+  text: string;
+  kind?: InlineEditBlockKind;
+  start: number;
+  end: number;
+}
+
+export type InlineEditOperation =
+  | {
+      type: 'replace_range';
+      startBlockId: string;
+      endBlockId: string;
+      content: string;
+    }
+  | {
+      type: 'insert_before';
+      anchorBlockId: string;
+      content: string;
+    }
+  | {
+      type: 'insert_after';
+      anchorBlockId: string;
+      content: string;
+    };
+
+export interface InlineEditRequest {
+  prompt: string;
+  mode?: 'update' | 'insert';
+  blocks: InlineEditBlock[];
+  cursorBlockId?: string;
+  model?: AIModel;
+}
+
+export interface InlineEditResponse {
+  operations: InlineEditOperation[];
+  model?: string;
+}
+
 // Research API types
 export interface ResearchRequest {
   paragraphId: string;

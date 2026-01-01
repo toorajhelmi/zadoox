@@ -25,6 +25,10 @@ import type {
   BrainstormGenerateResponse,
   DraftTransformRequest,
   DraftTransformResponse,
+  InlineGenerateRequest,
+  InlineGenerateResponse,
+  InlineEditRequest,
+  InlineEditResponse,
   ResearchRequest,
   ResearchResponse,
 } from '@zadoox/shared';
@@ -265,6 +269,39 @@ export const api = {
           throw new ApiError('Failed to transform draft', 'DRAFT_TRANSFORM_FAILED', 500);
         }
         return response.data;
+      },
+    },
+
+    inline: {
+      generate: async (request: InlineGenerateRequest): Promise<InlineGenerateResponse> => {
+        try {
+          const response = await fetchApi<InlineGenerateResponse>('/ai/inline/generate', {
+            method: 'POST',
+            body: JSON.stringify(request),
+          });
+          if (!response.data) {
+            throw new ApiError('Failed to generate content from prompt', 'INLINE_GENERATE_FAILED', 500);
+          }
+          return response.data;
+        } catch (error) {
+          console.error('Inline generate API error:', error);
+          throw error;
+        }
+      },
+      edit: async (request: InlineEditRequest): Promise<InlineEditResponse> => {
+        try {
+          const response = await fetchApi<InlineEditResponse>('/ai/inline/edit', {
+            method: 'POST',
+            body: JSON.stringify(request),
+          });
+          if (!response.data) {
+            throw new ApiError('Failed to generate edit plan', 'INLINE_EDIT_FAILED', 500);
+          }
+          return response.data;
+        } catch (error) {
+          console.error('Inline edit API error:', error);
+          throw error;
+        }
       },
     },
 

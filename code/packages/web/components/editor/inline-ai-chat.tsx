@@ -1,39 +1,61 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { ArrowRightIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { getAllQuickOptions, getContextOptions, getAdjacentBlocks, type QuickOption, type QuickOptionGroup } from '@/lib/services/context-options';
+import { ArrowRightIcon, ChevronLeftIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import {
+  getAllQuickOptions,
+  getContextOptions,
+  getAdjacentBlocks,
+  type QuickOption,
+  type QuickOptionGroup,
+} from '@/lib/services/context-options';
 import type { DocumentStyle } from '@zadoox/shared';
+import type { InlineWizardPreview, InlineWizardComponent } from './inline-wizards/types';
+import type { InlineWizardScopeStrategy } from './inline-wizards/types';
+import { TranslateWizard } from './inline-wizards/translate-wizard';
+import { InsertFigureWizard } from './inline-wizards/insert-figure-wizard';
+import { TodoWizard } from './inline-wizards/todo-wizard';
 
 interface InlineAIChatProps {
   position: { top: number; left: number };
   content: string;
   cursorPosition: { line: number; column: number };
+  selection?: { from: number; to: number; text: string } | null;
+  scopeText?: string;
+  scopeKind?: 'selection' | 'previous_paragraph' | 'cursor_paragraph' | 'cursor';
   documentStyle: DocumentStyle;
   onClose: () => void;
   onSend: (message: string) => void;
   onQuickOption: (option: QuickOption) => void;
+  onPreviewInlineEdit: (input: {
+    prompt: string;
+    mode: 'update' | 'insert';
+    scopeStrategy?: InlineWizardScopeStrategy;
+  }) => Promise<InlineWizardPreview>;
+  onApplyInlinePreview: (preview: InlineWizardPreview) => Promise<void>;
 }
 
 export function InlineAIChat({
   position,
   content,
   cursorPosition,
+  selection,
+  scopeText,
+  scopeKind,
   documentStyle,
   onClose,
   onSend,
   onQuickOption,
+  onPreviewInlineEdit,
+  onApplyInlinePreview,
 }: InlineAIChatProps) {
   const [inputValue, setInputValue] = useState('');
   const [quickOptions, setQuickOptions] = useState<QuickOption[]>([]);
   const [showAllOptions, setShowAllOptions] = useState(false);
   const [optionsQuery, setOptionsQuery] = useState('');
-  const [activeFlow, setActiveFlow] = useState<{
-    key: NonNullable<QuickOption['followUpKey']>;
-    option: QuickOption;
-    step: number;
-    answers: string[];
-  } | null>(null);
+  const [optionsLevel, setOptionsLevel] = useState<'groups' | 'options'>('groups');
+  const [selectedGroup, setSelectedGroup] = useState<QuickOptionGroup | null>(null);
+  const [activeWizard, setActiveWizard] = useState<{ option: QuickOption } | null>(null);
   const [adjustedPosition, setAdjustedPosition] = useState(position);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,6 +71,10 @@ export function InlineAIChat({
     });
     setQuickOptions(options);
   }, [documentStyle, cursorPosition, content]);
+
+  const derivedScopeText = (scopeText || selection?.text || '').trim();
+  const derivedScopeKind: NonNullable<InlineAIChatProps['scopeKind']> =
+    scopeKind || ((selection?.text || '').trim() ? 'selection' : 'cursor_paragraph');
 
   // Adjust position to stay within viewport bounds
   useEffect(() => {
@@ -135,98 +161,55 @@ export function InlineAIChat({
     }
   }, [inputValue, onSend, onClose]);
 
-  const startFlowIfNeeded = useCallback((option: QuickOption): boolean => {
-    if (!option.followUpKey) return false;
-    setActiveFlow({
-      key: option.followUpKey,
-      option,
-      step: 0,
-      answers: [],
-    });
-    setShowAllOptions(false);
-    setOptionsQuery('');
-    setInputValue('');
-    // Focus input for the follow-up question
-    requestAnimationFrame(() => inputRef.current?.focus());
-    return true;
-  }, []);
-
   const handleQuickOption = useCallback(
     (option: QuickOption) => {
-      if (startFlowIfNeeded(option)) return;
+      if (option.wizardKey) {
+        setActiveWizard({ option });
+        setShowAllOptions(false);
+        setOptionsLevel('groups');
+        setSelectedGroup(null);
+        setOptionsQuery('');
+        return;
+      }
       onQuickOption(option);
       onClose();
     },
-    [onQuickOption, onClose, startFlowIfNeeded]
+    [onQuickOption, onClose]
   );
 
   const allOptions = getAllQuickOptions();
-  const filteredAllOptions = allOptions
+
+  const groupCounts = (['Generation', 'Transformation', 'Structure', 'Tone'] as const).map((group) => ({
+    group,
+    count: allOptions.filter((o) => o.group === group).length,
+  }));
+
+  const groupOptions = selectedGroup ? allOptions.filter((o) => o.group === selectedGroup) : [];
+  const filteredGroupOptions = groupOptions
     .filter((o) => {
       const q = optionsQuery.trim().toLowerCase();
       if (!q) return true;
-      const hay = `${o.label} ${o.description || ''} ${o.group}`.toLowerCase();
+      const hay = `${o.label} ${o.description || ''} ${o.group} ${o.subgroup || ''}`.toLowerCase();
       return hay.includes(q);
     })
     .slice(0, 50);
 
-  const groupedOptions: Array<{ group: QuickOptionGroup; options: QuickOption[] }> = (
-    ['Generation', 'Transformation', 'Structure', 'Tone'] as const
-  )
-    .map((group) => ({
-      group,
-      options: filteredAllOptions.filter((o) => o.group === group),
-    }))
-    .filter((g) => g.options.length > 0);
-
-  const flowPrompt = (() => {
-    if (!activeFlow) return null;
-    if (activeFlow.key === 'translate') {
-      return activeFlow.step === 0 ? 'Translate from which language?' : 'Translate to which language?';
+  const subgrouped = (() => {
+    const map = new Map<string, QuickOption[]>();
+    for (const opt of filteredGroupOptions) {
+      const key = opt.subgroup || 'Other';
+      map.set(key, [...(map.get(key) || []), opt]);
     }
-    if (activeFlow.key === 'add-section') {
-      return 'What should the new section be titled?';
-    }
-    return null;
+    return Array.from(map.entries());
   })();
 
-  const handleFlowSubmit = useCallback(() => {
-    if (!activeFlow) return;
-    const answer = inputValue.trim();
-    if (!answer) return;
-
-    const nextAnswers = [...activeFlow.answers, answer];
-
-    if (activeFlow.key === 'translate') {
-      if (nextAnswers.length < 2) {
-        setActiveFlow({ ...activeFlow, answers: nextAnswers, step: activeFlow.step + 1 });
-        setInputValue('');
-        return;
-      }
-      const [from, to] = nextAnswers;
-      const concrete: QuickOption = {
-        ...activeFlow.option,
-        // Make the prompt concrete and self-contained
-        action: `Translate this content from ${from} to ${to}. Preserve formatting (Markdown / Zadoox extended Markdown) and keep technical terms accurate.`,
-        followUpKey: undefined,
-      };
-      onQuickOption(concrete);
-      onClose();
-      return;
-    }
-
-    if (activeFlow.key === 'add-section') {
-      const [title] = nextAnswers;
-      const concrete: QuickOption = {
-        ...activeFlow.option,
-        action: `Add a new section titled "${title}" here. Insert an appropriate Markdown heading and 1–2 starter paragraphs that fit the surrounding context.`,
-        followUpKey: undefined,
-      };
-      onQuickOption(concrete);
-      onClose();
-      return;
-    }
-  }, [activeFlow, inputValue, onQuickOption, onClose]);
+  const WizardComponent: InlineWizardComponent | null = (() => {
+    const option = activeWizard?.option;
+    if (!option?.wizardKey) return null;
+    if (option.wizardKey === 'translate') return TranslateWizard;
+    if (option.wizardKey === 'insert-figure') return InsertFigureWizard;
+    return TodoWizard;
+  })();
 
   return (
     <div
@@ -239,6 +222,21 @@ export function InlineAIChat({
         maxWidth: '600px',
       }}
     >
+      {WizardComponent && activeWizard ? (
+        <div className="border-b border-gray-800">
+          <WizardComponent
+            ctx={{ option: activeWizard.option, content, cursorPosition, scope: { kind: derivedScopeKind, text: derivedScopeText } }}
+            onCancel={() => setActiveWizard(null)}
+            onCloseAll={onClose}
+            onPreview={onPreviewInlineEdit}
+            onApply={async (preview) => {
+              await onApplyInlinePreview(preview);
+              onClose();
+            }}
+          />
+        </div>
+      ) : (
+        <>
       {/* Quick Options */}
       {quickOptions.length > 0 && (
         <div className="p-2 border-b border-gray-800">
@@ -266,39 +264,92 @@ export function InlineAIChat({
 
           {showAllOptions && (
             <div className="mt-2 border-t border-gray-800 pt-2">
-              <input
-                value={optionsQuery}
-                onChange={(e) => setOptionsQuery(e.target.value)}
-                placeholder="Search all actions…"
-                className="w-full bg-gray-950 text-xs text-gray-200 placeholder-gray-500 border border-gray-700 rounded px-2 py-1 focus:outline-none focus:border-gray-600"
-              />
-
-              <div className="mt-2 max-h-56 overflow-auto space-y-3">
-                {groupedOptions.map(({ group, options }) => (
-                  <div key={group}>
-                    <div className="px-1 mb-1 text-[10px] tracking-wide uppercase text-gray-500">{group}</div>
-                    <div className="space-y-1">
-                      {options.map((opt) => (
-                        <button
-                          key={opt.id}
-                          onClick={() => handleQuickOption(opt)}
-                          className="w-full text-left px-2 py-1 rounded border border-gray-800 hover:border-gray-700 hover:bg-gray-800/40 transition-colors"
-                          title={opt.description}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs text-gray-200">{opt.label}</span>
-                          </div>
-                          {opt.description && <div className="text-[10px] text-gray-400 mt-0.5">{opt.description}</div>}
-                        </button>
-                      ))}
-                    </div>
+              {/* Level 1: Groups */}
+              {optionsLevel === 'groups' && (
+                <div className="space-y-2">
+                  <div className="px-1 text-[10px] tracking-wide uppercase text-gray-500">Choose a category</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {groupCounts.map(({ group, count }) => (
+                      <button
+                        key={group}
+                        onClick={() => {
+                          setSelectedGroup(group);
+                          setOptionsLevel('options');
+                          setOptionsQuery('');
+                        }}
+                        className="text-left px-2 py-2 rounded border border-gray-800 hover:border-gray-700 hover:bg-gray-800/40 transition-colors"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs text-gray-200">{group}</span>
+                          <span className="text-[10px] text-gray-400">{count}</span>
+                        </div>
+                        <div className="text-[10px] text-gray-500 mt-0.5">Browse {group.toLowerCase()} actions</div>
+                      </button>
+                    ))}
                   </div>
-                ))}
+                </div>
+              )}
 
-                {groupedOptions.length === 0 && (
-                  <div className="text-xs text-gray-400 px-1">No matching actions.</div>
-                )}
-              </div>
+              {/* Level 2: Options within selected group */}
+              {optionsLevel === 'options' && selectedGroup && (
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOptionsLevel('groups');
+                        setSelectedGroup(null);
+                        setOptionsQuery('');
+                      }}
+                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-200"
+                      title="Back"
+                    >
+                      <ChevronLeftIcon className="w-4 h-4" />
+                      Back
+                    </button>
+                    <div className="text-xs text-gray-300">{selectedGroup}</div>
+                    <div className="w-12" />
+                  </div>
+
+                  <input
+                    value={optionsQuery}
+                    onChange={(e) => setOptionsQuery(e.target.value)}
+                    placeholder={`Search ${selectedGroup.toLowerCase()}…`}
+                    className="w-full bg-gray-950 text-xs text-gray-200 placeholder-gray-500 border border-gray-700 rounded px-2 py-1 focus:outline-none focus:border-gray-600"
+                  />
+
+                  <div className="mt-2 max-h-56 overflow-auto space-y-3">
+                    {subgrouped.map(([subgroup, options]) => (
+                      <div key={subgroup}>
+                        <div className="px-1 mb-1 text-[10px] tracking-wide uppercase text-gray-500">{subgroup}</div>
+                        <div className="space-y-1">
+                          {options.map((opt) => (
+                            <button
+                              key={opt.id}
+                              onClick={() => handleQuickOption(opt)}
+                              className="w-full text-left px-2 py-1 rounded border border-gray-800 hover:border-gray-700 hover:bg-gray-800/40 transition-colors"
+                              title={opt.description}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs text-gray-200">{opt.label}</span>
+                              </div>
+                              {opt.description && (
+                                <div className="text-[10px] text-gray-400 mt-0.5">{opt.description}</div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+
+                    {filteredGroupOptions.length === 0 && (
+                      <div className="text-xs text-gray-400 px-1">No matching actions.</div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* (Optional later) global search from groups level could go here */}
             </div>
           )}
         </div>
@@ -314,28 +365,12 @@ export function InlineAIChat({
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              if (activeFlow) {
-                handleFlowSubmit();
-              } else {
-                handleSend();
-              }
+              handleSend();
             }
           }}
-          placeholder={flowPrompt || 'Ask anything or choose a quick option...'}
+          placeholder="Ask anything or choose a quick option..."
           className="flex-1 bg-transparent text-sm text-white placeholder-gray-500 focus:outline-none"
         />
-        {activeFlow && (
-          <button
-            onClick={() => {
-              setActiveFlow(null);
-              setInputValue('');
-            }}
-            className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 rounded border border-gray-700 transition-colors"
-            title="Cancel"
-          >
-            Cancel
-          </button>
-        )}
         <button
           onClick={onClose}
           className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-gray-300 transition-colors"
@@ -344,13 +379,7 @@ export function InlineAIChat({
           <XMarkIcon className="w-4 h-4" />
         </button>
         <button
-          onClick={() => {
-            if (activeFlow) {
-              handleFlowSubmit();
-            } else {
-              handleSend();
-            }
-          }}
+          onClick={handleSend}
           disabled={!inputValue.trim()}
           className="p-1.5 bg-vscode-blue hover:bg-blue-600 disabled:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed rounded text-white transition-colors"
           title="Send (Enter)"
@@ -358,7 +387,8 @@ export function InlineAIChat({
           <ArrowRightIcon className="w-4 h-4" />
         </button>
       </div>
+        </>
+      )}
     </div>
   );
 }
-

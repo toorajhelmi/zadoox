@@ -8,6 +8,20 @@ import type { DocumentStyle } from '@zadoox/shared';
 
 export type QuickOptionGroup = 'Generation' | 'Transformation' | 'Structure' | 'Tone';
 export type QuickOptionFollowUpKey = 'translate' | 'add-section';
+export type QuickOptionSubgroup =
+  | 'Sections'
+  | 'Insert'
+  | 'Citations & References'
+  | 'Rewrite'
+  | 'Argumentation'
+  | 'Organization'
+  | 'Tone';
+export type QuickOptionWizardKey =
+  | 'translate'
+  | 'add-section'
+  | 'insert-figure'
+  | 'insert-table'
+  | 'insert-equation';
 
 export interface QuickOption {
   id: string;
@@ -15,6 +29,12 @@ export interface QuickOption {
   description?: string;
   action: string; // The action/prompt to send
   group: QuickOptionGroup;
+  subgroup?: QuickOptionSubgroup;
+  /**
+   * If present, selecting this option should open a wizard UI.
+   * The wizard will collect minimal inputs, allow preview, and then apply.
+   */
+  wizardKey?: QuickOptionWizardKey;
   /**
    * If present, selecting this option should ask follow-up questions
    * before turning it into a concrete prompt.
@@ -71,6 +91,7 @@ const ALL_OPTIONS: QuickOption[] = [
     description: 'Insert an Abstract section at the beginning',
     action: 'Add an "Abstract" section at the beginning of this document. Keep it concise and aligned with the existing content (if any).',
     group: 'Generation',
+    subgroup: 'Sections',
   },
   {
     id: 'gen-add-introduction',
@@ -78,6 +99,7 @@ const ALL_OPTIONS: QuickOption[] = [
     description: 'Insert an Introduction section near the start',
     action: 'Add an "Introduction" section near the start of this document. Make it flow naturally into what follows.',
     group: 'Generation',
+    subgroup: 'Sections',
   },
   {
     id: 'gen-add-conclusion',
@@ -85,6 +107,7 @@ const ALL_OPTIONS: QuickOption[] = [
     description: 'Add a concluding section at the end',
     action: 'Add a "Conclusion" section at the end of this document that summarizes key points and closes the narrative.',
     group: 'Generation',
+    subgroup: 'Sections',
   },
   {
     id: 'gen-add-section',
@@ -92,6 +115,8 @@ const ALL_OPTIONS: QuickOption[] = [
     description: 'Insert a new section heading and starter content',
     action: 'Add a new section here.',
     group: 'Generation',
+    subgroup: 'Sections',
+    wizardKey: 'add-section',
     followUpKey: 'add-section',
   },
   {
@@ -100,6 +125,7 @@ const ALL_OPTIONS: QuickOption[] = [
     description: 'Add a concrete example to clarify the point',
     action: 'Add a concrete example that clarifies the current point, matching the document tone.',
     group: 'Generation',
+    subgroup: 'Sections',
   },
   {
     id: 'gen-add-citation',
@@ -108,6 +134,7 @@ const ALL_OPTIONS: QuickOption[] = [
     action:
       'Add a relevant citation placeholder in the appropriate place using the Zadoox citation syntax (e.g., [@smith2024] or [@smith2024, p. 42]).',
     group: 'Generation',
+    subgroup: 'Citations & References',
   },
   {
     id: 'gen-insert-figure',
@@ -116,6 +143,8 @@ const ALL_OPTIONS: QuickOption[] = [
     action:
       'Insert a figure block here using Zadoox extended Markdown, including a label like {#fig:...} and label="Figure {REF}.1". Use a placeholder image path under assets/.',
     group: 'Generation',
+    subgroup: 'Insert',
+    wizardKey: 'insert-figure',
   },
   {
     id: 'gen-insert-table',
@@ -124,6 +153,8 @@ const ALL_OPTIONS: QuickOption[] = [
     action:
       'Insert a Markdown table here and add a Zadoox table label block like {#tbl:... label="Table {REF}.1" caption="..."} below it.',
     group: 'Generation',
+    subgroup: 'Insert',
+    wizardKey: 'insert-table',
   },
   {
     id: 'gen-insert-equation',
@@ -132,6 +163,8 @@ const ALL_OPTIONS: QuickOption[] = [
     action:
       'Insert a LaTeX equation block here using $$...$$ and add a label like {#eq:... label="Equation {REF}.1"}.',
     group: 'Generation',
+    subgroup: 'Insert',
+    wizardKey: 'insert-equation',
   },
 
   // Transformation
@@ -141,6 +174,7 @@ const ALL_OPTIONS: QuickOption[] = [
     description: 'Improve clarity/flow while preserving meaning',
     action: 'Improve the writing for clarity, flow, and correctness while preserving meaning and structure.',
     group: 'Transformation',
+    subgroup: 'Rewrite',
   },
   {
     id: 'xform-expand',
@@ -148,6 +182,7 @@ const ALL_OPTIONS: QuickOption[] = [
     description: 'Add detail, explanation, or supporting points',
     action: 'Expand this content with more detail, explanation, and supporting points while staying on-topic.',
     group: 'Transformation',
+    subgroup: 'Rewrite',
   },
   {
     id: 'xform-condense',
@@ -155,6 +190,7 @@ const ALL_OPTIONS: QuickOption[] = [
     description: 'Make it shorter without losing key information',
     action: 'Condense this content to be more concise without losing key information.',
     group: 'Transformation',
+    subgroup: 'Rewrite',
   },
   {
     id: 'xform-translate',
@@ -162,6 +198,8 @@ const ALL_OPTIONS: QuickOption[] = [
     description: 'Translate (will ask for from/to language)',
     action: 'Translate this content.',
     group: 'Transformation',
+    subgroup: 'Rewrite',
+    wizardKey: 'translate',
     followUpKey: 'translate',
   },
   {
@@ -171,6 +209,7 @@ const ALL_OPTIONS: QuickOption[] = [
     action:
       'Add a brief counterargument to the main claim here, then respond to it constructively. Keep it integrated into the surrounding text.',
     group: 'Transformation',
+    subgroup: 'Argumentation',
   },
 
   // Structure
@@ -180,6 +219,7 @@ const ALL_OPTIONS: QuickOption[] = [
     description: 'Reorder for stronger logical flow',
     action: 'Improve the structure and ordering of this section for a clearer logical flow. Keep headings consistent.',
     group: 'Structure',
+    subgroup: 'Organization',
   },
   {
     id: 'struct-add-subsection',
@@ -187,6 +227,7 @@ const ALL_OPTIONS: QuickOption[] = [
     description: 'Insert a subsection heading under the current section',
     action: 'Add an appropriate subsection heading here and start the subsection with 1–2 paragraphs.',
     group: 'Structure',
+    subgroup: 'Organization',
   },
   {
     id: 'struct-add-crossref',
@@ -195,6 +236,7 @@ const ALL_OPTIONS: QuickOption[] = [
     action:
       'Add a useful cross-reference using Zadoox syntax (e.g., @sec:..., @fig:..., @tbl:..., @eq:...) where it improves navigation.',
     group: 'Structure',
+    subgroup: 'Citations & References',
   },
   {
     id: 'struct-add-footnote',
@@ -202,6 +244,7 @@ const ALL_OPTIONS: QuickOption[] = [
     description: 'Add a footnote using [^1] syntax',
     action: 'Add a footnote using Markdown footnote syntax ([^1]) and provide the corresponding footnote content.',
     group: 'Structure',
+    subgroup: 'Citations & References',
   },
 
   // Tone
@@ -211,6 +254,7 @@ const ALL_OPTIONS: QuickOption[] = [
     description: 'Increase formality and academic tone',
     action: 'Rewrite this content in a more formal tone while keeping meaning and structure.',
     group: 'Tone',
+    subgroup: 'Tone',
   },
   {
     id: 'tone-more-casual',
@@ -218,6 +262,7 @@ const ALL_OPTIONS: QuickOption[] = [
     description: 'More conversational, simpler wording',
     action: 'Rewrite this content in a more casual, approachable tone while keeping meaning and structure.',
     group: 'Tone',
+    subgroup: 'Tone',
   },
 ];
 

@@ -61,6 +61,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const currentSelectionRef = useRef<{ from: number; to: number; text: string } | null>(null);
   const [pendingChangeContent, setPendingChangeContent] = useState<{ original: string; new: string } | null>(null);
   const [isGeneratingContent, setIsGeneratingContent] = useState(false);
+  const [busyOverlayMessage, setBusyOverlayMessage] = useState<string>('Generating content...');
   const previousContentForHistoryRef = useRef<string>(content);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const editorViewRef = useRef<import('@codemirror/view').EditorView | null>(null);
@@ -1026,8 +1027,133 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                   position={cursorScreenPosition}
                   content={content}
                   cursorPosition={cursorPosition}
+                  selection={currentSelectionRef.current}
+                  scopeKind={currentSelectionRef.current?.text?.trim() ? 'selection' : 'cursor_paragraph'}
+                  scopeText={(() => {
+                    const sel = currentSelectionRef.current;
+                    if (sel && sel.text && sel.text.trim().length > 0) return sel.text;
+
+                    if (!cursorPosition) return '';
+                    const cursorLine = cursorPosition.line - 1;
+                    const { blocks, cursorBlockId } = buildInlineBlocksAroundCursor(content, cursorLine);
+                    const cursorBlock = blocks.find((b) => b.id === cursorBlockId);
+                    if (cursorBlock?.kind === 'paragraph') return cursorBlock.text;
+
+                    // Fallback: nearest previous paragraph in window
+                    const idx = blocks.findIndex((b) => b.id === cursorBlockId);
+                    for (let i = idx - 1; i >= 0; i--) {
+                      if (blocks[i]?.kind === 'paragraph') return blocks[i].text;
+                    }
+                    return cursorBlock?.text || '';
+                  })()}
                   documentStyle={documentStyle}
                   onClose={() => {
+                    setInlineAIChatOpen(false);
+                  }}
+                  onPreviewInlineEdit={async ({ prompt, mode, scopeStrategy = 'selection-or-prev-paragraph' }) => {
+                    if (!cursorPosition) {
+                      return { operations: [], previewText: '', newContent: content };
+                    }
+
+                    const selection = currentSelectionRef.current;
+                    const cursorLine = cursorPosition.line - 1; // Convert to 0-based
+
+                    // If we have a selection, prefer applying operations to that exact span.
+                    if (selection && selection.text && selection.text.trim().length > 0) {
+                      const blocks: InlineEditBlock[] = [
+                        {
+                          id: 'sel',
+                          kind: 'paragraph',
+                          text: selection.text,
+                          start: selection.from,
+                          end: selection.to,
+                        },
+                      ];
+
+                      const result = await api.ai.inline.edit({
+                        prompt,
+                        mode: 'update',
+                        blocks,
+                        cursorBlockId: 'sel',
+                      });
+
+                      const operations = result.operations || [];
+                      const previewText = operations.map((op) => op.content).join('\n\n').trim();
+                      const newContent = applyInlineOperations(content, blocks, operations);
+                      return { operations, previewText, newContent };
+                    }
+
+                    // No selection: use block-based targeting.
+                    const { blocks, cursorBlockId } = buildInlineBlocksAroundCursor(content, cursorLine);
+                    let targetBlockId = cursorBlockId;
+
+                    if (scopeStrategy === 'selection-or-prev-paragraph') {
+                      // Previous paragraph block if available.
+                      const idx = blocks.findIndex((b) => b.id === cursorBlockId);
+                      for (let i = idx - 1; i >= 0; i--) {
+                        if (blocks[i]?.kind === 'paragraph') {
+                          targetBlockId = blocks[i].id;
+                          break;
+                        }
+                      }
+                    }
+
+                    if (scopeStrategy === 'selection-or-cursor-paragraph') {
+                      // Cursor paragraph block if available; otherwise fall back to previous paragraph.
+                      const cursorBlock = blocks.find((b) => b.id === cursorBlockId);
+                      if (cursorBlock?.kind === 'paragraph') {
+                        targetBlockId = cursorBlockId;
+                      } else {
+                        const idx = blocks.findIndex((b) => b.id === cursorBlockId);
+                        for (let i = idx - 1; i >= 0; i--) {
+                          if (blocks[i]?.kind === 'paragraph') {
+                            targetBlockId = blocks[i].id;
+                            break;
+                          }
+                        }
+                      }
+                    }
+
+                    // scopeStrategy === 'cursor' keeps cursorBlockId as-is (insert figure/table/etc.)
+
+                    // For update-style operations, constrain the model to ONLY the target block
+                    // by sending just that block as the editable surface.
+                    if (mode === 'update') {
+                      const target = blocks.find((b) => b.id === targetBlockId) || blocks.find((b) => b.id === cursorBlockId);
+                      if (!target) {
+                        return { operations: [], previewText: '', newContent: content };
+                      }
+                      const single: InlineEditBlock[] = [
+                        { id: 'target', kind: target.kind, text: target.text, start: target.start, end: target.end },
+                      ];
+                      const result = await api.ai.inline.edit({
+                        prompt,
+                        mode: 'update',
+                        blocks: single,
+                        cursorBlockId: 'target',
+                      });
+                      const operations = result.operations || [];
+                      const previewText = operations.map((op) => op.content).join('\n\n').trim();
+                      const newContent = applyInlineOperations(content, single, operations);
+                      return { operations, previewText, newContent };
+                    }
+
+                    const result = await api.ai.inline.edit({
+                      prompt,
+                      mode,
+                      blocks,
+                      cursorBlockId: targetBlockId,
+                    });
+
+                    const operations = result.operations || [];
+                    const previewText = operations.map((op) => op.content).join('\n\n').trim();
+                    const newContent = applyInlineOperations(content, blocks, operations);
+                    return { operations, previewText, newContent };
+                  }}
+                  onApplyInlinePreview={async (preview) => {
+                    // Apply the already-previewed content without another AI call
+                    setPendingChangeContent({ original: content, new: preview.newContent });
+                    changeTracking.startTracking(preview.newContent, content);
                     setInlineAIChatOpen(false);
                   }}
                   onSend={async (message) => {
@@ -1264,7 +1390,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] pointer-events-none">
               <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 flex flex-col items-center gap-4 min-w-[200px] pointer-events-auto">
                 <div className="w-8 h-8 border-4 border-gray-600 border-t-vscode-blue rounded-full animate-spin" />
-                <div className="text-sm text-gray-400">Generating content...</div>
+                <div className="text-sm text-gray-400">{busyOverlayMessage}</div>
               </div>
             </div>
           )}
