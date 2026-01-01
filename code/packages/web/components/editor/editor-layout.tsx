@@ -1150,6 +1150,27 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                     const newContent = applyInlineOperations(content, blocks, operations);
                     return { operations, previewText, newContent };
                   }}
+                  onPreviewInsertAtCursor={async ({ content: insertContent, placement = 'after' }) => {
+                    if (!cursorPosition) {
+                      return { operations: [], previewText: '', newContent: content };
+                    }
+
+                    const cursorLine = cursorPosition.line - 1; // Convert to 0-based
+                    const { blocks, cursorBlockId } = buildInlineBlocksAroundCursor(content, cursorLine);
+                    const anchorBlockId = cursorBlockId;
+                    if (!anchorBlockId) {
+                      return { operations: [], previewText: '', newContent: content };
+                    }
+
+                    const operations: InlineEditOperation[] = [
+                      placement === 'before'
+                        ? { type: 'insert_before', anchorBlockId, content: insertContent }
+                        : { type: 'insert_after', anchorBlockId, content: insertContent },
+                    ];
+
+                    const newContent = applyInlineOperations(content, blocks, operations);
+                    return { operations, previewText: insertContent, newContent };
+                  }}
                   onApplyInlinePreview={async (preview) => {
                     // Apply the already-previewed content without another AI call
                     setPendingChangeContent({ original: content, new: preview.newContent });

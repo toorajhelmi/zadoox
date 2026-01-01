@@ -32,6 +32,7 @@ interface InlineAIChatProps {
     mode: 'update' | 'insert';
     scopeStrategy?: InlineWizardScopeStrategy;
   }) => Promise<InlineWizardPreview>;
+  onPreviewInsertAtCursor: (input: { content: string; placement?: 'before' | 'after' }) => Promise<InlineWizardPreview>;
   onApplyInlinePreview: (preview: InlineWizardPreview) => Promise<void>;
 }
 
@@ -47,6 +48,7 @@ export function InlineAIChat({
   onSend,
   onQuickOption,
   onPreviewInlineEdit,
+  onPreviewInsertAtCursor,
   onApplyInlinePreview,
 }: InlineAIChatProps) {
   const [inputValue, setInputValue] = useState('');
@@ -229,6 +231,7 @@ export function InlineAIChat({
             onCancel={() => setActiveWizard(null)}
             onCloseAll={onClose}
             onPreview={onPreviewInlineEdit}
+            onPreviewInsert={onPreviewInsertAtCursor}
             onApply={async (preview) => {
               await onApplyInlinePreview(preview);
               onClose();

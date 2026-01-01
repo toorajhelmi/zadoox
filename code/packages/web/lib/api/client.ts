@@ -29,6 +29,8 @@ import type {
   InlineGenerateResponse,
   InlineEditRequest,
   InlineEditResponse,
+  AIImageGenerateRequest,
+  AIImageGenerateResponse,
   ResearchRequest,
   ResearchResponse,
 } from '@zadoox/shared';
@@ -302,6 +304,19 @@ export const api = {
           console.error('Inline edit API error:', error);
           throw error;
         }
+      },
+    },
+
+    images: {
+      generate: async (request: AIImageGenerateRequest): Promise<AIImageGenerateResponse> => {
+        const response = await fetchApi<AIImageGenerateResponse>('/ai/images/generate', {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+        if (!response.data) {
+          throw new ApiError('Failed to generate image', 'IMAGE_GENERATE_FAILED', 500);
+        }
+        return response.data;
       },
     },
 

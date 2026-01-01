@@ -562,6 +562,30 @@ ${JSON.stringify(params.blocks, null, 2)}`;
     return response.choices[0]?.message?.content?.trim() || '{"operations":[]}';
   }
 
+  async generateImage(
+    prompt: string,
+    options?: {
+      size?: '256x256' | '512x512' | '1024x1024';
+    }
+  ): Promise<{ b64: string; mimeType: string }> {
+    const size = options?.size || '1024x1024';
+
+    // OpenAI Images API (base64)
+    const response = await this.client.images.generate({
+      model: 'gpt-image-1',
+      prompt,
+      size,
+      response_format: 'b64_json',
+    });
+
+    const b64 = response.data?.[0]?.b64_json;
+    if (!b64) {
+      throw new Error('No image returned from OpenAI');
+    }
+
+    return { b64, mimeType: 'image/png' };
+  }
+
   getModelInfo(): AIModelInfo {
     return {
       id: this.model,

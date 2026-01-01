@@ -87,6 +87,16 @@ export interface AIProvider {
   ): Promise<string>;
 
   /**
+   * Generate an image from a prompt. Returns base64 encoded image data.
+   */
+  generateImage(
+    prompt: string,
+    options?: {
+      size?: '256x256' | '512x512' | '1024x1024';
+    }
+  ): Promise<{ b64: string; mimeType: string }>;
+
+  /**
    * Inline generation from a raw prompt + context.
    * Used by /ai/inline/generate.
    */

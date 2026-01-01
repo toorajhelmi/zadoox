@@ -29,6 +29,7 @@ export interface InlineWizardProps {
   onCancel: () => void;
   onCloseAll: () => void;
   onPreview: (input: { prompt: string; mode: 'update' | 'insert'; scopeStrategy?: InlineWizardScopeStrategy }) => Promise<InlineWizardPreview>;
+  onPreviewInsert?: (input: { content: string; placement?: 'before' | 'after' }) => Promise<InlineWizardPreview>;
   onApply: (preview: InlineWizardPreview) => Promise<void>;
 }
 

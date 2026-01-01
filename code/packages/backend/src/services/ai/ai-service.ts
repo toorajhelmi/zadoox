@@ -228,6 +228,20 @@ export class AIService {
   }
 
   /**
+   * Generate an image from a prompt (base64).
+   */
+  async generateImage(
+    prompt: string,
+    options?: {
+      size?: '256x256' | '512x512' | '1024x1024';
+    },
+    model?: AIModel
+  ): Promise<{ b64: string; mimeType: string }> {
+    const provider = this.getProvider(model);
+    return provider.generateImage(prompt, options);
+  }
+
+  /**
    * Get available models
    */
   getAvailableModels(): AIModelInfo[] {

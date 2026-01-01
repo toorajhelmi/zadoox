@@ -285,6 +285,18 @@ export interface InlineEditResponse {
   model?: string;
 }
 
+// AI Image Generation types
+export interface AIImageGenerateRequest {
+  prompt: string;
+  size?: '256x256' | '512x512' | '1024x1024';
+  model?: AIModel;
+}
+
+export interface AIImageGenerateResponse {
+  b64: string;
+  mimeType: string;
+}
+
 // Research API types
 export interface ResearchRequest {
   paragraphId: string;
