@@ -6,12 +6,20 @@
 
 import type { DocumentStyle } from '@zadoox/shared';
 
+export type QuickOptionGroup = 'Generation' | 'Transformation' | 'Structure' | 'Tone';
+export type QuickOptionFollowUpKey = 'translate' | 'add-section';
+
 export interface QuickOption {
   id: string;
   label: string;
   description?: string;
   action: string; // The action/prompt to send
-  category?: string;
+  group: QuickOptionGroup;
+  /**
+   * If present, selecting this option should ask follow-up questions
+   * before turning it into a concrete prompt.
+   */
+  followUpKey?: QuickOptionFollowUpKey;
 }
 
 export interface ContextOptionsParams {
@@ -24,161 +32,269 @@ export interface ContextOptionsParams {
   };
 }
 
+const headingMatch = (line: string, heading: string) =>
+  new RegExp(`^#{1,6}\\s+${heading}\\b`, 'i').test(line.trim());
+
+function hasHeading(content: string, heading: string): boolean {
+  return content.split('\n').some((l) => headingMatch(l, heading));
+}
+
+function firstNonEmptyLineIndex(lines: string[]): number {
+  for (let i = 0; i < lines.length; i++) {
+    if ((lines[i] || '').trim().length > 0) return i;
+  }
+  return -1;
+}
+
+function lastNonEmptyLineIndex(lines: string[]): number {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if ((lines[i] || '').trim().length > 0) return i;
+  }
+  return -1;
+}
+
+interface ScoredOption {
+  option: QuickOption;
+  score: number;
+}
+
+/**
+ * Global option catalog (shown in the "More…" searchable picker).
+ * Keep prompts generic and applicable across doc styles, but compatible with
+ * Zadoox extended Markdown features (figures/tables/refs/citations/blocks).
+ */
+const ALL_OPTIONS: QuickOption[] = [
+  // Generation
+  {
+    id: 'gen-add-abstract',
+    label: 'Add abstract',
+    description: 'Insert an Abstract section at the beginning',
+    action: 'Add an "Abstract" section at the beginning of this document. Keep it concise and aligned with the existing content (if any).',
+    group: 'Generation',
+  },
+  {
+    id: 'gen-add-introduction',
+    label: 'Add introduction',
+    description: 'Insert an Introduction section near the start',
+    action: 'Add an "Introduction" section near the start of this document. Make it flow naturally into what follows.',
+    group: 'Generation',
+  },
+  {
+    id: 'gen-add-conclusion',
+    label: 'Add conclusion',
+    description: 'Add a concluding section at the end',
+    action: 'Add a "Conclusion" section at the end of this document that summarizes key points and closes the narrative.',
+    group: 'Generation',
+  },
+  {
+    id: 'gen-add-section',
+    label: 'Add section…',
+    description: 'Insert a new section heading and starter content',
+    action: 'Add a new section here.',
+    group: 'Generation',
+    followUpKey: 'add-section',
+  },
+  {
+    id: 'gen-add-example',
+    label: 'Add example',
+    description: 'Add a concrete example to clarify the point',
+    action: 'Add a concrete example that clarifies the current point, matching the document tone.',
+    group: 'Generation',
+  },
+  {
+    id: 'gen-add-citation',
+    label: 'Add citation',
+    description: 'Insert a citation placeholder (e.g. [@smith2024])',
+    action:
+      'Add a relevant citation placeholder in the appropriate place using the Zadoox citation syntax (e.g., [@smith2024] or [@smith2024, p. 42]).',
+    group: 'Generation',
+  },
+  {
+    id: 'gen-insert-figure',
+    label: 'Insert figure',
+    description: 'Insert a figure block with label syntax {#fig:... label="Figure {REF}.1"}',
+    action:
+      'Insert a figure block here using Zadoox extended Markdown, including a label like {#fig:...} and label="Figure {REF}.1". Use a placeholder image path under assets/.',
+    group: 'Generation',
+  },
+  {
+    id: 'gen-insert-table',
+    label: 'Insert table',
+    description: 'Insert a Markdown table with a table label {#tbl:... label="Table {REF}.1"}',
+    action:
+      'Insert a Markdown table here and add a Zadoox table label block like {#tbl:... label="Table {REF}.1" caption="..."} below it.',
+    group: 'Generation',
+  },
+  {
+    id: 'gen-insert-equation',
+    label: 'Insert equation',
+    description: 'Insert a labeled equation block using $$ ... $${#eq:... label="Equation {REF}.1"}',
+    action:
+      'Insert a LaTeX equation block here using $$...$$ and add a label like {#eq:... label="Equation {REF}.1"}.',
+    group: 'Generation',
+  },
+
+  // Transformation
+  {
+    id: 'xform-improve',
+    label: 'Improve writing',
+    description: 'Improve clarity/flow while preserving meaning',
+    action: 'Improve the writing for clarity, flow, and correctness while preserving meaning and structure.',
+    group: 'Transformation',
+  },
+  {
+    id: 'xform-expand',
+    label: 'Expand',
+    description: 'Add detail, explanation, or supporting points',
+    action: 'Expand this content with more detail, explanation, and supporting points while staying on-topic.',
+    group: 'Transformation',
+  },
+  {
+    id: 'xform-condense',
+    label: 'Condense',
+    description: 'Make it shorter without losing key information',
+    action: 'Condense this content to be more concise without losing key information.',
+    group: 'Transformation',
+  },
+  {
+    id: 'xform-translate',
+    label: 'Translate…',
+    description: 'Translate (will ask for from/to language)',
+    action: 'Translate this content.',
+    group: 'Transformation',
+    followUpKey: 'translate',
+  },
+  {
+    id: 'xform-counterargument',
+    label: 'Add counterargument',
+    description: 'Add a brief counterpoint + response',
+    action:
+      'Add a brief counterargument to the main claim here, then respond to it constructively. Keep it integrated into the surrounding text.',
+    group: 'Transformation',
+  },
+
+  // Structure
+  {
+    id: 'struct-reorder',
+    label: 'Improve structure',
+    description: 'Reorder for stronger logical flow',
+    action: 'Improve the structure and ordering of this section for a clearer logical flow. Keep headings consistent.',
+    group: 'Structure',
+  },
+  {
+    id: 'struct-add-subsection',
+    label: 'Add subsection',
+    description: 'Insert a subsection heading under the current section',
+    action: 'Add an appropriate subsection heading here and start the subsection with 1–2 paragraphs.',
+    group: 'Structure',
+  },
+  {
+    id: 'struct-add-crossref',
+    label: 'Add cross-reference',
+    description: 'Add a reference like @sec:..., @fig:..., @tbl:..., @eq:...',
+    action:
+      'Add a useful cross-reference using Zadoox syntax (e.g., @sec:..., @fig:..., @tbl:..., @eq:...) where it improves navigation.',
+    group: 'Structure',
+  },
+  {
+    id: 'struct-add-footnote',
+    label: 'Add footnote',
+    description: 'Add a footnote using [^1] syntax',
+    action: 'Add a footnote using Markdown footnote syntax ([^1]) and provide the corresponding footnote content.',
+    group: 'Structure',
+  },
+
+  // Tone
+  {
+    id: 'tone-more-formal',
+    label: 'Make more formal',
+    description: 'Increase formality and academic tone',
+    action: 'Rewrite this content in a more formal tone while keeping meaning and structure.',
+    group: 'Tone',
+  },
+  {
+    id: 'tone-more-casual',
+    label: 'Make more casual',
+    description: 'More conversational, simpler wording',
+    action: 'Rewrite this content in a more casual, approachable tone while keeping meaning and structure.',
+    group: 'Tone',
+  },
+];
+
+export function getAllQuickOptions(): QuickOption[] {
+  return [...ALL_OPTIONS];
+}
+
 /**
  * Get context-aware quick options based on document style and position
  */
 export function getContextOptions(params: ContextOptionsParams): QuickOption[] {
-  const { documentStyle, cursorPosition, content, adjacentBlocks } = params;
-  const options: QuickOption[] = [];
+  const { cursorPosition, content, adjacentBlocks } = params;
 
   const lines = content.split('\n');
-  const isAtStart = cursorPosition.line === 0 || cursorPosition.line === 1;
-  const isAtEnd = cursorPosition.line >= lines.length - 1;
-  const hasContent = content.trim().length > 0;
-  
-  // Check if document starts with specific patterns
-  const startsWithHeading = lines[0]?.trim().startsWith('#');
-  const firstLineText = lines[0]?.trim() || '';
+  const firstIdx = firstNonEmptyLineIndex(lines);
+  const lastIdx = lastNonEmptyLineIndex(lines);
 
-  // Academic paper options
-  if (documentStyle === 'academic') {
-    // At the beginning of document
-    if (isAtStart && !hasContent) {
-      options.push({
-        id: 'add-abstract',
-        label: 'Add Abstract',
-        description: 'Add an abstract section',
-        action: 'Add an abstract section for this paper',
-        category: 'structure',
-      });
-      options.push({
-        id: 'add-intro',
-        label: 'Add Introduction',
-        description: 'Add an introduction section',
-        action: 'Add an introduction section',
-        category: 'structure',
-      });
-    }
+  const isEmptyDoc = content.trim().length === 0;
+  const cursorLine0 = Math.max(0, cursorPosition.line - 1); // cursorPosition.line is 1-based in UI
 
-    // At the beginning but has some content
-    if (isAtStart && hasContent && !firstLineText.toLowerCase().includes('abstract')) {
-      options.push({
-        id: 'add-abstract',
-        label: 'Add Abstract',
-        description: 'Insert an abstract section at the beginning',
-        action: 'Add an abstract section at the beginning of this document',
-        category: 'structure',
-      });
-    }
+  const isBeforeAnyText = isEmptyDoc || (firstIdx >= 0 && cursorLine0 <= firstIdx);
+  const isAfterAllText = isEmptyDoc || (lastIdx >= 0 && cursorLine0 >= lastIdx);
+  const isInMiddle = !isBeforeAnyText && !isAfterAllText;
 
-    // If there's an abstract but no intro
-    if (hasContent && firstLineText.toLowerCase().includes('abstract') && 
-        !content.toLowerCase().includes('## introduction')) {
-      options.push({
-        id: 'add-intro',
-        label: 'Add Introduction',
-        description: 'Add an introduction section after the abstract',
-        action: 'Add an introduction section',
-        category: 'structure',
-      });
-    }
+  const hasAbstract = hasHeading(content, 'abstract');
+  const hasIntro = hasHeading(content, 'introduction') || hasHeading(content, 'intro');
+  const hasConclusion = hasHeading(content, 'conclusion');
 
-    // Common academic sections
-    if (!content.toLowerCase().includes('## methods') && 
-        (content.toLowerCase().includes('introduction') || hasContent)) {
-      options.push({
-        id: 'add-methods',
-        label: 'Add Methods',
-        description: 'Add a methods section',
-        action: 'Add a methods section',
-        category: 'structure',
-      });
-    }
+  const scored: ScoredOption[] = [];
 
-    if (!content.toLowerCase().includes('## results') && hasContent) {
-      options.push({
-        id: 'add-results',
-        label: 'Add Results',
-        description: 'Add a results section',
-        action: 'Add a results section',
-        category: 'structure',
-      });
-    }
+  const push = (id: string, score: number) => {
+    const opt = ALL_OPTIONS.find((o) => o.id === id);
+    if (opt) scored.push({ option: opt, score });
+  };
 
-    if (!content.toLowerCase().includes('## discussion') && hasContent) {
-      options.push({
-        id: 'add-discussion',
-        label: 'Add Discussion',
-        description: 'Add a discussion section',
-        action: 'Add a discussion section',
-        category: 'structure',
-      });
-    }
-
-    if (!content.toLowerCase().includes('## conclusion') && hasContent) {
-      options.push({
-        id: 'add-conclusion',
-        label: 'Add Conclusion',
-        description: 'Add a conclusion section',
-        action: 'Add a conclusion section',
-        category: 'structure',
-      });
-    }
-
-    // References section (should be at end)
-    if (isAtEnd && !content.toLowerCase().includes('## references')) {
-      options.push({
-        id: 'add-references',
-        label: 'Add References',
-        description: 'Add a references section',
-        action: 'Add a references section',
-        category: 'structure',
-      });
-    }
+  // Start-of-doc suggestions
+  if (isBeforeAnyText) {
+    if (!hasAbstract) push('gen-add-abstract', 100);
+    if (!hasIntro) push('gen-add-introduction', 90);
+    // If empty doc, still allow a generic section creation
+    push('gen-add-section', isEmptyDoc ? 80 : 40);
   }
 
-  // General options (work for all styles)
-  if (!isAtStart && adjacentBlocks?.before) {
-    options.push({
-      id: 'expand-paragraph',
-      label: 'Expand',
-      description: 'Expand the current paragraph',
-      action: 'Expand this paragraph with more detail',
-      category: 'editing',
-    });
+  // End-of-doc suggestions
+  if (isAfterAllText) {
+    if (!hasConclusion && !isEmptyDoc) push('gen-add-conclusion', 100);
+    push('struct-add-crossref', 30);
   }
 
-  if (adjacentBlocks?.before || adjacentBlocks?.after) {
-    options.push({
-      id: 'improve-writing',
-      label: 'Improve',
-      description: 'Improve the writing quality',
-      action: 'Improve the writing quality of this section',
-      category: 'editing',
-    });
+  // Middle-of-doc suggestions (generic manipulation)
+  if (isInMiddle) {
+    push('xform-improve', 80);
+    push('xform-expand', adjacentBlocks?.before ? 70 : 55);
+    push('xform-condense', 40);
+    push('gen-add-example', 35);
+    push('gen-add-citation', 30);
+    push('struct-reorder', 25);
   }
 
-  if (hasContent) {
-    options.push({
-      id: 'add-section',
-      label: 'Add Section',
-      description: 'Add a new section',
-      action: 'Add a new section here',
-      category: 'structure',
-    });
+  // Always-available high-value actions (lower priority)
+  push('gen-insert-figure', 15);
+  push('gen-insert-table', 15);
+  push('gen-insert-equation', 15);
+  push('tone-more-formal', 10);
+  push('tone-more-casual', 10);
+  push('xform-translate', 8);
+
+  // Deduplicate by id and sort by score desc
+  const byId = new Map<string, ScoredOption>();
+  for (const s of scored) {
+    const existing = byId.get(s.option.id);
+    if (!existing || s.score > existing.score) byId.set(s.option.id, s);
   }
 
-  // Remove duplicates based on id
-  const uniqueOptions = Array.from(
-    new Map(options.map(opt => [opt.id, opt])).values()
-  );
-
-  // Sort: structure options first, then editing options
-  return uniqueOptions.sort((a, b) => {
-    if (a.category === 'structure' && b.category !== 'structure') return -1;
-    if (a.category !== 'structure' && b.category === 'structure') return 1;
-    return 0;
-  });
+  return Array.from(byId.values())
+    .sort((a, b) => b.score - a.score)
+    .map((x) => x.option);
 }
 
 /**
