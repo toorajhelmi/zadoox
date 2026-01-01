@@ -62,7 +62,9 @@ export function renderMarkdownToHtml(content: string): string {
 
   // Italic
   html = html.replace(/\*(.*?)\*/gim, '<em>$1</em>');
-  html = html.replace(/_(.*?)_/gim, '<em>$1</em>');
+  // NOTE: Avoid matching underscores inside "words" (e.g. URLs, IDs) and avoid empty "__" matches.
+  // This keeps asset refs like `zadoox-asset://...__...` intact.
+  html = html.replace(/(^|[^\w])_([^_\n]+?)_([^\w]|$)/gim, '$1<em>$2</em>$3');
 
   // Code blocks
   html = html.replace(/```[\s\S]*?```/gim, (match) => {

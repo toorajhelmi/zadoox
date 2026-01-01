@@ -119,6 +119,14 @@ describe('Markdown Utilities', () => {
       expect(html).toContain('float:left');
     });
 
+    it('should not break asset URLs containing "__" (no accidental italics)', () => {
+      const markdown =
+        '![Cap](zadoox-asset://053a1656-58a5-46f1-8df6-146b6d4b40ae__af442c5b-85f0-4815-9f4e-11acbb1b71a0.png){#fig:generated-1 label="Figure {REF}.1"}';
+      const html = renderMarkdownToHtml(markdown);
+      expect(html).toContain('src="zadoox-asset://053a1656-58a5-46f1-8df6-146b6d4b40ae__af442c5b-85f0-4815-9f4e-11acbb1b71a0.png"');
+      expect(html).not.toContain('<em></em>');
+    });
+
     it('should handle plain text', () => {
       const markdown = 'Plain text';
       const html = renderMarkdownToHtml(markdown);
