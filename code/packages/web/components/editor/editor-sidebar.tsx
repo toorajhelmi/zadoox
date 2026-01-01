@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronRightIcon, DocumentTextIcon, ClockIcon } from '@heroicons/react/24/outline';
+import { ChevronRightIcon, ChevronLeftIcon, DocumentTextIcon, ClockIcon } from '@heroicons/react/24/outline';
 import { DocumentOutline } from './document-outline';
 import { VersionHistoryPanel } from './version-history-panel';
 
@@ -33,20 +33,9 @@ export function EditorSidebar({ isOpen, onToggle, content, documentId, onRollbac
 
   return (
     <>
-      {/* Collapsed sidebar button */}
-      {!isOpen && (
-        <button
-          onClick={onToggle}
-          className="w-8 bg-vscode-sidebar border-r border-vscode-border hover:bg-vscode-active transition-colors flex items-center justify-center"
-          aria-label="Open sidebar"
-        >
-          <ChevronRightIcon className="w-5 h-5 text-vscode-text-secondary" />
-        </button>
-      )}
-
       {/* Expanded sidebar */}
       {isOpen && (
-        <div className="w-64 bg-vscode-sidebar border-r border-vscode-border flex flex-col">
+        <div className="flex-1 bg-vscode-sidebar flex flex-col relative">
           {/* Sidebar header with tabs */}
           <div className="h-12 flex items-center border-b border-vscode-border">
             <button
