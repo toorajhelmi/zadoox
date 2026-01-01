@@ -47,7 +47,10 @@ function formatPercentWidth(pct: number): string {
 
 class FigureCardWidget extends WidgetType {
   constructor(
-    private readonly src: string,
+    // Raw markdown URL (e.g. data:... or zadoox-asset://<key>)
+    private readonly rawUrl: string,
+    // Display URL for <img src> (e.g. /api/assets/<key>)
+    private readonly displaySrc: string,
     private readonly alt: string
     ,
     private readonly desc: string | null,
@@ -60,7 +63,8 @@ class FigureCardWidget extends WidgetType {
 
   eq(other: FigureCardWidget): boolean {
     return (
-      this.src === other.src &&
+      this.rawUrl === other.rawUrl &&
+      this.displaySrc === other.displaySrc &&
       this.alt === other.alt &&
       this.desc === other.desc &&
       this.attrs === other.attrs &&
@@ -106,7 +110,7 @@ class FigureCardWidget extends WidgetType {
     }
 
     const img = document.createElement('img');
-    img.src = this.src;
+    img.src = this.displaySrc;
     img.alt = this.alt || 'Figure';
     img.style.display = 'block';
     // Default: allow the image to size naturally but never overflow the container.
@@ -233,7 +237,7 @@ class FigureCardWidget extends WidgetType {
     const applyAttrUpdate = (updates: { align?: string | null; width?: string | null; placement?: string | null; desc?: string | null; caption?: string | null; src?: string | null }) => {
       const currentCaption = (updates.caption ?? this.alt ?? 'Figure').trim() || 'Figure';
       const currentDesc = updates.desc ?? this.desc ?? '';
-      const currentSrc = updates.src ?? this.src;
+      const currentSrc = updates.src ?? this.rawUrl;
       const cleaned = stripAttrKeys(baseAttrs, ['align', 'width', 'placement', 'desc']);
       let nextAttrs = cleaned;
       if (updates.align !== undefined) nextAttrs = upsertAttr(nextAttrs, 'align', updates.align);
@@ -529,7 +533,7 @@ class FigureCardWidget extends WidgetType {
       e.stopPropagation();
       const nextCaption = captionInput.value.trim() || 'Figure';
       const nextDesc = descInput.value;
-      const nextText = rebuildMarkdown(this.src, nextCaption, nextDesc);
+      const nextText = rebuildMarkdown(this.rawUrl, nextCaption, nextDesc);
       view.dispatch({ changes: { from: this.from, to: this.to, insert: nextText } });
     });
 
@@ -566,7 +570,17 @@ class FigureCardWidget extends WidgetType {
         if (c) promptParts.push(`Caption: ${c}`);
         const prompt = [...baseParts, ...promptParts].join('\n\n');
         const res = await api.ai.images.generate({ prompt, model: 'auto' });
-        const nextSrc = `data:${res.mimeType};base64,${res.b64}`;
+        // If this figure is already stored as an asset ref, upload the new image as an asset too.
+        // Otherwise, fall back to embedding data: (legacy docs).
+        let nextSrc = `data:${res.mimeType};base64,${res.b64}`;
+        if (this.rawUrl.startsWith('zadoox-asset://')) {
+          const key = this.rawUrl.slice('zadoox-asset://'.length);
+          const docId = key.split('__')[0] || '';
+          if (docId) {
+            const asset = await api.assets.upload({ documentId: docId, b64: res.b64, mimeType: res.mimeType });
+            nextSrc = asset.ref;
+          }
+        }
         const nextCaption = (captionInput.value || this.alt || 'Figure').trim() || 'Figure';
         const nextDesc = descInput.value || this.desc || '';
         const nextText = rebuildMarkdown(nextSrc, nextCaption, nextDesc);
@@ -640,6 +654,7 @@ export function embeddedImagePreviewExtension() {
         decos.push(
           Decoration.replace({
             widget: new FigureCardWidget(
+              rawUrl,
               src,
               alt || 'Figure',
               desc,

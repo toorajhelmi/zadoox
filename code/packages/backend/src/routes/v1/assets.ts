@@ -51,6 +51,28 @@ export async function assetRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', authenticateUser);
 
   const bucket = process.env.SUPABASE_ASSETS_BUCKET || 'assets';
+  let bucketEnsured = false;
+
+  const ensureBucket = async () => {
+    if (bucketEnsured) return;
+    const admin = supabaseAdmin();
+
+    // If the bucket doesn't exist, create it (private by default).
+    // This makes local/dev setups Just Work without manual bucket creation.
+    const { data: existing, error: getErr } = await admin.storage.getBucket(bucket);
+    if (!existing || getErr) {
+      const { error: createErr } = await admin.storage.createBucket(bucket, { public: false });
+      if (createErr) {
+        // If bucket already exists (race), ignore. Otherwise propagate.
+        const msg = (createErr as { message?: string }).message || '';
+        if (!/already exists/i.test(msg)) {
+          throw createErr;
+        }
+      }
+    }
+
+    bucketEnsured = true;
+  };
 
   fastify.post(
     '/assets/upload',
@@ -93,16 +115,54 @@ export async function assetRoutes(fastify: FastifyInstance) {
       const key = buildAssetKey(documentId, mimeType);
 
       const admin = supabaseAdmin();
-      const { error } = await admin.storage.from(bucket).upload(key, bytes, {
+      try {
+        await ensureBucket();
+      } catch (e) {
+        request.log.error({ error: e }, 'Failed to ensure assets bucket exists');
+        return reply.status(500).send({
+          success: false,
+          error: {
+            code: 'ASSET_BUCKET_INIT_FAILED',
+            message: `Failed to initialize storage bucket "${bucket}"`,
+            details: e instanceof Error ? e.message : String(e),
+          },
+        });
+      }
+
+      let { error } = await admin.storage.from(bucket).upload(key, bytes, {
         contentType: mimeType,
         upsert: false,
       });
+
+      // If bucket is missing (common dev setup), try to create and retry once.
+      if (error && /bucket not found/i.test(error.message || '')) {
+        bucketEnsured = false;
+        try {
+          await ensureBucket();
+          const retry = await admin.storage.from(bucket).upload(key, bytes, {
+            contentType: mimeType,
+            upsert: false,
+          });
+          error = retry.error;
+        } catch (e) {
+          request.log.error({ error: e }, 'Failed to create missing assets bucket');
+        }
+      }
 
       if (error) {
         request.log.error({ error }, 'Failed to upload asset');
         return reply.status(500).send({
           success: false,
-          error: { code: 'ASSET_UPLOAD_FAILED', message: 'Failed to upload asset' },
+          error: {
+            code: 'ASSET_UPLOAD_FAILED',
+            message: 'Failed to upload asset',
+            details: {
+              bucket,
+              message: error.message,
+              status: (error as { status?: number }).status,
+              statusCode: (error as { statusCode?: string }).statusCode,
+            },
+          },
         });
       }
 
@@ -146,6 +206,19 @@ export async function assetRoutes(fastify: FastifyInstance) {
       await documentService.getDocumentById(documentId);
 
       const admin = supabaseAdmin();
+      try {
+        await ensureBucket();
+      } catch (e) {
+        request.log.error({ error: e }, 'Failed to ensure assets bucket exists');
+        return reply.status(500).send({
+          success: false,
+          error: {
+            code: 'ASSET_BUCKET_INIT_FAILED',
+            message: `Failed to initialize storage bucket "${bucket}"`,
+            details: e instanceof Error ? e.message : String(e),
+          },
+        });
+      }
       const { data, error } = await admin.storage.from(bucket).download(key);
       if (error || !data) {
         return reply.status(404).send({

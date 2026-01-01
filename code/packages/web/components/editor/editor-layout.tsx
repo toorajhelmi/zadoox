@@ -41,13 +41,22 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('outline');
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    if (typeof window !== 'undefined') {
+  // IMPORTANT: don't read localStorage in the initial render, otherwise SSR markup can mismatch
+  // the first client render and cause hydration warnings.
+  const [sidebarWidth, setSidebarWidth] = useState(256); // Default 256px (w-64)
+  useEffect(() => {
+    try {
       const saved = localStorage.getItem('editor-sidebar-width');
-      return saved ? parseInt(saved, 10) : 256; // Default 256px (w-64)
+      if (saved) {
+        const next = parseInt(saved, 10);
+        if (Number.isFinite(next) && next > 0) {
+          setSidebarWidth(next);
+        }
+      }
+    } catch {
+      // ignore
     }
-    return 256;
-  });
+  }, []);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);

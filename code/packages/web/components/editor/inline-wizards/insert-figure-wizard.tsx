@@ -14,7 +14,7 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
   const [includeCaption, setIncludeCaption] = useState(false);
   const [caption, setCaption] = useState('');
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
-  const [imageAssetRef, setImageAssetRef] = useState<string | null>(null);
+  const [pendingImage, setPendingImage] = useState<{ b64: string; mimeType: string } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,12 +53,12 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
   const insertMarkdown = useMemo(() => {
     const altRaw = caption.trim() || 'Figure';
     const alt = altRaw.replace(/\n/g, ' ').trim();
-    const url = imageAssetRef || imageDataUrl || 'assets/figure.png';
+    const url = imageDataUrl || 'assets/figure.png';
     const label = `label="Figure {REF}.1"`;
     const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').trim();
     const desc = what.trim().length > 0 ? ` desc="${esc(what)}"` : '';
     return `\n\n![${alt}](${url}){#${effectiveFigureId} ${label}${desc}}\n\n`;
-  }, [caption, imageAssetRef, imageDataUrl, effectiveFigureId, what]);
+  }, [caption, imageDataUrl, effectiveFigureId, what]);
 
   const parseDataUrl = (dataUrl: string): { mimeType: string; b64: string } => {
     const m = /^data:([^;]+);base64,(.*)$/.exec(dataUrl);
@@ -74,7 +74,7 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
     try {
       // Reset previous outputs for a clean run
       setImageDataUrl(null);
-      setImageAssetRef(null);
+      setPendingImage(null);
       if (includeCaption) setCaption('');
 
       const res = await api.ai.images.generate({
@@ -83,14 +83,7 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
       });
       const dataUrl = `data:${res.mimeType};base64,${res.b64}`;
       setImageDataUrl(dataUrl);
-
-      // Persist the image as an asset (Option B) and embed a stable ref in markdown.
-      const asset = await api.assets.upload({
-        documentId: ctx.documentId,
-        b64: res.b64,
-        mimeType: res.mimeType,
-      });
-      setImageAssetRef(asset.ref);
+      setPendingImage({ b64: res.b64, mimeType: res.mimeType });
 
       if (includeCaption) {
         const captionPrompt =
@@ -122,7 +115,7 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
     setError(null);
     try {
       setImageDataUrl(null);
-      setImageAssetRef(null);
+      setPendingImage(null);
       const reader = new FileReader();
       const dataUrl: string = await new Promise((resolve, reject) => {
         reader.onerror = () => reject(new Error('Failed to read file'));
@@ -132,12 +125,7 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
       setImageDataUrl(dataUrl);
 
       const { mimeType, b64 } = parseDataUrl(dataUrl);
-      const asset = await api.assets.upload({
-        documentId: ctx.documentId,
-        b64,
-        mimeType,
-      });
-      setImageAssetRef(asset.ref);
+      setPendingImage({ b64, mimeType });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -155,10 +143,25 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
       if (!imageDataUrl) {
         throw new Error(mode === 'generate' ? 'Generate an image first' : 'Upload an image first');
       }
-      if (!imageAssetRef) {
-        throw new Error('Image is not saved yet. Please try again.');
+      if (!pendingImage) {
+        throw new Error('Image is not ready yet. Please try again.');
       }
-      const p = await onPreviewInsert({ content: insertMarkdown, placement: 'after' });
+
+      // Store ONLY after user confirms Insert (not during preview).
+      const asset = await api.assets.upload({
+        documentId: ctx.documentId,
+        b64: pendingImage.b64,
+        mimeType: pendingImage.mimeType,
+      });
+
+      const altRaw = caption.trim() || 'Figure';
+      const alt = altRaw.replace(/\n/g, ' ').trim();
+      const label = `label="Figure {REF}.1"`;
+      const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').trim();
+      const desc = what.trim().length > 0 ? ` desc="${esc(what)}"` : '';
+      const md = `\n\n![${alt}](${asset.ref}){#${effectiveFigureId} ${label}${desc}}\n\n`;
+
+      const p = await onPreviewInsert({ content: md, placement: 'after' });
       await onApply(p);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -178,6 +181,7 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
             onClick={() => {
               setMode('generate');
               setImageDataUrl(null);
+              setPendingImage(null);
               setError(null);
             }}
             className={`px-2 py-1 text-xs rounded border transition-colors ${
@@ -193,6 +197,7 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
             onClick={() => {
               setMode('upload');
               setImageDataUrl(null);
+              setPendingImage(null);
               setError(null);
             }}
             className={`px-2 py-1 text-xs rounded border transition-colors ${
