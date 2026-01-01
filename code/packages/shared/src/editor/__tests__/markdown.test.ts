@@ -91,6 +91,42 @@ describe('Markdown Utilities', () => {
       expect(html).toContain('<img src="image.png" alt="Alt" />');
     });
 
+    it('should render images with attribute blocks without showing attributes', () => {
+      const markdown = '![Caption](image.png){#fig:generated-123 label="Figure {REF}.1"}';
+      const html = renderMarkdownToHtml(markdown);
+
+      expect(html).toContain('<img src="image.png" alt="Caption"');
+      expect(html).toContain('class="figure-caption"');
+      expect(html).toContain('class="figure"');
+      expect(html).not.toContain('{#fig:');
+      expect(html).not.toContain('label="Figure');
+      expect(html).not.toContain('.1"}');
+    });
+
+    it('should apply alignment and width from image attribute blocks', () => {
+      const markdown =
+        '![Caption](image.png){#fig:generated-123 label="Figure {REF}.1" align="center" width="50%" placement="block"}';
+      const html = renderMarkdownToHtml(markdown);
+      expect(html).toContain('max-width:50%');
+      expect(html).toContain('margin-left:auto');
+      expect(html).toContain('text-align:center');
+    });
+
+    it('should float inline figures by default so text can wrap', () => {
+      const markdown =
+        '![Caption](image.png){#fig:generated-123 label="Figure {REF}.1" placement="inline"}\n\nNext paragraph text';
+      const html = renderMarkdownToHtml(markdown);
+      expect(html).toContain('float:left');
+    });
+
+    it('should not break asset URLs containing "__" (no accidental italics)', () => {
+      const markdown =
+        '![Cap](zadoox-asset://053a1656-58a5-46f1-8df6-146b6d4b40ae__af442c5b-85f0-4815-9f4e-11acbb1b71a0.png){#fig:generated-1 label="Figure {REF}.1"}';
+      const html = renderMarkdownToHtml(markdown);
+      expect(html).toContain('src="zadoox-asset://053a1656-58a5-46f1-8df6-146b6d4b40ae__af442c5b-85f0-4815-9f4e-11acbb1b71a0.png"');
+      expect(html).not.toContain('<em></em>');
+    });
+
     it('should handle plain text', () => {
       const markdown = 'Plain text';
       const html = renderMarkdownToHtml(markdown);

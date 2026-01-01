@@ -29,13 +29,6 @@ export async function authenticateUser(
   request: AuthenticatedRequest,
   reply: FastifyReply
 ): Promise<void> {
-  // Development bypass - skip auth if DISABLE_AUTH is set
-  if (process.env.DISABLE_AUTH === 'true') {
-    request.userId = '5e90d2f4-3244-4a81-b909-80f801231bdc';
-    request.supabase = getSupabaseAdmin() as unknown as typeof request.supabase;
-    return;
-  }
-
   try {
     const token = extractToken(request.headers.authorization);
 

@@ -13,6 +13,8 @@ export function InlineAIHint({ position, visible, onActivate }: InlineAIHintProp
   const [fadeIn, setFadeIn] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  const hintRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (visible) {
       // Small delay for fade-in effect
@@ -34,27 +36,6 @@ export function InlineAIHint({ position, visible, onActivate }: InlineAIHintProp
   }, [visible]);
 
   if (!visible) return null;
-
-  const hintRef = useRef<HTMLDivElement>(null);
-
-  // Hide hint when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (hintRef.current && !hintRef.current.contains(e.target as Node)) {
-        // Don't close on click outside - let it fade naturally or when cursor moves
-        // This prevents the hint from disappearing when user clicks in the editor
-      }
-    };
-    
-    if (visible) {
-      // We don't close on click outside for the hint, but we could add this if needed
-      // document.addEventListener('mousedown', handleClickOutside);
-    }
-    
-    return () => {
-      // document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [visible]);
 
   return (
     <div

@@ -285,6 +285,33 @@ export interface InlineEditResponse {
   model?: string;
 }
 
+// AI Image Generation types
+export interface AIImageGenerateRequest {
+  prompt: string;
+  size?: '256x256' | '512x512' | '1024x1024';
+  model?: AIModel;
+}
+
+export interface AIImageGenerateResponse {
+  b64: string;
+  mimeType: string;
+}
+
+// Asset API types
+export interface AssetUploadRequest {
+  documentId: string;
+  b64: string;
+  mimeType: string;
+}
+
+export interface AssetUploadResponse {
+  key: string;
+  /**
+   * Stable reference to embed in markdown, e.g. zadoox-asset://<key>
+   */
+  ref: string;
+}
+
 // Research API types
 export interface ResearchRequest {
   paragraphId: string;

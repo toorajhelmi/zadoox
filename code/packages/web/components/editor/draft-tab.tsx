@@ -162,7 +162,7 @@ export function DraftTab({
           {!transformedContent && !isTransforming && (
             <div className="flex-1 flex items-center justify-center p-4">
               <div className="text-xs text-gray-400 text-center">
-                Paste your draft text above and click "Transform" to refine it into polished content.
+                Paste your draft text above and click &quot;Transform&quot; to refine it into polished content.
               </div>
             </div>
           )}

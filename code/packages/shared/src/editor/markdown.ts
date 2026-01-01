@@ -45,6 +45,12 @@ export function renderMarkdownToHtml(content: string): string {
   
   let html = content;
 
+  const parseAttr = (attrs: string, key: string): string | null => {
+    const re = new RegExp(`${key}="([^"]*)"`);
+    const m = re.exec(attrs);
+    return m ? m[1] : null;
+  };
+
   // Headers
   html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
   html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
@@ -56,7 +62,9 @@ export function renderMarkdownToHtml(content: string): string {
 
   // Italic
   html = html.replace(/\*(.*?)\*/gim, '<em>$1</em>');
-  html = html.replace(/_(.*?)_/gim, '<em>$1</em>');
+  // NOTE: Avoid matching underscores inside "words" (e.g. URLs, IDs) and avoid empty "__" matches.
+  // This keeps asset refs like `zadoox-asset://...__...` intact.
+  html = html.replace(/(^|[^\w])_([^_\n]+?)_([^\w]|$)/gim, '$1<em>$2</em>$3');
 
   // Code blocks
   html = html.replace(/```[\s\S]*?```/gim, (match) => {
@@ -68,6 +76,81 @@ export function renderMarkdownToHtml(content: string): string {
   html = html.replace(/`([^`]+)`/gim, '<code>$1</code>');
 
   // Images (must come before links to avoid matching images as links)
+  //
+  // Also support Zadoox/Pandoc-style attribute blocks after images:
+  // ![Alt](url){#fig:xyz label="Figure {REF}.1"}
+  //
+  // Our preview renderer doesn't interpret those attributes yet, but it must not show them as text.
+  // Additionally, for figures with attribute blocks, we render the alt text as a visible caption.
+  //
+  // NOTE: the attribute block may contain placeholders like `{REF}`/`{CH}` which include `}`.
+  // So we explicitly allow those placeholder tokens inside the `{...}` to avoid leaving tail text behind.
+  html = html.replace(
+    /!\[([^\]]*)\]\(([^)]+)\)\s*(\{(?:\{REF\}|\{CH\}|[^}])*\})/gim,
+    (_m, alt, url, attrBlock) => {
+      const safeAlt = String(alt || '');
+      const safeUrl = String(url || '');
+
+      // Parse rendering hints from attribute block (if present)
+      const rawAttrs = String(attrBlock || '').trim();
+      const attrs = rawAttrs.startsWith('{') && rawAttrs.endsWith('}') ? rawAttrs.slice(1, -1) : rawAttrs;
+      const figIdMatch = /#(fig:[^\s}]+)/i.exec(attrs);
+      const figureDomId = figIdMatch?.[1] ? `figure-${sanitizeDomId(figIdMatch[1])}` : null;
+      const align = parseAttr(attrs, 'align'); // left|center|right
+      const width = parseAttr(attrs, 'width'); // e.g. 50% or 320px
+      const placement = parseAttr(attrs, 'placement'); // inline|block
+
+      const imgStyleParts: string[] = [];
+      // Block vs inline sizing:
+      // - inline: wrapper width drives image width (fill wrapper), caption matches wrapper width
+      // - block: wrapper is full-width, width constrains image inside it (max-width), caption spans wrapper
+      imgStyleParts.push('max-width:100%');
+      if (placement === 'inline' && width) {
+        imgStyleParts.push('width:100%');
+      } else if (placement !== 'inline' && width) {
+        imgStyleParts.push(`max-width:${width}`);
+      }
+      imgStyleParts.push('display:block');
+      if (align === 'center') imgStyleParts.push('margin-left:auto', 'margin-right:auto');
+      if (align === 'right') imgStyleParts.push('margin-left:auto');
+      const imgStyle = imgStyleParts.length > 0 ? ` style="${imgStyleParts.join(';')}"` : '';
+
+      const captionStyleParts: string[] = [];
+      captionStyleParts.push('display:block');
+      captionStyleParts.push('width:100%');
+      if (align === 'center') captionStyleParts.push('text-align:center');
+      if (align === 'right') captionStyleParts.push('text-align:right');
+      const captionStyle = captionStyleParts.length > 0 ? ` style="${captionStyleParts.join(';')}"` : '';
+
+      // For inline placement, float so surrounding text can wrap.
+      // Default to float-left when placement="inline" (even if no align was specified),
+      // and float-right when align="right".
+      const wrapperStyleParts: string[] = [];
+      if (placement === 'inline') {
+        // Ensure wrapper hugs the image/caption block.
+        wrapperStyleParts.push('display:inline-block');
+        if (width) wrapperStyleParts.push(`width:${width}`);
+        const floatSide = align === 'right' ? 'right' : 'left';
+        wrapperStyleParts.push(`float:${floatSide}`);
+        wrapperStyleParts.push(floatSide === 'left' ? 'margin:0 12px 12px 0' : 'margin:0 0 12px 12px');
+      } else {
+        wrapperStyleParts.push('display:block');
+        wrapperStyleParts.push('width:100%');
+      }
+      const wrapperStyle =
+        wrapperStyleParts.length > 0 ? ` style="${wrapperStyleParts.join(';')}"` : '';
+
+      const caption =
+        safeAlt.trim().length > 0
+          ? `<em class="figure-caption"${captionStyle}>${safeAlt}</em>`
+          : '';
+
+      const idAttr = figureDomId ? ` id="${figureDomId}"` : '';
+      return `<span class="figure"${idAttr}${wrapperStyle}><img src="${safeUrl}" alt="${safeAlt}"${imgStyle} />${caption}</span>`;
+    }
+  );
+
+  // Plain images (no attribute blocks)
   html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/gim, '<img src="$2" alt="$1" />');
 
   // Links
@@ -121,6 +204,69 @@ export function extractHeadings(content: string): Heading[] {
   }
   
   return headings;
+}
+
+export type OutlineItem =
+  | { kind: 'heading'; level: number; text: string; id: string }
+  | { kind: 'figure'; text: string; id: string; figureNumber: number; caption: string | null };
+
+function slugifyId(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function sanitizeDomId(raw: string): string {
+  // HTML ids can include more chars, but we keep this conservative for querySelector/getElementById.
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+/**
+ * Extract an outline consisting of headings + figures.
+ * A "figure" is any markdown image with an attribute block containing a `#fig:` identifier.
+ */
+export function extractOutlineItems(content: string): OutlineItem[] {
+  const items: OutlineItem[] = [];
+  const lines = content.split('\n');
+
+  let figureCount = 0;
+
+  for (const line of lines) {
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const text = headingMatch[2].trim();
+      const id = slugifyId(text);
+      items.push({ kind: 'heading', level, text, id });
+      continue;
+    }
+
+    // Figure: ![caption](url){#fig:xyz ...}
+    const figMatch = line.match(/!\[([^\]]*)\]\([^)]+\)\s*(\{(?:\{REF\}|\{CH\}|[^}])*\})/i);
+    if (figMatch) {
+      const captionRaw = (figMatch[1] || '').trim();
+      const attrBlock = String(figMatch[2] || '').trim();
+      const attrs = attrBlock.startsWith('{') && attrBlock.endsWith('}') ? attrBlock.slice(1, -1) : attrBlock;
+      const idMatch = /#(fig:[^\s}]+)/i.exec(attrs);
+      if (idMatch) {
+        figureCount += 1;
+        const rawId = idMatch[1];
+        const id = `figure-${sanitizeDomId(rawId)}`;
+        const caption = captionRaw.length > 0 ? captionRaw : null;
+        const text = caption ? `Figure — ${caption}` : `Figure ${figureCount}`;
+        items.push({ kind: 'figure', id, text, figureNumber: figureCount, caption });
+      }
+    }
+  }
+
+  return items;
 }
 
 /**

@@ -224,7 +224,7 @@ export function useUndoRedo(initialContent: string, options?: UseUndoRedoOptions
         return newHistory;
       });
     },
-    [historyIndex]
+    []
   );
 
 

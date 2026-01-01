@@ -1,9 +1,10 @@
 'use client';
 
-import { ReactNode, useState } from 'react';
+import { ReactNode, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { DashboardIcon, ProjectsIcon, SettingsIcon, MenuIcon } from './icons';
+import { createClient } from '@/lib/supabase/client';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -12,6 +13,28 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const pathname = usePathname();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const supabase = useMemo(() => createClient(), []);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    async function load() {
+      try {
+        const { data } = await supabase.auth.getUser();
+        if (!mounted) return;
+        setUserEmail(data.user?.email || null);
+      } catch {
+        if (!mounted) return;
+        setUserEmail(null);
+      }
+    }
+    void load();
+    const { data: sub } = supabase.auth.onAuthStateChange(() => void load());
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
+  }, [supabase]);
 
   const navItems = [
     { href: '/dashboard', label: 'Dashboard', icon: DashboardIcon },
@@ -35,6 +58,15 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           <span className="text-[10px] text-[#858585] hidden sm:inline">AI-powered documentation</span>
         </div>
         <div className="flex items-center gap-2">
+          {userEmail && (
+            <Link
+              href="/dashboard/settings"
+              className="text-[10px] text-[#cccccc] hover:text-white transition-colors max-w-[220px] truncate"
+              title={userEmail}
+            >
+              {userEmail}
+            </Link>
+          )}
           <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#007acc]/20 border border-[#007acc]/30 text-[#007acc] text-[10px] rounded">
             <span className="w-1.5 h-1.5 bg-[#007acc] rounded-full animate-pulse" />
             <span>AI</span>

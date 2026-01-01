@@ -16,6 +16,7 @@ export type InlineWizardScopeStrategy =
 
 export interface InlineWizardContext {
   option: QuickOption;
+  documentId: string;
   content: string;
   cursorPosition: { line: number; column: number };
   scope: {
@@ -29,6 +30,7 @@ export interface InlineWizardProps {
   onCancel: () => void;
   onCloseAll: () => void;
   onPreview: (input: { prompt: string; mode: 'update' | 'insert'; scopeStrategy?: InlineWizardScopeStrategy }) => Promise<InlineWizardPreview>;
+  onPreviewInsert?: (input: { content: string; placement?: 'before' | 'after' }) => Promise<InlineWizardPreview>;
   onApply: (preview: InlineWizardPreview) => Promise<void>;
 }
 

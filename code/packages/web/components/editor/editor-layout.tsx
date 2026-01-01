@@ -41,13 +41,22 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('outline');
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    if (typeof window !== 'undefined') {
+  // IMPORTANT: don't read localStorage in the initial render, otherwise SSR markup can mismatch
+  // the first client render and cause hydration warnings.
+  const [sidebarWidth, setSidebarWidth] = useState(256); // Default 256px (w-64)
+  useEffect(() => {
+    try {
       const saved = localStorage.getItem('editor-sidebar-width');
-      return saved ? parseInt(saved, 10) : 256; // Default 256px (w-64)
+      if (saved) {
+        const next = parseInt(saved, 10);
+        if (Number.isFinite(next) && next > 0) {
+          setSidebarWidth(next);
+        }
+      }
+    } catch {
+      // ignore
     }
-    return 256;
-  });
+  }, []);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
@@ -545,7 +554,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       // In production, log but don't break the component (background operation)
       console.error('Failed to load version metadata:', error);
     });
-  }, [actualDocumentId, lastSaved?.getTime()]); // Reload when lastSaved changes (new version created)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actualDocumentId, latestVersion, selectedVersion, lastSaved?.getTime()]); // Reload when lastSaved changes (new version created)
 
   const handleContentChange = useCallback(
     (value: string) => {
@@ -1025,6 +1035,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               {inlineAIChatOpen && cursorScreenPosition && cursorPosition && (
                 <InlineAIChat
                   position={cursorScreenPosition}
+                  documentId={actualDocumentId}
                   content={content}
                   cursorPosition={cursorPosition}
                   selection={currentSelectionRef.current}
@@ -1149,6 +1160,27 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                     const previewText = operations.map((op) => op.content).join('\n\n').trim();
                     const newContent = applyInlineOperations(content, blocks, operations);
                     return { operations, previewText, newContent };
+                  }}
+                  onPreviewInsertAtCursor={async ({ content: insertContent, placement = 'after' }) => {
+                    if (!cursorPosition) {
+                      return { operations: [], previewText: '', newContent: content };
+                    }
+
+                    const cursorLine = cursorPosition.line - 1; // Convert to 0-based
+                    const { blocks, cursorBlockId } = buildInlineBlocksAroundCursor(content, cursorLine);
+                    const anchorBlockId = cursorBlockId;
+                    if (!anchorBlockId) {
+                      return { operations: [], previewText: '', newContent: content };
+                    }
+
+                    const operations: InlineEditOperation[] = [
+                      placement === 'before'
+                        ? { type: 'insert_before', anchorBlockId, content: insertContent }
+                        : { type: 'insert_after', anchorBlockId, content: insertContent },
+                    ];
+
+                    const newContent = applyInlineOperations(content, blocks, operations);
+                    return { operations, previewText: insertContent, newContent };
                   }}
                   onApplyInlinePreview={async (preview) => {
                     // Apply the already-previewed content without another AI call

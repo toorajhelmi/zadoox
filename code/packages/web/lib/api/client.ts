@@ -29,8 +29,12 @@ import type {
   InlineGenerateResponse,
   InlineEditRequest,
   InlineEditResponse,
+  AIImageGenerateRequest,
+  AIImageGenerateResponse,
   ResearchRequest,
   ResearchResponse,
+  AssetUploadRequest,
+  AssetUploadResponse,
 } from '@zadoox/shared';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
@@ -305,6 +309,19 @@ export const api = {
       },
     },
 
+    images: {
+      generate: async (request: AIImageGenerateRequest): Promise<AIImageGenerateResponse> => {
+        const response = await fetchApi<AIImageGenerateResponse>('/ai/images/generate', {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+        if (!response.data) {
+          throw new ApiError('Failed to generate image', 'IMAGE_GENERATE_FAILED', 500);
+        }
+        return response.data;
+      },
+    },
+
     research: {
       chat: async (request: ResearchRequest): Promise<ResearchResponse> => {
         const response = await fetchApi<ResearchResponse>('/ai/research/chat', {
@@ -316,6 +333,19 @@ export const api = {
         }
         return response.data;
       },
+    },
+  },
+
+  assets: {
+    upload: async (request: AssetUploadRequest): Promise<AssetUploadResponse> => {
+      const response = await fetchApi<AssetUploadResponse>('/assets/upload', {
+        method: 'POST',
+        body: JSON.stringify(request),
+      });
+      if (!response.data) {
+        throw new ApiError('Failed to upload asset', 'ASSET_UPLOAD_FAILED', 500);
+      }
+      return response.data;
     },
   },
 

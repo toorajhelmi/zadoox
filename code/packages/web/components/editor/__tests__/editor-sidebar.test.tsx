@@ -12,7 +12,7 @@ import * as shared from '@zadoox/shared';
 
 // Mock the shared package
 vi.mock('@zadoox/shared', () => ({
-  extractHeadings: vi.fn(),
+  extractOutlineItems: vi.fn(),
 }));
 
 describe('EditorSidebar', () => {
@@ -20,7 +20,7 @@ describe('EditorSidebar', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(shared.extractHeadings).mockReturnValueOnce([]);
+    vi.mocked(shared.extractOutlineItems).mockReturnValueOnce([]);
   });
 
   it('should not render sidebar content when sidebar is closed', () => {

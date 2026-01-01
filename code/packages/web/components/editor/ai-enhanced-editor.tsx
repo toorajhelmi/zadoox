@@ -13,6 +13,7 @@ import { api } from '@/lib/api/client';
 import type { AIActionType, AIAnalysisResponse, ParagraphMode, ChangeBlock } from '@zadoox/shared';
 import { EditorView } from '@codemirror/view';
 import { changeHighlightExtension, setChanges } from './change-highlight-extension';
+import { embeddedImagePreviewExtension } from './embedded-image-preview-extension';
 
 interface AIEnhancedEditorProps {
   value: string;
@@ -57,7 +58,6 @@ export function AIEnhancedEditor({
   onAcceptChange,
   onRejectChange,
 }: AIEnhancedEditorProps) {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_hoveredParagraph, setHoveredParagraph] = useState<string | null>(null);
   const [processingParagraph, setProcessingParagraph] = useState<{ id: string; action: AIActionType } | null>(null);
   const [previousAnalysis, setPreviousAnalysis] = useState<Map<string, AIAnalysisResponse>>(new Map());
@@ -115,6 +115,10 @@ export function AIEnhancedEditor({
       }),
     ];
   }, [openParagraphId, onOpenPanel, readOnly]);
+
+  const embeddedImagePreviewExt = useMemo(() => {
+    return embeddedImagePreviewExtension();
+  }, []);
 
   // Dispatch changes to CodeMirror when they update
   useEffect(() => {
@@ -438,7 +442,7 @@ export function AIEnhancedEditor({
         setProcessingParagraph(null);
       }
     },
-    [paragraphs, value, onChange, model, onSaveWithType, getAnalysis, _hoveredParagraph, analyzeParagraph, previousAnalysis]
+    [paragraphs, value, onChange, model, onSaveWithType, getAnalysis, analyzeParagraph]
   );
 
   // Create toolbar extension - create once and persist
@@ -537,7 +541,7 @@ export function AIEnhancedEditor({
         }, 300);
       }
     }
-  }, [getAnalysis, handleAIAction, processingParagraph, previousAnalysis, safeDispatchToolbar]);
+  }, [processingParagraph, safeDispatchToolbar, thinkPanelOpen]);
 
   // Keep toolbar visible and update it when processing state changes
   // This ensures immediate update when processing starts and stays open throughout
@@ -611,9 +615,10 @@ export function AIEnhancedEditor({
 
   // Cleanup timeouts on unmount
   useEffect(() => {
+    const timeoutsRef = clearDeltaTimeoutRef;
     return () => {
-      clearDeltaTimeoutRef.current.forEach(timeout => clearTimeout(timeout));
-      clearDeltaTimeoutRef.current.clear();
+      timeoutsRef.current.forEach(timeout => clearTimeout(timeout));
+      timeoutsRef.current.clear();
     };
   }, []);
 
@@ -649,6 +654,7 @@ export function AIEnhancedEditor({
             ...disableSelectionExt,
             ...(changeHighlightExt ? [changeHighlightExt] : []),
             ...paragraphBlockControlsExt,
+            ...embeddedImagePreviewExt,
           ]}
           onEditorViewReady={(view) => {
             editorViewRef.current = view;

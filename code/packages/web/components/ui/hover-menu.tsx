@@ -260,6 +260,7 @@ export function HoverMenu({
         clearTimeout(gapHideTimeout);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, hideDelay, hitAreaPadding, setVisible]);
 
   // Cleanup timeouts on unmount

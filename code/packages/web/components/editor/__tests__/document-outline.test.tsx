@@ -12,7 +12,7 @@ import * as shared from '@zadoox/shared';
 
 // Mock the shared package
 vi.mock('@zadoox/shared', () => ({
-  extractHeadings: vi.fn(),
+  extractOutlineItems: vi.fn(),
 }));
 
 describe('DocumentOutline', () => {
@@ -21,7 +21,7 @@ describe('DocumentOutline', () => {
   });
 
   it('should render "No outline available" when there are no headings', () => {
-    vi.mocked(shared.extractHeadings).mockReturnValueOnce([]);
+    vi.mocked(shared.extractOutlineItems).mockReturnValueOnce([]);
 
     render(<DocumentOutline content="# Test" />);
 
@@ -29,16 +29,31 @@ describe('DocumentOutline', () => {
   });
 
   it('should render headings when content has headings', () => {
-    const mockHeadings = [
-      { level: 1, text: 'Introduction', id: 'introduction' },
-      { level: 2, text: 'Getting Started', id: 'getting-started' },
+    const mockItems = [
+      { kind: 'heading', level: 1, text: 'Introduction', id: 'introduction' },
+      { kind: 'heading', level: 2, text: 'Getting Started', id: 'getting-started' },
     ];
 
-    vi.mocked(shared.extractHeadings).mockReturnValueOnce(mockHeadings);
+    vi.mocked(shared.extractOutlineItems).mockReturnValueOnce(mockItems as any);
 
     render(<DocumentOutline content="# Introduction\n## Getting Started" />);
 
     expect(screen.getByText('Introduction')).toBeInTheDocument();
     expect(screen.getByText('Getting Started')).toBeInTheDocument();
+  });
+
+  it('should render figures in the outline', () => {
+    const mockItems = [
+      { kind: 'heading', level: 1, text: 'Intro', id: 'intro' },
+      { kind: 'figure', id: 'figure-fig-generated-1', text: 'Figure — A caption', figureNumber: 1, caption: 'A caption' },
+      { kind: 'figure', id: 'figure-fig-generated-2', text: 'Figure 2', figureNumber: 2, caption: null },
+    ];
+
+    vi.mocked(shared.extractOutlineItems).mockReturnValueOnce(mockItems as any);
+
+    render(<DocumentOutline content="# Intro\n![A caption](x){#fig:generated-1}\n![](x){#fig:generated-2}" />);
+
+    expect(screen.getByText('Figure — A caption')).toBeInTheDocument();
+    expect(screen.getByText('Figure 2')).toBeInTheDocument();
   });
 });

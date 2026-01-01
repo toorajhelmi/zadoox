@@ -18,6 +18,7 @@ import { TodoWizard } from './inline-wizards/todo-wizard';
 
 interface InlineAIChatProps {
   position: { top: number; left: number };
+  documentId: string;
   content: string;
   cursorPosition: { line: number; column: number };
   selection?: { from: number; to: number; text: string } | null;
@@ -32,11 +33,13 @@ interface InlineAIChatProps {
     mode: 'update' | 'insert';
     scopeStrategy?: InlineWizardScopeStrategy;
   }) => Promise<InlineWizardPreview>;
+  onPreviewInsertAtCursor: (input: { content: string; placement?: 'before' | 'after' }) => Promise<InlineWizardPreview>;
   onApplyInlinePreview: (preview: InlineWizardPreview) => Promise<void>;
 }
 
 export function InlineAIChat({
   position,
+  documentId,
   content,
   cursorPosition,
   selection,
@@ -47,6 +50,7 @@ export function InlineAIChat({
   onSend,
   onQuickOption,
   onPreviewInlineEdit,
+  onPreviewInsertAtCursor,
   onApplyInlinePreview,
 }: InlineAIChatProps) {
   const [inputValue, setInputValue] = useState('');
@@ -76,64 +80,47 @@ export function InlineAIChat({
   const derivedScopeKind: NonNullable<InlineAIChatProps['scopeKind']> =
     scopeKind || ((selection?.text || '').trim() ? 'selection' : 'cursor_paragraph');
 
-  // Adjust position to stay within viewport bounds
+  // Adjust position to stay within viewport bounds (re-runs on size changes too)
   useEffect(() => {
-    const adjustPosition = () => {
-      const minWidth = 400;
-      const maxWidth = 600;
-      const padding = 16; // Padding from viewport edges
-      
-      let adjustedLeft = position.left;
-      let adjustedTop = position.top;
-      
-      // Check right edge overflow
-      const rightEdge = position.left + maxWidth;
+    const padding = 16;
+
+    const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+
+    const recalc = () => {
+      const el = containerRef.current;
+      if (!el) return;
+
+      const rect = el.getBoundingClientRect();
       const viewportWidth = window.innerWidth;
-      if (rightEdge > viewportWidth - padding) {
-        // Shift left to keep within viewport
-        adjustedLeft = viewportWidth - maxWidth - padding;
-        // But don't go too far left (keep at least some padding)
-        adjustedLeft = Math.max(padding, adjustedLeft);
-      }
-      
-      // Check left edge overflow
-      if (adjustedLeft < padding) {
-        adjustedLeft = padding;
-      }
-      
-      setAdjustedPosition({ top: adjustedTop, left: adjustedLeft });
-      
-      // Adjust top after container renders to check bottom overflow with actual height
-      requestAnimationFrame(() => {
-        if (containerRef.current) {
-          const rect = containerRef.current.getBoundingClientRect();
-          const viewportHeight = window.innerHeight;
-          
-          let finalTop = adjustedTop;
-          
-          // Check bottom edge overflow with actual height
-          const bottomEdge = finalTop + rect.height;
-          if (bottomEdge > viewportHeight - padding) {
-            finalTop = viewportHeight - rect.height - padding;
-            finalTop = Math.max(padding, finalTop);
-          }
-          
-          // Check top edge overflow
-          if (finalTop < padding) {
-            finalTop = padding;
-          }
-          
-          if (Math.abs(finalTop - adjustedTop) > 1) {
-            setAdjustedPosition({ top: finalTop, left: adjustedLeft });
-          }
-        }
+      const viewportHeight = window.innerHeight;
+
+      const maxLeft = Math.max(padding, viewportWidth - rect.width - padding);
+      const maxTop = Math.max(padding, viewportHeight - rect.height - padding);
+
+      const newLeft = clamp(position.left, padding, maxLeft);
+      const newTop = clamp(position.top, padding, maxTop);
+
+      setAdjustedPosition((prev) => {
+        if (Math.abs(prev.left - newLeft) < 1 && Math.abs(prev.top - newTop) < 1) return prev;
+        return { left: newLeft, top: newTop };
       });
     };
-    
-    adjustPosition();
-    window.addEventListener('resize', adjustPosition);
-    return () => window.removeEventListener('resize', adjustPosition);
-  }, [position]);
+
+    // Initial (after mount/layout)
+    requestAnimationFrame(recalc);
+
+    // Recalc on viewport resize
+    window.addEventListener('resize', recalc);
+
+    // Recalc when content height/width changes (e.g. opening "More…" / groups)
+    const ro = new ResizeObserver(() => requestAnimationFrame(recalc));
+    if (containerRef.current) ro.observe(containerRef.current);
+
+    return () => {
+      window.removeEventListener('resize', recalc);
+      ro.disconnect();
+    };
+  }, [position, showAllOptions, optionsLevel, selectedGroup, activeWizard]);
   
   // Focus input when opened
   useEffect(() => {
@@ -225,10 +212,17 @@ export function InlineAIChat({
       {WizardComponent && activeWizard ? (
         <div className="border-b border-gray-800">
           <WizardComponent
-            ctx={{ option: activeWizard.option, content, cursorPosition, scope: { kind: derivedScopeKind, text: derivedScopeText } }}
+            ctx={{
+              option: activeWizard.option,
+              documentId,
+              content,
+              cursorPosition,
+              scope: { kind: derivedScopeKind, text: derivedScopeText },
+            }}
             onCancel={() => setActiveWizard(null)}
             onCloseAll={onClose}
             onPreview={onPreviewInlineEdit}
+            onPreviewInsert={onPreviewInsertAtCursor}
             onApply={async (preview) => {
               await onApplyInlinePreview(preview);
               onClose();
