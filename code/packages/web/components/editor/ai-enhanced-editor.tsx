@@ -541,7 +541,7 @@ export function AIEnhancedEditor({
         }, 300);
       }
     }
-  }, [getAnalysis, handleAIAction, processingParagraph, previousAnalysis, safeDispatchToolbar, thinkPanelOpen]);
+  }, [processingParagraph, safeDispatchToolbar, thinkPanelOpen]);
 
   // Keep toolbar visible and update it when processing state changes
   // This ensures immediate update when processing starts and stays open throughout
