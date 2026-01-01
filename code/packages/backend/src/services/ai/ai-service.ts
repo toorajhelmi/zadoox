@@ -189,6 +189,45 @@ export class AIService {
   }
 
   /**
+   * Inline generation from a raw prompt + context.
+   */
+  async generateFromPrompt(
+    prompt: string,
+    context: {
+      blockContent: string;
+      sectionHeading?: string;
+      sectionContent?: string;
+    },
+    mode: 'blend' | 'replace' | 'extend' = 'replace',
+    model?: AIModel
+  ): Promise<string> {
+    const provider = this.getProvider(model);
+    return provider.generateFromPrompt(prompt, context, mode);
+  }
+
+  /**
+   * Generate an inline edit plan as JSON string containing operations.
+   */
+  async generateInlineEditPlan(
+    prompt: string,
+    params: {
+      mode: 'update' | 'insert';
+      blocks: Array<{
+        id: string;
+        text: string;
+        kind?: 'heading' | 'paragraph' | 'list' | 'code' | 'blank' | 'other';
+        start: number;
+        end: number;
+      }>;
+      cursorBlockId?: string;
+    },
+    model?: AIModel
+  ): Promise<string> {
+    const provider = this.getProvider(model);
+    return provider.generateInlineEditPlan(prompt, params);
+  }
+
+  /**
    * Get available models
    */
   getAvailableModels(): AIModelInfo[] {

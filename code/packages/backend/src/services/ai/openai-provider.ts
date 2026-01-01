@@ -467,6 +467,101 @@ INSTRUCTIONS:
     return response.choices[0]?.message?.content?.trim() || '';
   }
 
+  async generateFromPrompt(
+    prompt: string,
+    context: {
+      blockContent: string;
+      sectionHeading?: string;
+      sectionContent?: string;
+    },
+    mode: 'blend' | 'replace' | 'extend'
+  ): Promise<string> {
+    const systemPrompt = `You are an expert writing assistant.
+
+Return ONLY the generated content. Do not include explanations.
+
+Preserve Markdown formatting and, when relevant, Zadoox extended Markdown patterns (citations like [@smith2024], cross-refs like @fig:diagram, labels like {#fig:... label="Figure {REF}.1"}).`;
+
+    const modeInstruction =
+      mode === 'blend'
+        ? 'Blend your new content with the existing block content and return the COMPLETE blended result.'
+        : mode === 'extend'
+          ? 'Extend the existing block content by appending new relevant content. Return ONLY the newly added content (not the original).'
+          : 'Replace the existing block content entirely. Return ONLY the new content.';
+
+    const userPrompt = `REQUEST:
+${prompt}
+
+INSTRUCTIONS:
+${modeInstruction}
+
+CURRENT BLOCK:
+${context.blockContent}
+
+${context.sectionHeading ? `SECTION HEADING: ${context.sectionHeading}\n` : ''}${context.sectionContent ? `SECTION CONTEXT:\n${context.sectionContent}\n` : ''}`;
+
+    const response = await this.client.chat.completions.create({
+      model: this.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.7,
+    });
+
+    return response.choices[0]?.message?.content?.trim() || '';
+  }
+
+  async generateInlineEditPlan(
+    prompt: string,
+    params: {
+      mode: 'update' | 'insert';
+      blocks: Array<{
+        id: string;
+        text: string;
+        kind?: 'heading' | 'paragraph' | 'list' | 'code' | 'blank' | 'other';
+        start: number;
+        end: number;
+      }>;
+      cursorBlockId?: string;
+    }
+  ): Promise<string> {
+    const systemPrompt = `You are an inline editor for a Markdown document.
+
+Return a JSON object with ONLY an "operations" array (no other keys).
+
+Each operation MUST be one of:
+- {"type":"replace_range","startBlockId":"...","endBlockId":"...","content":"..."}
+- {"type":"insert_before","anchorBlockId":"...","content":"..."}
+- {"type":"insert_after","anchorBlockId":"...","content":"..."}
+
+Rules:
+- Use only block IDs provided.
+- Keep edits minimal and scoped to the relevant blocks.
+- Content must be valid Markdown (and may include Zadoox extended Markdown).`;
+
+    const userPrompt = `USER REQUEST:
+${prompt}
+
+MODE: ${params.mode}
+CURSOR_BLOCK_ID: ${params.cursorBlockId || ''}
+
+BLOCKS (JSON):
+${JSON.stringify(params.blocks, null, 2)}`;
+
+    const response = await this.client.chat.completions.create({
+      model: this.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.2,
+    });
+
+    return response.choices[0]?.message?.content?.trim() || '{"operations":[]}';
+  }
+
   getModelInfo(): AIModelInfo {
     return {
       id: this.model,
