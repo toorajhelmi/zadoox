@@ -10,16 +10,14 @@ export async function GET(
   const {
     data: { session },
   } = await supabase.auth.getSession();
-
-  if (!session?.access_token) {
+  const accessToken = session?.access_token || null;
+  if (!accessToken) {
     return new Response('Unauthorized', { status: 401 });
   }
 
   const key = params.key;
   const upstream = await fetch(`${BACKEND_API_BASE}/assets/${encodeURIComponent(key)}`, {
-    headers: {
-      Authorization: `Bearer ${session.access_token}`,
-    },
+    headers: { Authorization: `Bearer ${accessToken}` },
   });
 
   if (!upstream.ok || !upstream.body) {
