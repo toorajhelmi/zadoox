@@ -11,7 +11,8 @@ module.exports = {
     sourceType: 'module',
   },
   extends: [
-    'next',
+    'plugin:@next/next/recommended-legacy',
+    'plugin:@next/next/core-web-vitals-legacy',
   ],
 };
 
