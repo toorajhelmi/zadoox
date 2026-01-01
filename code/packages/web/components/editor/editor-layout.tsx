@@ -545,7 +545,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       // In production, log but don't break the component (background operation)
       console.error('Failed to load version metadata:', error);
     });
-  }, [actualDocumentId, lastSaved?.getTime()]); // Reload when lastSaved changes (new version created)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actualDocumentId, latestVersion, selectedVersion, lastSaved?.getTime()]); // Reload when lastSaved changes (new version created)
 
   const handleContentChange = useCallback(
     (value: string) => {

@@ -442,7 +442,7 @@ export function AIEnhancedEditor({
         setProcessingParagraph(null);
       }
     },
-    [paragraphs, value, onChange, model, onSaveWithType, getAnalysis, _hoveredParagraph, analyzeParagraph, previousAnalysis]
+    [paragraphs, value, onChange, model, onSaveWithType, getAnalysis, analyzeParagraph]
   );
 
   // Create toolbar extension - create once and persist
@@ -541,7 +541,7 @@ export function AIEnhancedEditor({
         }, 300);
       }
     }
-  }, [getAnalysis, handleAIAction, processingParagraph, previousAnalysis, safeDispatchToolbar]);
+  }, [getAnalysis, handleAIAction, processingParagraph, previousAnalysis, safeDispatchToolbar, thinkPanelOpen]);
 
   // Keep toolbar visible and update it when processing state changes
   // This ensures immediate update when processing starts and stays open throughout
@@ -615,9 +615,10 @@ export function AIEnhancedEditor({
 
   // Cleanup timeouts on unmount
   useEffect(() => {
+    const timeoutsRef = clearDeltaTimeoutRef;
     return () => {
-      clearDeltaTimeoutRef.current.forEach(timeout => clearTimeout(timeout));
-      clearDeltaTimeoutRef.current.clear();
+      timeoutsRef.current.forEach(timeout => clearTimeout(timeout));
+      timeoutsRef.current.clear();
     };
   }, []);
 

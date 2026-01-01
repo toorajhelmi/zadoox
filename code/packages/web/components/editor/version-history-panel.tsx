@@ -22,6 +22,7 @@ export function VersionHistoryPanel({ documentId, onRollback, onVersionSelect, r
 
   useEffect(() => {
     loadVersions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentId, refreshTrigger?.getTime()]);
 
   const previousRefreshTriggerRef = useRef<number | null>(null);
