@@ -112,10 +112,15 @@ function renderNode(node: IrNode): string {
       const src = escapeLatexText(node.src);
       const caption = escapeLatexText(node.caption ?? '');
       const label = node.label ? escapeLatexText(node.label) : '';
+      const attrs = parseFigureAttrsFromXmd(node.source?.raw);
 
       const lines: string[] = [];
       lines.push('\\begin{figure}');
       lines.push(`% zadoox-src: ${src}`);
+      if (attrs.align) lines.push(`% zadoox-align: ${escapeLatexComment(attrs.align)}`);
+      if (attrs.placement) lines.push(`% zadoox-placement: ${escapeLatexComment(attrs.placement)}`);
+      if (attrs.width) lines.push(`% zadoox-width: ${escapeLatexComment(attrs.width)}`);
+      if (attrs.desc) lines.push(`% zadoox-desc: ${escapeLatexComment(attrs.desc)}`);
       if (caption.trim().length > 0) lines.push(`\\caption{${caption}}`);
       if (label.trim().length > 0) lines.push(`\\label{${label}}`);
       lines.push('\\end{figure}');
@@ -188,6 +193,36 @@ function escapeLatexText(text: string): string {
     .replace(/\}/g, '\\}')
     .replace(/_/g, '\\_')
     .replace(/\^/g, '\\^{}');
+}
+
+function parseAttrValue(attrs: string, key: string): string | null {
+  const re = new RegExp(`${key}="([^"]*)"`);
+  const m = re.exec(attrs);
+  return m ? m[1] : null;
+}
+
+function parseFigureAttrsFromXmd(raw: string | undefined): {
+  align?: string;
+  placement?: string;
+  width?: string;
+  desc?: string;
+} {
+  const s = (raw ?? '').trim();
+  if (!s.startsWith('![') || !s.includes('](')) return {};
+  const m = /\{([\s\S]*?)\}\s*$/.exec(s);
+  if (!m) return {};
+  const attrs = (m[1] ?? '').trim();
+  return {
+    align: parseAttrValue(attrs, 'align') ?? undefined,
+    placement: parseAttrValue(attrs, 'placement') ?? undefined,
+    width: parseAttrValue(attrs, 'width') ?? undefined,
+    desc: parseAttrValue(attrs, 'desc') ?? undefined,
+  };
+}
+
+function escapeLatexComment(text: string): string {
+  // Keep single-line comment payload; also escape common characters for consistency with other text.
+  return escapeLatexText(String(text ?? '').replace(/\r?\n/g, ' ').trim());
 }
 
 

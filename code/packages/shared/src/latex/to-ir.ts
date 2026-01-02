@@ -5,6 +5,7 @@ import type {
   DocumentAuthorNode,
   DocumentDateNode,
   DocumentNode,
+  FigureNode,
   IrNode,
   ListNode,
   MathBlockNode,
@@ -44,7 +45,7 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
   let authorCount = 0;
   let dateCount = 0;
   type Counters = Record<string, number>;
-  const countersStack: Counters[] = [{ section: 0, paragraph: 0, list: 0, code_block: 0, math_block: 0, raw_latex_block: 0 }];
+  const countersStack: Counters[] = [{ section: 0, paragraph: 0, list: 0, code_block: 0, math_block: 0, figure: 0, raw_latex_block: 0 }];
   const sectionPathStack: string[] = [];
 
   const currentCounters = () => countersStack[countersStack.length - 1]!;
@@ -189,6 +190,28 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
         return;
       }
 
+      if (b.kind === 'figure') {
+        const idx = counters.figure ?? 0;
+        counters.figure = idx + 1;
+        const path = fullPath(`fig[${idx}]`);
+        const node: FigureNode = {
+          type: 'figure',
+          id: stableNodeId({ docId, nodeType: 'figure', path }),
+          src: b.src,
+          caption: b.caption,
+          ...(b.label ? { label: b.label } : null),
+          // Prefer XMD raw for round-trip back to MD (preserve attrs)
+          source: {
+            blockIndex: b.blockIndex,
+            raw: buildXmdFigureLine(b),
+            startOffset: b.startOffset,
+            endOffset: b.endOffset,
+          },
+        };
+        appendToCurrentContainer(node);
+        return;
+      }
+
       // raw fallback
       const idx = counters.raw_latex_block ?? 0;
       counters.raw_latex_block = idx + 1;
@@ -288,6 +311,10 @@ type Block =
       src: string;
       caption: string;
       label?: string;
+      align?: string;
+      placement?: string;
+      width?: string;
+      desc?: string;
       raw: string;
       blockIndex: number;
       startOffset: number;
@@ -477,6 +504,73 @@ function parseBlocks(latex: string): Block[] {
       break;
     }
 
+    // figure environment (Zadoox subset)
+    if (line.trim() === '\\begin{figure}') {
+      const startOffset = start;
+      let j = i + 1;
+      let src = '';
+      let align: string | undefined;
+      let placement: string | undefined;
+      let width: string | undefined;
+      let desc: string | undefined;
+      let caption = '';
+      let label: string | undefined;
+
+      while (j < lines.length && lines[j].line.trim() !== '\\end{figure}') {
+        const t = lines[j].line.trim();
+        const c = /^%\s*zadoox-([a-zA-Z0-9_-]+)\s*:\s*(.*)$/.exec(t);
+        if (c) {
+          const key = String(c[1] || '').toLowerCase();
+          const value = latexInlineToMarkdown(String(c[2] || '').trim());
+          if (key === 'src') src = value;
+          else if (key === 'align') align = value;
+          else if (key === 'placement') placement = value;
+          else if (key === 'width') width = value;
+          else if (key === 'desc') desc = value;
+          j++;
+          continue;
+        }
+        const cap = /^\\caption\{([^}]*)\}(?:\s*%.*)?$/.exec(t);
+        if (cap) {
+          caption = latexInlineToMarkdown((cap[1] ?? '').trim());
+          j++;
+          continue;
+        }
+        const lab = /^\\label\{([^}]*)\}(?:\s*%.*)?$/.exec(t);
+        if (lab) {
+          label = latexInlineToMarkdown((lab[1] ?? '').trim());
+          j++;
+          continue;
+        }
+        j++;
+      }
+      if (j < lines.length && lines[j].line.trim() === '\\end{figure}') {
+        const endOffset = lines[j].end;
+        const raw = lines.slice(i, j + 1).map((l) => l.line).join('\n');
+        blocks.push({
+          kind: 'figure',
+          src,
+          caption,
+          label,
+          align,
+          placement,
+          width,
+          desc,
+          raw,
+          blockIndex,
+          startOffset,
+          endOffset,
+        });
+        i = j + 1;
+        blockIndex++;
+        continue;
+      }
+      // Unclosed => raw
+      const raw = lines.slice(i).map((l) => l.line).join('\n');
+      blocks.push({ kind: 'raw', latex: raw, raw, blockIndex, startOffset, endOffset: lines[lines.length - 1]?.end ?? end });
+      break;
+    }
+
     // itemize/enumerate lists
     const beginList = /^\\begin\{(itemize|enumerate)\}\s*$/.exec(line.trim());
     if (beginList) {
@@ -531,6 +625,26 @@ function parseBlocks(latex: string): Block[] {
   }
 
   return blocks;
+}
+
+function escapeXmdAttrValue(v: string | undefined): string {
+  const s = String(v ?? '').replace(/\r?\n/g, ' ').trim();
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function buildXmdFigureLine(b: Extract<Block, { kind: 'figure' }>): string {
+  const cap = b.caption ?? '';
+  const src = b.src ?? '';
+  const attrParts: string[] = [];
+  if (b.label && b.label.trim().length > 0) {
+    attrParts.push(`#${b.label.trim()}`);
+  }
+  if (b.align && b.align.trim().length > 0) attrParts.push(`align="${escapeXmdAttrValue(b.align)}"`);
+  if (b.width && b.width.trim().length > 0) attrParts.push(`width="${escapeXmdAttrValue(b.width)}"`);
+  if (b.placement && b.placement.trim().length > 0) attrParts.push(`placement="${escapeXmdAttrValue(b.placement)}"`);
+  if (b.desc && b.desc.trim().length > 0) attrParts.push(`desc="${escapeXmdAttrValue(b.desc)}"`);
+  const attrBlock = attrParts.length ? `{${attrParts.join(' ')}}` : '';
+  return `![${cap}](${src})${attrBlock}`;
 }
 
 function latexInlineToMarkdown(text: string): string {
