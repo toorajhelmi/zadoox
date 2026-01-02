@@ -88,7 +88,9 @@ describe('Markdown Utilities', () => {
       const markdown = '![Alt](image.png)';
       const html = renderMarkdownToHtml(markdown);
 
-      expect(html).toContain('<img src="image.png" alt="Alt" />');
+      expect(html).toContain('class="figure"');
+      expect(html).toContain('<img src="image.png" alt="Alt"');
+      expect(html).toContain('class="figure-caption"');
     });
 
     it('should render images with attribute blocks without showing attributes', () => {

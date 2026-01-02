@@ -152,7 +152,26 @@ export function renderMarkdownToHtml(content: string): string {
   );
 
   // Plain images (no attribute blocks)
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/gim, '<img src="$2" alt="$1" />');
+  // Zadoox convention: treat the image alt text as a visible caption in preview.
+  // This keeps preview consistent with the editor's embedded figure card and avoids requiring
+  // a non-standard caption syntax.
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/gim, (_m, alt, url) => {
+    const safeAlt = String(alt || '');
+    const safeUrl = String(url || '');
+
+    const captionStyleParts: string[] = [];
+    captionStyleParts.push('display:block');
+    captionStyleParts.push('width:100%');
+    captionStyleParts.push('text-align:center');
+    const captionStyle = ` style="${captionStyleParts.join(';')}"`;
+
+    const caption =
+      safeAlt.trim().length > 0
+        ? `<em class="figure-caption"${captionStyle}>${safeAlt}</em>`
+        : '';
+
+    return `<span class="figure"><img src="${safeUrl}" alt="${safeAlt}" />${caption}</span>`;
+  });
 
   // Links
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2">$1</a>');
