@@ -293,6 +293,43 @@ function parseBlocks(latex: string): Block[] {
       continue;
     }
 
+    // Boilerplate (system-generated for compilable docs) — ignore so round-trips stay clean.
+    if (/^\\documentclass\{[^}]+\}\s*$/.test(line.trim())) {
+      i++;
+      blockIndex++;
+      continue;
+    }
+    if (/^\\usepackage(\[[^\]]+\])?\{[^}]+\}\s*$/.test(line.trim())) {
+      i++;
+      blockIndex++;
+      continue;
+    }
+    if (/^\\begin\{document\}\s*$/.test(line.trim())) {
+      i++;
+      blockIndex++;
+      continue;
+    }
+    if (/^\\end\{document\}\s*$/.test(line.trim())) {
+      i++;
+      blockIndex++;
+      continue;
+    }
+    if (/^\\maketitle\s*$/.test(line.trim())) {
+      i++;
+      blockIndex++;
+      continue;
+    }
+    if (/^\\author\{[^}]*\}\s*$/.test(line.trim())) {
+      i++;
+      blockIndex++;
+      continue;
+    }
+    if (/^\\date\{[^}]*\}\s*$/.test(line.trim())) {
+      i++;
+      blockIndex++;
+      continue;
+    }
+
     // \title{...}
     const titleMatch = /^\\title\{([^}]*)\}\s*$/.exec(line.trim());
     if (titleMatch) {

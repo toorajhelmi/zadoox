@@ -12,6 +12,49 @@ export function irToLatex(doc: DocumentNode): string {
   return renderNodes(doc.children).trimEnd();
 }
 
+/**
+ * IR -> full, compilable LaTeX document.
+ *
+ * Goal: the user can copy/paste into Overleaf and it should compile.
+ *
+ * Notes:
+ * - We include only a minimal preamble required by commands we generate:
+ *   - graphicx for \\includegraphics
+ *   - hyperref for \\href
+ *   - amsmath for equation environments
+ * - This boilerplate is treated as "system generated"; the LaTeX->IR parser will ignore it.
+ */
+export function irToLatexDocument(doc: DocumentNode): string {
+  const titleNode = doc.children.find((n) => n.type === 'document_title');
+  const titleLine = titleNode ? `\\title{${escapeLatexText(titleNode.text)}}` : '';
+
+  // Exclude title nodes from body (we place \\title in preamble for standard LaTeX structure).
+  const bodyNodes = doc.children.filter((n) => n.type !== 'document_title');
+  const body = renderNodes(bodyNodes).trimEnd();
+
+  // Minimal, broadly compatible.
+  // Note: these packages are required by commands we generate.
+  const preambleParts = [
+    '\\documentclass{article}',
+    '\\usepackage{graphicx}',
+    '\\usepackage{hyperref}',
+    '\\usepackage{amsmath}',
+  ];
+  if (titleLine) {
+    preambleParts.push(titleLine);
+    // Provide empty author/date so \\maketitle doesn't error and stays stable.
+    preambleParts.push('\\author{}');
+    preambleParts.push('\\date{}');
+  }
+
+  const preamble = `${preambleParts.join('\n')}\n\n`;
+  const begin = '\\begin{document}\n';
+  const maketitle = titleLine ? '\\maketitle\n\n' : '';
+  const end = '\n\\end{document}\n';
+
+  return `${preamble}${begin}${maketitle}${body}${end}`;
+}
+
 function renderNodes(nodes: IrNode[]): string {
   const out: string[] = [];
   for (const n of nodes) {

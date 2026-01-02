@@ -23,7 +23,7 @@ import type { ResearchSource, DocumentStyle } from '@zadoox/shared';
 import type { InlineEditBlock, InlineEditOperation } from '@zadoox/shared';
 import { extractCitedSourceIds } from '@/lib/utils/citation';
 import type { QuickOption } from '@/lib/services/context-options';
-import { irToLatex, irToXmd, parseLatexToIr, parseXmdToIr } from '@zadoox/shared';
+import { irToLatexDocument, irToXmd, parseLatexToIr, parseXmdToIr } from '@zadoox/shared';
 
 interface EditorLayoutProps {
   projectId: string;
@@ -146,7 +146,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       // If last format is LaTeX but we have no cached latex yet, derive it from IR/XMD.
       try {
         const ir = irState.ir;
-        if (ir) setLatexDraft(irToLatex(ir));
+        if (ir) setLatexDraft(irToLatexDocument(ir));
       } catch {
         // ignore
       }
@@ -165,7 +165,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       try {
         if (next === 'latex') {
           const ir = irState.ir ?? parseXmdToIr({ docId: actualDocumentId, xmd: content });
-          const latex = irToLatex(ir);
+          const latex = irToLatexDocument(ir);
           setLatexDraft(latex);
           setEditFormat('latex');
           const nextMeta = { ...(documentMetadata as any), latex, lastEditedFormat: 'latex' as const };
