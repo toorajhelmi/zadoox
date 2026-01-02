@@ -29,6 +29,11 @@ describe('FormattingToolbar', () => {
     expect(container.firstChild).toBeNull();
   });
 
+  it('should not render in IR preview mode', () => {
+    const { container } = render(<FormattingToolbar onFormat={mockOnFormat} viewMode="ir" />);
+    expect(container.firstChild).toBeNull();
+  });
+
   it('should call onFormat when button is clicked', () => {
     render(<FormattingToolbar onFormat={mockOnFormat} viewMode="edit" />);
 

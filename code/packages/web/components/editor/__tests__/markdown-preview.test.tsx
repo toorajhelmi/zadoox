@@ -8,26 +8,30 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MarkdownPreview } from '../markdown-preview';
-import * as shared from '@zadoox/shared';
 
-// Mock the shared package
-vi.mock('@zadoox/shared', () => ({
-  renderMarkdownToHtml: vi.fn(),
-  extractHeadings: vi.fn(),
+// Mock Supabase client (used for token handling). Keep minimal surface.
+vi.mock('@/lib/supabase/client', () => ({
+  createClient: () => ({
+    auth: {
+      getSession: vi.fn(async () => ({ data: { session: null } })),
+      // onAuthStateChange is optional in production code; include it here to avoid act warnings.
+      onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+    },
+  }),
 }));
+
+// Use the real shared markdown renderer so this test validates the real rewrite behavior.
+vi.mock('@zadoox/shared', async () => {
+  const actual = await vi.importActual<typeof import('@zadoox/shared')>('@zadoox/shared');
+  return actual;
+});
 
 describe('MarkdownPreview', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Set default return values
-    vi.mocked(shared.extractHeadings).mockReturnValue([]);
-    vi.mocked(shared.renderMarkdownToHtml).mockReturnValue('');
   });
 
   it('should render "No content to preview" when content is empty', () => {
-    vi.mocked(shared.extractHeadings).mockReturnValueOnce([]);
-    vi.mocked(shared.renderMarkdownToHtml).mockReturnValueOnce('');
-
     render(<MarkdownPreview content="" />);
 
     expect(screen.getByText('No content to preview')).toBeInTheDocument();
@@ -45,5 +49,14 @@ describe('MarkdownPreview', () => {
     const markdownContent = container.querySelector('.markdown-content');
     expect(markdownContent).not.toBeNull();
     expect(markdownContent?.innerHTML).toContain('Test content');
+  });
+
+  it('should rewrite zadoox-asset img src to placeholder + data-asset-key', () => {
+    const { container } = render(<MarkdownPreview content="![Cap](zadoox-asset://abc.png)" />);
+    const markdownContent = container.querySelector('.markdown-content') as HTMLElement | null;
+    expect(markdownContent).not.toBeNull();
+    expect(markdownContent?.innerHTML).toContain('data-asset-key="abc.png"');
+    // Should no longer contain the unknown URL scheme
+    expect(markdownContent?.innerHTML).not.toContain('zadoox-asset://');
   });
 });

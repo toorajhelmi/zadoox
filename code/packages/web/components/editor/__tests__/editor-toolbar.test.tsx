@@ -58,4 +58,20 @@ describe('EditorToolbar', () => {
 
     expect(screen.getByLabelText('Toggle sidebar')).toBeInTheDocument();
   });
+
+  it('should render IR preview view mode button', () => {
+    render(
+      <EditorToolbar
+        projectId="project-1"
+        documentTitle="Test Document"
+        isSaving={false}
+        lastSaved={null}
+        onToggleSidebar={mockOnToggleSidebar}
+        viewMode="edit"
+        onViewModeChange={mockOnViewModeChange}
+      />
+    );
+
+    expect(screen.getByLabelText('IR preview')).toBeInTheDocument();
+  });
 });

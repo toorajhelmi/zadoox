@@ -205,17 +205,15 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
       setAccessToken(session?.access_token ?? null);
     })();
 
-    const maybeOnAuthStateChange = (
-      supabase.auth as unknown as {
-        onAuthStateChange?: (cb: (event: unknown, session: { access_token?: string } | null) => void) => {
-          data: { subscription: { unsubscribe: () => void } };
-        };
-      }
-    ).onAuthStateChange;
-
+    // IMPORTANT: don't detach the method from `supabase.auth` (it relies on `this` internally).
+    const maybeOnAuthStateChange = (supabase.auth as unknown as { onAuthStateChange?: unknown }).onAuthStateChange;
     const sub =
       typeof maybeOnAuthStateChange === 'function'
-        ? maybeOnAuthStateChange((_event, session) => {
+        ? (supabase.auth as unknown as {
+            onAuthStateChange: (cb: (event: unknown, session: { access_token?: string } | null) => void) => {
+              data: { subscription: { unsubscribe: () => void } };
+            };
+          }).onAuthStateChange((_event, session) => {
             if (cancelled) return;
             setAccessToken(session?.access_token ?? null);
           })
