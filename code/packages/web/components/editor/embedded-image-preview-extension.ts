@@ -429,15 +429,15 @@ class FigureCardWidget extends WidgetType {
     const btnLeft = makeIconBtn({ label: 'Align left', svg: icon.alignLeft, selected: currentAlign === 'left' });
     const btnCenter = makeIconBtn({ label: 'Align center', svg: icon.alignCenter, selected: currentAlign === 'center' });
     const btnRight = makeIconBtn({ label: 'Align right', svg: icon.alignRight, selected: currentAlign === 'right' });
-    btnLeft.addEventListener('click', (e) => {
+    btnLeft.addEventListener('pointerdown', (e) => {
       e.preventDefault(); e.stopPropagation();
       applyAttrUpdate({ align: 'left' });
     });
-    btnCenter.addEventListener('click', (e) => {
+    btnCenter.addEventListener('pointerdown', (e) => {
       e.preventDefault(); e.stopPropagation();
       applyAttrUpdate({ align: 'center' });
     });
-    btnRight.addEventListener('click', (e) => {
+    btnRight.addEventListener('pointerdown', (e) => {
       e.preventDefault(); e.stopPropagation();
       applyAttrUpdate({ align: 'right' });
     });
@@ -445,9 +445,10 @@ class FigureCardWidget extends WidgetType {
     const btnS = makeIconBtn({ label: 'Size small (33%)', svg: icon.sizeS, selected: currentPct === 33 });
     const btnM = makeIconBtn({ label: 'Size medium (50%)', svg: icon.sizeM, selected: currentPct === 50 });
     const btnL = makeIconBtn({ label: 'Size large (100%)', svg: icon.sizeL, selected: currentPct === 100 });
-    btnS.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '33%' }); });
-    btnM.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '50%' }); });
-    btnL.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '100%' }); });
+    // Use pointerdown so the first interaction applies immediately (click can be eaten by focus/hover transitions).
+    btnS.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '33%' }); });
+    btnM.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '50%' }); });
+    btnL.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '100%' }); });
 
     const iconMinus =
       '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
@@ -471,13 +472,13 @@ class FigureCardWidget extends WidgetType {
       applyAttrUpdate({ width: formatPercentWidth(nextPct) });
     };
 
-    btnSmaller.addEventListener('click', (e) => {
+    btnSmaller.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
       stepWidth(-stepPct);
     });
 
-    btnLarger.addEventListener('click', (e) => {
+    btnLarger.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
       stepWidth(stepPct);
@@ -485,8 +486,8 @@ class FigureCardWidget extends WidgetType {
 
     const btnInline = makeIconBtn({ label: 'Placement inline', svg: icon.inline, selected: currentPlacement === 'inline' });
     const btnBlock = makeIconBtn({ label: 'Placement block', svg: icon.block, selected: currentPlacement === 'block' });
-    btnInline.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ placement: 'inline' }); });
-    btnBlock.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ placement: 'block' }); });
+    btnInline.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ placement: 'inline' }); });
+    btnBlock.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ placement: 'block' }); });
 
     const rowActions = makeRow();
     rowActions.appendChild(btnEditIcon);
