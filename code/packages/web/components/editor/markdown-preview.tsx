@@ -516,7 +516,8 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
           font-style: italic;
         }
         .markdown-content .figure-caption {
-          display: inline-block;
+          /* Let the renderer control block/width via inline styles so captions align to image width */
+          display: block;
           margin-top: 0.25em;
           color: #9aa0a6;
         }
