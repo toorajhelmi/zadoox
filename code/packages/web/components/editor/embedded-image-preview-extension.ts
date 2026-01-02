@@ -261,6 +261,24 @@ class FigureCardWidget extends WidgetType {
     (caption.style as unknown as { overflowWrap?: string }).overflowWrap = 'anywhere';
     caption.style.wordBreak = 'break-word';
 
+    const clampCaption = () => {
+      try {
+        const w = img.getBoundingClientRect().width;
+        if (!Number.isFinite(w) || w <= 0) return;
+        caption.style.maxWidth = `${w}px`;
+        caption.style.marginLeft = 'auto';
+        caption.style.marginRight = 'auto';
+      } catch {
+        // ignore
+      }
+    };
+
+    if (img.complete) {
+      clampCaption();
+    } else {
+      img.addEventListener('load', clampCaption, { once: true });
+    }
+
     inner.appendChild(img);
     inner.appendChild(caption);
     wrap.appendChild(inner);

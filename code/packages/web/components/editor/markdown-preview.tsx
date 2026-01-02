@@ -232,6 +232,33 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
 
   // Resolve zadoox-asset:// images by fetching from backend with Authorization header.
   // This avoids relying on cookie-based sessions for <img src> requests.
+  const clampFigureCaptionsToImageWidth = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const figures = Array.from(container.querySelectorAll('.figure-inner')) as HTMLElement[];
+    for (const inner of figures) {
+      const img = inner.querySelector('img') as HTMLImageElement | null;
+      const caption = inner.querySelector('.figure-caption') as HTMLElement | null;
+      if (!img || !caption) continue;
+
+      const apply = () => {
+        const w = img.getBoundingClientRect().width;
+        if (!Number.isFinite(w) || w <= 0) return;
+        // Constrain caption to the *rendered* image width (important when images are scaled by height).
+        caption.style.maxWidth = `${w}px`;
+        caption.style.marginLeft = 'auto';
+        caption.style.marginRight = 'auto';
+      };
+
+      if (img.complete) {
+        apply();
+      } else {
+        img.addEventListener('load', apply, { once: true });
+      }
+    }
+  }, []);
+
   const resolveAssetImages = useCallback(async () => {
     const container = containerRef.current;
     if (!container) return;
@@ -275,6 +302,9 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
           const url = URL.createObjectURL(blob);
           assetUrlCacheRef.current.set(key, url);
           img.src = url;
+          // After setting the final src, clamp caption width to the rendered image width.
+          // (The browser may scale the image by max-height, so measured width is what matters.)
+          clampFigureCaptionsToImageWidth();
         } catch {
           // ignore
         } finally {
@@ -296,6 +326,7 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
 
     const obs = new MutationObserver(() => {
       void resolveAssetImages();
+      clampFigureCaptionsToImageWidth();
     });
     obs.observe(container, { childList: true, subtree: true });
 
@@ -303,6 +334,11 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
       obs.disconnect();
     };
   }, [resolveAssetImages]);
+
+  // Also clamp captions after each HTML change (non-asset images / already-loaded images).
+  useEffect(() => {
+    clampFigureCaptionsToImageWidth();
+  }, [html, clampFigureCaptionsToImageWidth]);
 
   // Cleanup blob URLs + in-flight fetch on unmount
   useEffect(() => {

@@ -195,7 +195,8 @@ export function renderMarkdownToHtml(content: string): string {
         ? `<em class="figure-caption"${captionStyle}>${safeAlt}</em>`
         : '';
 
-    return `<span class="figure"><img src="${safeUrl}" alt="${safeAlt}" />${caption}</span>`;
+    // Wrap in figure-inner so the preview layer can clamp caption width to the rendered image width.
+    return `<span class="figure"><span class="figure-inner" style="display:inline-block;max-width:100%"><img src="${safeUrl}" alt="${safeAlt}" style="display:block;max-width:100%" />${caption}</span></span>`;
   });
 
   // Links
