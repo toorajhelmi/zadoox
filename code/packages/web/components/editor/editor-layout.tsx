@@ -169,6 +169,13 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         if (next === 'latex') {
           const ir = irState.ir ?? parseXmdToIr({ docId: actualDocumentId, xmd: content });
           const latex = irToLatexDocument(ir);
+          // #region agent log
+          try {
+            const figureLines = (content || '').split('\n').filter((l) => l.includes('![') && l.includes('](') && l.includes('{'));
+            const commentCount = (latex.match(/% zadoox-(align|placement|width|desc):/g) || []).length;
+            fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'figattrs1',hypothesisId:'FA2',location:'editor-layout.tsx:handleEditFormatChange',message:'MD->IR->LaTeX on switch',data:{docId:actualDocumentId,figureLineCount:figureLines.length,figureLine0:(figureLines[0]||'').slice(0,240),latexLen:latex.length,zadooxCommentCount:commentCount},timestamp:Date.now()})}).catch(()=>{});
+          } catch {}
+          // #endregion
           setLatexDraft(latex);
           setEditFormat('latex');
           const nextMeta = { ...(documentMetadata as any), latex, lastEditedFormat: 'latex' as const };
