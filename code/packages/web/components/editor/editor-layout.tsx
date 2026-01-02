@@ -141,7 +141,14 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       setEditFormat(last);
     }
     if (typeof latex === 'string') {
-      setLatexDraft(latex);
+      // If user is actively editing LaTeX, never overwrite their draft from server metadata updates
+      // (e.g. autosave response), otherwise CodeMirror can reset scroll/selection.
+      const shouldAdopt =
+        latexDraft.length === 0 || editFormat !== 'latex';
+
+      if (shouldAdopt) {
+        setLatexDraft(latex);
+      }
     } else if (last === 'latex' && !latexDraft) {
       // If last format is LaTeX but we have no cached latex yet, derive it from IR/XMD.
       try {
