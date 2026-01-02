@@ -210,8 +210,10 @@ function parseFigureAttrsFromXmd(raw: string | undefined): {
   const s = (raw ?? '').trim();
   if (!s.startsWith('![') || !s.includes('](')) return {};
   // Attribute block can contain placeholder tokens like {REF}/{CH} which include braces.
+  // Also, the figure line might not be standalone (can have trailing text on the same line).
+  // So we search for the attr block after the image token, not only at end-of-line.
   // Mirror the permissive pattern used by the markdown renderer.
-  const m = /(\{(?:\{REF\}|\{CH\}|[^}])*\})\s*$/.exec(s);
+  const m = /!\[[^\]]*\]\([^)]+\)\s*(\{(?:\{REF\}|\{CH\}|[^}])*\})/i.exec(s);
   if (!m) return {};
   const rawBlock = (m[1] ?? '').trim();
   const attrs =
