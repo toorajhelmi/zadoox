@@ -304,14 +304,16 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
 
   // Cleanup blob URLs + in-flight fetch on unmount
   useEffect(() => {
+    const cache = assetUrlCacheRef.current;
+    const inflight = assetInFlightRef.current;
     return () => {
       abortRef.current?.abort();
       abortRef.current = null;
-      for (const url of assetUrlCacheRef.current.values()) {
+      for (const url of cache.values()) {
         URL.revokeObjectURL(url);
       }
-      assetUrlCacheRef.current.clear();
-      assetInFlightRef.current.clear();
+      cache.clear();
+      inflight.clear();
     };
   }, []);
 

@@ -13,6 +13,7 @@ import { ThinkModePanel } from './think-mode-panel';
 import { InlineAIChat } from './inline-ai-chat';
 import { InlineAIHint } from './inline-ai-hint';
 import { useDocumentState } from '@/hooks/use-document-state';
+import { useIrDocument } from '@/hooks/use-ir-document';
 import { api } from '@/lib/api/client';
 import type { FormatType } from './floating-format-menu';
 import { useChangeTracking } from '@/hooks/use-change-tracking';
@@ -81,6 +82,14 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const editorContainerRef = useRef<HTMLDivElement | null>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isUserInputRef = useRef<boolean>(false); // Track if content change is from user input
+
+  // Phase 11: keep IR updated as XMD changes (debounced), compute node-level delta + events.
+  const irState = useIrDocument({
+    docId: actualDocumentId || documentId,
+    xmd: content,
+    debounceMs: 250,
+    enabled: Boolean(actualDocumentId || documentId),
+  });
 
   // Sidebar resize handlers
   const handleSidebarResizeStart = useCallback((e: React.MouseEvent) => {
@@ -1506,7 +1515,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             >
               {viewMode === 'ir' ? (
                 <div className="h-full">
-                  <IrPreview docId={actualDocumentId || documentId} content={content} />
+                  <IrPreview docId={actualDocumentId || documentId} content={content} ir={irState.ir} />
                 </div>
               ) : (
                 <MarkdownPreview content={content} />
