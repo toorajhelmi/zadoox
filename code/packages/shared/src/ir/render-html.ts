@@ -17,11 +17,20 @@ function renderNodes(nodes: IrNode[]): string {
   return nodes.map(renderNode).filter(Boolean).join('');
 }
 
+function sanitizeDomId(raw: string): string {
+  return String(raw ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
 function renderNode(node: IrNode): string {
   switch (node.type) {
     case 'document_title': {
       const text = escapeHtml(node.text ?? '');
-      return `<h1 class="doc-title">${text}</h1>`;
+      // Stable id so the Outline can scroll to it.
+      return `<h1 id="doc-title" class="doc-title">${text}</h1>`;
     }
     case 'document_author': {
       const text = escapeHtml(node.text ?? '');
@@ -61,11 +70,14 @@ function renderNode(node: IrNode): string {
       return `<div class="math-block">$$<br />${latex}<br />$$</div>`;
     }
     case 'figure': {
+      const figId = node.label ? `figure-${sanitizeDomId(node.label)}` : `figure-${sanitizeDomId(node.id)}`;
       // Important: preserve the existing figure attribute-block behavior (align/width/placement)
       // by reusing the original XMD source line when available.
       const raw = node.source?.raw;
       if (raw && raw.trim().startsWith('![') && raw.includes('](')) {
-        return renderMarkdownToHtml(raw.trimEnd());
+        // Wrap in an anchor span so the outline can reliably scroll even if the markdown renderer
+        // doesn't include an id attribute.
+        return `<span id="${figId}">${renderMarkdownToHtml(raw.trimEnd())}</span>`;
       }
 
       const src = escapeHtml(node.src ?? '');
@@ -75,7 +87,7 @@ function renderNode(node: IrNode): string {
           ? `<em class="figure-caption" style="display:block;width:100%;text-align:center">${cap}</em>`
           : '';
       // Keep caption centered relative to the image width by using an inner inline-block wrapper.
-      return `<span class="figure"><span class="figure-inner" style="display:inline-block;max-width:100%;margin-left:0;margin-right:auto"><img src="${src}" alt="${cap}" style="display:block;max-width:100%" />${caption}</span></span>`;
+      return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;max-width:100%;margin-left:0;margin-right:auto"><img src="${src}" alt="${cap}" style="display:block;max-width:100%" />${caption}</span></span>`;
     }
     case 'table': {
       // Simple HTML table rendering.

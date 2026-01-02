@@ -3,7 +3,7 @@ import { computeIrDelta } from '../delta';
 import { irEventsFromDelta } from '../events';
 import { extractOutlineItemsFromIr } from '../outline';
 import { irToXmd } from '../to-xmd';
-import type { DocumentNode, FigureNode, SectionNode } from '../types';
+import type { DocumentNode, DocumentTitleNode, FigureNode, SectionNode } from '../types';
 
 describe('ir utilities', () => {
   it('computeIrDelta detects added/removed/changed', () => {
@@ -55,6 +55,19 @@ describe('ir utilities', () => {
     const items = extractOutlineItemsFromIr(doc);
     expect(items[0]).toMatchObject({ kind: 'heading', text: 'Intro', level: 1, id: 'intro' });
     expect(items[1]).toMatchObject({ kind: 'figure', id: 'figure-fig-demo' });
+  });
+
+  it('extractOutlineItemsFromIr includes document title and unlabeled figures', () => {
+    const t: DocumentTitleNode = { type: 'document_title', id: 't1', text: 'Doc Title' };
+    const h: SectionNode = { type: 'section', id: 's1', level: 1, title: 'Intro', children: [] };
+    const f: FigureNode = { type: 'figure', id: 'F_NODE_ID', src: 'x', caption: 'Cap' };
+    const doc: DocumentNode = { type: 'document', id: 'd', docId: 'doc', children: [t, h, f] };
+
+    const items = extractOutlineItemsFromIr(doc);
+    expect(items[0]).toMatchObject({ kind: 'heading', id: 'doc-title', text: 'Doc Title' });
+    expect(items[1]).toMatchObject({ kind: 'heading', text: 'Intro' });
+    expect(items[2]).toMatchObject({ kind: 'figure', text: 'Figure — Cap' });
+    expect(items[2].id).toContain('figure-');
   });
 
   it('irToXmd preserves raw figure line (attribute parity bridge)', () => {
