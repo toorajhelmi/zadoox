@@ -140,13 +140,27 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       setEditFormat(last);
     }
     if (typeof latex === 'string') {
-      // If user is actively editing LaTeX, never overwrite their draft from server metadata updates
-      // (e.g. autosave response), otherwise CodeMirror can reset scroll/selection.
-      const shouldAdopt =
-        latexDraft.length === 0 || editFormat !== 'latex';
+      // Avoid overwriting while the user is actively typing in LaTeX (prevents cursor/scroll reset).
+      const shouldAdopt = latexDraft.length === 0 || editFormat !== 'latex';
 
+      // IMPORTANT:
+      // If the document was last edited in LaTeX, the persisted metadata.latex may be stale
+      // relative to the current IR/XMD (e.g., after code upgrades that change LaTeX rendering).
+      // In that case, prefer regenerating from IR so the user sees the correct LaTeX immediately.
       if (shouldAdopt) {
-        setLatexDraft(latex);
+        if (last === 'latex') {
+          try {
+            const ir = irState.ir ?? parseXmdToIr({ docId: actualDocumentId || documentId, xmd: content });
+            const regenerated = irToLatexDocument(ir);
+            setLatexDraft(regenerated);
+            // Update local metadata cache so subsequent saves persist the refreshed LaTeX.
+            setDocumentMetadata({ ...(documentMetadata as any), latex: regenerated });
+          } catch {
+            setLatexDraft(latex);
+          }
+        } else {
+          setLatexDraft(latex);
+        }
       }
     } else if (last === 'latex' && !latexDraft) {
       // If last format is LaTeX but we have no cached latex yet, derive it from IR/XMD.
