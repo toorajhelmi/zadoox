@@ -205,14 +205,25 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
       setAccessToken(session?.access_token ?? null);
     })();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (cancelled) return;
-      setAccessToken(session?.access_token ?? null);
-    });
+    const maybeOnAuthStateChange = (
+      supabase.auth as unknown as {
+        onAuthStateChange?: (cb: (event: unknown, session: { access_token?: string } | null) => void) => {
+          data: { subscription: { unsubscribe: () => void } };
+        };
+      }
+    ).onAuthStateChange;
+
+    const sub =
+      typeof maybeOnAuthStateChange === 'function'
+        ? maybeOnAuthStateChange((_event, session) => {
+            if (cancelled) return;
+            setAccessToken(session?.access_token ?? null);
+          })
+        : null;
 
     return () => {
       cancelled = true;
-      sub.subscription.unsubscribe();
+      sub?.data.subscription.unsubscribe();
     };
   }, []);
 
