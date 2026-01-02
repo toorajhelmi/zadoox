@@ -1,6 +1,6 @@
 'use client';
 
-import { PencilIcon, Squares2X2Icon, ChevronRightIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { PencilIcon, Squares2X2Icon, EyeIcon, ChevronRightIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api/client';
@@ -149,6 +149,17 @@ export function EditorToolbar({
             <PencilIcon className="w-4 h-4" />
           </button>
           <button
+            onClick={() => onViewModeChange('preview')}
+            className={`px-3 py-1 text-sm rounded transition-colors ${
+              viewMode === 'preview'
+                ? 'bg-vscode-active text-vscode-text'
+                : 'text-vscode-text-secondary hover:text-vscode-text'
+            }`}
+            aria-label="Preview mode"
+          >
+            <EyeIcon className="w-4 h-4" />
+          </button>
+          <button
             onClick={() => onViewModeChange('split')}
             className={`px-3 py-1 text-sm rounded transition-colors ${
               viewMode === 'split'
@@ -158,18 +169,6 @@ export function EditorToolbar({
             aria-label="Split view"
           >
             <Squares2X2Icon className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => onViewModeChange('ir')}
-            className={`px-3 py-1 text-sm rounded transition-colors ${
-              viewMode === 'ir'
-                ? 'bg-vscode-active text-vscode-text'
-                : 'text-vscode-text-secondary hover:text-vscode-text'
-            }`}
-            aria-label="IR preview"
-            title="IR Preview"
-          >
-            <SparklesIcon className="w-4 h-4" />
           </button>
         </div>
 
