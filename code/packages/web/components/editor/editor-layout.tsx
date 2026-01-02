@@ -752,6 +752,10 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       } else {
         // LaTeX edit surface -> LaTeX -> IR -> XMD (content)
         setLatexDraft(value);
+        // Persist "last active format" and keep a current cached LaTeX string in metadata
+        // so a refresh reopens in LaTeX reliably.
+        const nextMeta = { ...(documentMetadata as any), lastEditedFormat: 'latex', latex: value };
+        setDocumentMetadata(nextMeta);
         try {
           const ir = parseLatexToIr({ docId: actualDocumentId || documentId, latex: value });
           const nextXmd = irToXmd(ir);

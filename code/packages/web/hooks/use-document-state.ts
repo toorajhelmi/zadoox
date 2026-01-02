@@ -121,15 +121,19 @@ export function useDocumentState(documentId: string, projectId: string) {
         const derivedTitle = deriveTitleFromXmd(contentToSave);
         // Get current document to preserve metadata (especially paragraphModes)
         const currentDocument = await api.documents.get(actualDocumentId);
+        // Merge server metadata with local metadata (local wins) to avoid races where an autosave
+        // overwrites fields like lastEditedFormat/latex that were just updated in the UI.
+        const mergedMetadata = {
+          ...(currentDocument.metadata || {}),
+          ...(documentMetadata || {}),
+          paragraphModes: paragraphModes, // Preserve current paragraph modes
+        };
         
         // Update document with content change, preserving existing metadata
         const document = await api.documents.update(actualDocumentId, {
           ...(derivedTitle ? { title: derivedTitle } : null),
           content: contentToSave,
-          metadata: {
-            ...currentDocument.metadata,
-            paragraphModes: paragraphModes, // Preserve current paragraph modes
-          },
+          metadata: mergedMetadata,
           changeType,
         });
         setDocumentTitle(document.title);
@@ -143,7 +147,7 @@ export function useDocumentState(documentId: string, projectId: string) {
         setIsSaving(false);
       }
     },
-    [actualDocumentId, paragraphModes]
+    [actualDocumentId, paragraphModes, documentMetadata]
   );
 
   // Update content with auto-save
