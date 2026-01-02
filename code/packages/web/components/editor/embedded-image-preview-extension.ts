@@ -113,6 +113,11 @@ class FigureCardWidget extends WidgetType {
       } else if (align === 'center') {
         // "Center + inline" is ambiguous; keep it visually centered within a full line.
         wrap.style.display = 'block';
+        // Shrink to content so margin:auto can actually center it (block default width is 100%).
+        if (!width) {
+          (wrap.style as unknown as { width?: string }).width = 'fit-content';
+          wrap.style.maxWidth = '100%';
+        }
         wrap.style.float = 'none';
         wrap.style.marginLeft = 'auto';
         wrap.style.marginRight = 'auto';
