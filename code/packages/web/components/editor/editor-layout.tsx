@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { ChevronRightIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
 import { EditorSidebar } from './editor-sidebar';
 import { EditorToolbar } from './editor-toolbar';
@@ -82,6 +82,28 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const editorContainerRef = useRef<HTMLDivElement | null>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isUserInputRef = useRef<boolean>(false); // Track if content change is from user input
+  const [docAIMetrics, setDocAIMetrics] = useState<{
+    metrics: Record<string, number> | null;
+    analyzedSections: number;
+    isAnalyzing: boolean;
+  } | null>(null);
+
+  const currentTextStyle = useMemo(() => {
+    const view = editorViewRef.current;
+    if (!view) return 'paragraph' as const;
+    try {
+      const sel = view.state.selection.main;
+      const line = view.state.doc.lineAt(sel.head).text;
+      const m = /^(#{1,6})\s+/.exec(line.trimStart());
+      if (!m) return 'paragraph' as const;
+      const level = m[1].length;
+      if (level <= 1) return 'heading1' as const;
+      if (level === 2) return 'heading2' as const;
+      return 'heading3' as const;
+    } catch {
+      return 'paragraph' as const;
+    }
+  }, [content, cursorPosition]);
 
   // Phase 11: keep IR updated as XMD changes (debounced), compute node-level delta + events.
   const irState = useIrDocument({
@@ -852,7 +874,44 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
 
     const hasRange = typeof from === 'number' && typeof to === 'number' && from >= 0 && to >= 0 && to > from;
 
+    const applyHeadingToRange = (level: number | null) => {
+      if (!view) return;
+      const doc = view.state.doc;
+      const rangeFrom = typeof from === 'number' ? from : view.state.selection.main.head;
+      const rangeTo = typeof to === 'number' ? to : rangeFrom;
+
+      const startLine = doc.lineAt(rangeFrom);
+      const endLine = doc.lineAt(rangeTo);
+
+      const lines: Array<{ from: number; to: number; text: string }> = [];
+      for (let n = startLine.number; n <= endLine.number; n++) {
+        const l = doc.line(n);
+        lines.push({ from: l.from, to: l.to, text: l.text });
+      }
+
+      const replaceLine = (lineText: string) => {
+        const stripped = lineText.replace(/^\s*#{1,6}\s+/, '');
+        if (level === null) return stripped; // "Normal"
+        const hashes = '#'.repeat(level);
+        return `${hashes} ${stripped}`;
+      };
+
+      // Build new document content by editing from bottom to top to keep indices valid.
+      let next = baseContent;
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const l = lines[i];
+        const replaced = replaceLine(l.text);
+        next = next.slice(0, l.from) + replaced + next.slice(l.to);
+      }
+      applyUserEdit(next);
+    };
+
     if (hasRange) {
+      if (format === 'heading1') return applyHeadingToRange(1);
+      if (format === 'heading2') return applyHeadingToRange(2);
+      if (format === 'heading3') return applyHeadingToRange(3);
+      if (format === 'paragraph') return applyHeadingToRange(null);
+
       // Format selected text using exact positions from CodeMirror
       let formattedText = '';
       const selectedText = baseContent.slice(from!, to!);
@@ -888,6 +947,11 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         baseContent.slice(to!);
       applyUserEdit(newContent);
     } else {
+      if (format === 'heading1') return applyHeadingToRange(1);
+      if (format === 'heading2') return applyHeadingToRange(2);
+      if (format === 'heading3') return applyHeadingToRange(3);
+      if (format === 'paragraph') return applyHeadingToRange(null);
+
       // No selection - insert placeholder at cursor position (fallback to end)
       let placeholder = '';
       switch (format) {
@@ -923,7 +987,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   return (
     <div className="flex h-screen bg-vscode-bg text-vscode-text">
       {/* Sidebar */}
-      <div ref={sidebarRef} className="flex items-stretch relative">
+      <div ref={sidebarRef} className="flex items-stretch relative h-full">
         {/* Overlay for sidebar - prevents interaction when inline chat or think panel is open */}
         {sidebarOpen && (inlineAIChatOpen || thinkPanelOpen) && (
           <div className="absolute inset-0 bg-black/30 pointer-events-auto" style={{ zIndex: 45 }} />
@@ -940,7 +1004,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           </button>
         )}
         {sidebarOpen && (
-          <div style={{ width: `${sidebarWidth}px`, minWidth: `${sidebarWidth}px` }} className="relative">
+          <div style={{ width: `${sidebarWidth}px`, minWidth: `${sidebarWidth}px` }} className="relative h-full">
             <EditorSidebar
           isOpen={sidebarOpen}
           onToggle={() => setSidebarOpen(!sidebarOpen)}
@@ -1031,7 +1095,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           documentTitle={documentTitle}
           isSaving={isSaving}
           lastSaved={lastSaved}
-          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           canUndo={undoRedo.canUndo}
@@ -1054,6 +1117,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         <FormattingToolbar
           onFormat={handleFormat}
           viewMode={viewMode}
+          currentStyle={currentTextStyle}
         />
 
         {/* Change Tracking Banner - shown at top when tracking is active */}
@@ -1349,6 +1413,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 onChange={handleContentChange}
                 onSelectionChange={handleSelectionChange}
                 onCursorPositionChange={handleCursorPositionChange}
+                onDocumentAIMetricsChange={(payload) => setDocAIMetrics(payload)}
                 model="auto"
                 paragraphModes={paragraphModes}
                 documentId={actualDocumentId}
@@ -1540,7 +1605,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           isSaving={isSaving}
           lastSaved={lastSaved}
           content={content}
-          cursorPosition={cursorPosition}
+          docAI={docAIMetrics ?? undefined}
         />
       </div>
     </div>

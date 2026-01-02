@@ -202,14 +202,14 @@ export function DocumentOutline({ content, ir }: DocumentOutlineProps) {
           <button
             type="button"
             onClick={collapseAll}
-            className="text-xs text-vscode-text-secondary hover:text-vscode-text transition-colors"
+            className="px-2 py-1 text-xs bg-vscode-buttonBg hover:bg-vscode-buttonHoverBg text-vscode-buttonText rounded border border-vscode-border transition-colors"
           >
             Collapse all
           </button>
           <button
             type="button"
             onClick={expandAll}
-            className="text-xs text-vscode-text-secondary hover:text-vscode-text transition-colors"
+            className="px-2 py-1 text-xs bg-vscode-buttonBg hover:bg-vscode-buttonHoverBg text-vscode-buttonText rounded border border-vscode-border transition-colors"
           >
             Expand all
           </button>

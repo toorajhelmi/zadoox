@@ -36,7 +36,7 @@ export function EditorSidebar({ isOpen, onToggle, content, ir, documentId, onRol
     <>
       {/* Expanded sidebar */}
       {isOpen && (
-        <div className="flex-1 bg-vscode-sidebar flex flex-col relative">
+        <div className="h-full bg-vscode-sidebar flex flex-col relative">
           {/* Sidebar header with tabs */}
           <div className="h-12 flex items-center border-b border-vscode-border">
             <button

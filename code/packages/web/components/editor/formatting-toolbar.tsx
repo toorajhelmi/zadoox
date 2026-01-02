@@ -14,9 +14,10 @@ import type { FormatType } from './floating-format-menu';
 interface FormattingToolbarProps {
   onFormat: (format: FormatType) => void;
   viewMode: 'edit' | 'preview' | 'split' | 'ir';
+  currentStyle?: 'paragraph' | 'heading1' | 'heading2' | 'heading3';
 }
 
-export function FormattingToolbar({ onFormat, viewMode }: FormattingToolbarProps) {
+export function FormattingToolbar({ onFormat, viewMode, currentStyle = 'paragraph' }: FormattingToolbarProps) {
   // Only show in edit or split mode
   if (viewMode === 'preview' || viewMode === 'ir') {
     return null;
@@ -34,6 +35,24 @@ export function FormattingToolbar({ onFormat, viewMode }: FormattingToolbarProps
 
   return (
     <div className="h-10 bg-vscode-sidebar border-b border-vscode-border flex items-center gap-1 px-3">
+      {/* Block style (headings) */}
+      <div className="mr-2">
+        <select
+          aria-label="Text style"
+          className="h-7 px-2 text-xs bg-vscode-buttonBg hover:bg-vscode-buttonHoverBg text-vscode-buttonText rounded border border-vscode-border transition-colors"
+          value={currentStyle}
+          onChange={(e) => {
+            const v = e.target.value as FormatType;
+            onFormat(v);
+          }}
+        >
+          <option value="paragraph">Normal</option>
+          <option value="heading1">Title</option>
+          <option value="heading2">Section</option>
+          <option value="heading3">Subsection</option>
+        </select>
+      </div>
+
       {formatButtons.map((button) => {
         const Icon = button.icon;
         return (

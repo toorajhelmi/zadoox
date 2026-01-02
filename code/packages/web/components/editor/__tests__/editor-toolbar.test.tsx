@@ -36,27 +36,10 @@ vi.mock('date-fns', () => ({
 }));
 
 describe('EditorToolbar', () => {
-  const mockOnToggleSidebar = vi.fn();
   const mockOnViewModeChange = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  it('should render sidebar toggle button', () => {
-    render(
-      <EditorToolbar
-        projectId="project-1"
-        documentTitle="Test Document"
-        isSaving={false}
-        lastSaved={null}
-        onToggleSidebar={mockOnToggleSidebar}
-        viewMode="edit"
-        onViewModeChange={mockOnViewModeChange}
-      />
-    );
-
-    expect(screen.getByLabelText('Toggle sidebar')).toBeInTheDocument();
   });
 
   it('should render IR preview view mode button', () => {
@@ -66,7 +49,6 @@ describe('EditorToolbar', () => {
         documentTitle="Test Document"
         isSaving={false}
         lastSaved={null}
-        onToggleSidebar={mockOnToggleSidebar}
         viewMode="edit"
         onViewModeChange={mockOnViewModeChange}
       />
