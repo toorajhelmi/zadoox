@@ -340,33 +340,35 @@ function parseBlocks(latex: string): Block[] {
     }
 
     // Boilerplate (system-generated for compilable docs) — ignore so round-trips stay clean.
-    if (/^\\documentclass\{[^}]+\}\s*$/.test(line.trim())) {
+    // Also tolerate trailing comments like: \end{document} % comment
+    const trimmed = line.trim();
+    if (/^\\+documentclass\{[^}]+\}(?:\s*%.*)?$/.test(trimmed)) {
       i++;
       blockIndex++;
       continue;
     }
-    if (/^\\usepackage(\[[^\]]+\])?\{[^}]+\}\s*$/.test(line.trim())) {
+    if (/^\\+usepackage(\[[^\]]+\])?\{[^}]+\}(?:\s*%.*)?$/.test(trimmed)) {
       i++;
       blockIndex++;
       continue;
     }
-    if (/^\\begin\{document\}\s*$/.test(line.trim())) {
+    if (/^\\+begin\{document\}(?:\s*%.*)?$/.test(trimmed)) {
       i++;
       blockIndex++;
       continue;
     }
-    if (/^\\end\{document\}\s*$/.test(line.trim())) {
+    if (/^\\+end\{document\}(?:\s*%.*)?$/.test(trimmed)) {
       i++;
       blockIndex++;
       continue;
     }
-    if (/^\\maketitle\s*$/.test(line.trim())) {
+    if (/^\\+maketitle(?:\s*%.*)?$/.test(trimmed)) {
       i++;
       blockIndex++;
       continue;
     }
-    if (/^\\author\{[^}]*\}\s*$/.test(line.trim())) {
-      const m = /^\\author\{([^}]*)\}\s*$/.exec(line.trim());
+    if (/^\\+author\{[^}]*\}(?:\s*%.*)?$/.test(trimmed)) {
+      const m = /^\\+author\{([^}]*)\}(?:\s*%.*)?$/.exec(trimmed);
       const text = latexInlineToMarkdown((m?.[1] ?? '').trim());
       // Preserve explicit author marker even if empty (\author{} means "no author")
       blocks.push({ kind: 'author', text, raw: line, blockIndex, startOffset: start, endOffset: end });
@@ -374,8 +376,8 @@ function parseBlocks(latex: string): Block[] {
       blockIndex++;
       continue;
     }
-    if (/^\\date\{[^}]*\}\s*$/.test(line.trim())) {
-      const m = /^\\date\{([^}]*)\}\s*$/.exec(line.trim());
+    if (/^\\+date\{[^}]*\}(?:\s*%.*)?$/.test(trimmed)) {
+      const m = /^\\+date\{([^}]*)\}(?:\s*%.*)?$/.exec(trimmed);
       const text = latexInlineToMarkdown((m?.[1] ?? '').trim());
       // Preserve explicit date marker even if empty (\date{} means "no date" / suppress default)
       blocks.push({ kind: 'date', text, raw: line, blockIndex, startOffset: start, endOffset: end });
@@ -385,7 +387,7 @@ function parseBlocks(latex: string): Block[] {
     }
 
     // \title{...}
-    const titleMatch = /^\\title\{([^}]*)\}\s*$/.exec(line.trim());
+    const titleMatch = /^\\+title\{([^}]*)\}(?:\s*%.*)?$/.exec(trimmed);
     if (titleMatch) {
       const title = latexInlineToMarkdown((titleMatch[1] ?? '').trim());
       blocks.push({
@@ -402,7 +404,7 @@ function parseBlocks(latex: string): Block[] {
     }
 
     // Sections
-    const sec = /^\\(section|subsection|subsubsection)\{([^}]*)\}\s*$/.exec(line.trim());
+    const sec = /^\\+(section|subsection|subsubsection)\{([^}]*)\}(?:\s*%.*)?$/.exec(trimmed);
     if (sec) {
       const level = sec[1] === 'section' ? 1 : sec[1] === 'subsection' ? 2 : 3;
       const title = latexInlineToMarkdown((sec[2] ?? '').trim());
