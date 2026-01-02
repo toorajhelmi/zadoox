@@ -121,6 +121,15 @@ describe('Markdown Utilities', () => {
       expect(html).toContain('float:left');
     });
 
+    it('should center inline figures when align="center" (no float)', () => {
+      const markdown =
+        '![Caption](image.png){#fig:generated-123 label="Figure {REF}.1" placement="inline" align="center"}';
+      const html = renderMarkdownToHtml(markdown);
+      expect(html).toContain('margin:0 auto 12px auto');
+      expect(html).not.toContain('float:left');
+      expect(html).not.toContain('float:right');
+    });
+
     it('should not break asset URLs containing "__" (no accidental italics)', () => {
       const markdown =
         '![Cap](zadoox-asset://053a1656-58a5-46f1-8df6-146b6d4b40ae__af442c5b-85f0-4815-9f4e-11acbb1b71a0.png){#fig:generated-1 label="Figure {REF}.1"}';

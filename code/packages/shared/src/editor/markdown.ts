@@ -139,12 +139,22 @@ export function renderMarkdownToHtml(content: string): string {
       // and float-right when align="right".
       const wrapperStyleParts: string[] = [];
       if (placement === 'inline') {
-        // Ensure wrapper hugs the image/caption block.
-        wrapperStyleParts.push('display:inline-block');
-        if (width) wrapperStyleParts.push(`width:${width}`);
-        const floatSide = align === 'right' ? 'right' : 'left';
-        wrapperStyleParts.push(`float:${floatSide}`);
-        wrapperStyleParts.push(floatSide === 'left' ? 'margin:0 12px 12px 0' : 'margin:0 0 12px 12px');
+        if (align === 'center') {
+          // Center + inline is ambiguous for wrapping. We treat it as a centered block so it matches
+          // the edit-mode behavior and avoids awkward wrap around a centered float.
+          wrapperStyleParts.push('display:block');
+          wrapperStyleParts.push('width:fit-content');
+          wrapperStyleParts.push('max-width:100%');
+          if (width) wrapperStyleParts.push(`width:${width}`);
+          wrapperStyleParts.push('margin:0 auto 12px auto');
+        } else {
+          // Ensure wrapper hugs the image/caption block.
+          wrapperStyleParts.push('display:inline-block');
+          if (width) wrapperStyleParts.push(`width:${width}`);
+          const floatSide = align === 'right' ? 'right' : 'left';
+          wrapperStyleParts.push(`float:${floatSide}`);
+          wrapperStyleParts.push(floatSide === 'left' ? 'margin:0 12px 12px 0' : 'margin:0 0 12px 12px');
+        }
       } else {
         wrapperStyleParts.push('display:block');
         wrapperStyleParts.push('width:100%');
