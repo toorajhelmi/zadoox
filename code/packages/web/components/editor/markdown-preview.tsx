@@ -1,7 +1,7 @@
 'use client';
 
 import { renderMarkdownToHtml, extractHeadings } from '@zadoox/shared';
-import { useMemo, useEffect, useRef, useState } from 'react';
+import { useMemo, useEffect, useRef, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 interface MarkdownPreviewProps {
@@ -15,6 +15,9 @@ const TRANSPARENT_PIXEL =
 export function MarkdownPreview({ content }: MarkdownPreviewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const assetUrlCacheRef = useRef<Map<string, string>>(new Map());
+  const assetInFlightRef = useRef<Set<string>>(new Set());
+  const abortRef = useRef<AbortController | null>(null);
   const html = useMemo(() => {
     if (!content.trim()) {
       return '';
@@ -227,53 +230,90 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
 
   // Resolve zadoox-asset:// images by fetching from backend with Authorization header.
   // This avoids relying on cookie-based sessions for <img src> requests.
-  useEffect(() => {
+  const resolveAssetImages = useCallback(async () => {
     const container = containerRef.current;
     if (!container) return;
+    const token = accessToken;
+    if (!token) return;
+
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
+    if (!abortRef.current) abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
 
     const imgs = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
     const assetImgs = imgs.filter((img) => {
       const key = img.dataset.assetKey;
-      return typeof key === 'string' && key.length > 0;
+      if (!key) return false;
+      // Only try to resolve if still on placeholder or missing.
+      const src = img.getAttribute('src') || '';
+      return src === TRANSPARENT_PIXEL || src.trim() === '';
     });
     if (assetImgs.length === 0) return;
 
-    const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
-    const abort = new AbortController();
+    await Promise.all(
+      assetImgs.map(async (img) => {
+        const key = img.dataset.assetKey || '';
+        if (!key) return;
 
-    const objectUrls: string[] = [];
+        const cached = assetUrlCacheRef.current.get(key);
+        if (cached) {
+          img.src = cached;
+          return;
+        }
 
-    (async () => {
-      const token = accessToken;
-      if (!token) return; // no client token; keep placeholder (auth is required to fetch)
+        if (assetInFlightRef.current.has(key)) return;
+        assetInFlightRef.current.add(key);
+        try {
+          const res = await fetch(`${API_BASE}/assets/${encodeURIComponent(key)}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal,
+          });
+          if (!res.ok) return;
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          assetUrlCacheRef.current.set(key, url);
+          img.src = url;
+        } catch {
+          // ignore
+        } finally {
+          assetInFlightRef.current.delete(key);
+        }
+      })
+    );
+  }, [accessToken]);
 
-      await Promise.all(
-        assetImgs.map(async (img) => {
-          const key = img.dataset.assetKey || '';
-          if (!key) return;
+  useEffect(() => {
+    void resolveAssetImages();
+  }, [html, accessToken, resolveAssetImages]);
 
-          try {
-            const res = await fetch(`${API_BASE}/assets/${encodeURIComponent(key)}`, {
-              headers: { Authorization: `Bearer ${token}` },
-              signal: abort.signal,
-            });
-            if (!res.ok) return;
-            const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
-            objectUrls.push(url);
-            img.src = url;
-          } catch {
-            // ignore
-          }
-        })
-      );
-    })();
+  // If the preview DOM is replaced/reconciled (or images are inserted later),
+  // keep resolving any placeholder asset images.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const obs = new MutationObserver(() => {
+      void resolveAssetImages();
+    });
+    obs.observe(container, { childList: true, subtree: true });
 
     return () => {
-      abort.abort();
-      for (const u of objectUrls) URL.revokeObjectURL(u);
+      obs.disconnect();
     };
-  }, [html, accessToken]);
+  }, [resolveAssetImages]);
+
+  // Cleanup blob URLs + in-flight fetch on unmount
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      abortRef.current = null;
+      for (const url of assetUrlCacheRef.current.values()) {
+        URL.revokeObjectURL(url);
+      }
+      assetUrlCacheRef.current.clear();
+      assetInFlightRef.current.clear();
+    };
+  }, []);
 
   // Handle citation link clicks
   useEffect(() => {
