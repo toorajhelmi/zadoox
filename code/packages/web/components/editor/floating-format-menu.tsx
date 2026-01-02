@@ -22,7 +22,11 @@ export type FormatType =
   | 'subscript' 
   | 'superscript' 
   | 'code' 
-  | 'link';
+  | 'link'
+  | 'paragraph'
+  | 'heading1'
+  | 'heading2'
+  | 'heading3';
 
 const FORMAT_OPTIONS: Array<{ type: FormatType; icon: React.ComponentType<{ className?: string }>; label: string; shortcut?: string }> = [
   { type: 'bold', icon: BoldIcon, label: 'Bold', shortcut: 'Cmd+B' },

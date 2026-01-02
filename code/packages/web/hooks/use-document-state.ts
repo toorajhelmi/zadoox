@@ -7,6 +7,22 @@ import type { ParagraphMode } from '@zadoox/shared';
 
 const AUTO_SAVE_DELAY = 2000; // 2 seconds after last edit
 
+function deriveTitleFromXmd(xmd: string): string | null {
+  const lines = xmd.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    // Only H1: "# Title" (not "##")
+    const m = /^#(?!#)\s+(.+)$/.exec(trimmed);
+    if (!m) continue;
+    const title = (m[1] || '').trim();
+    if (!title) return null;
+    // Keep titles reasonably short for UI.
+    return title.length > 160 ? `${title.slice(0, 157)}...` : title;
+  }
+  return null;
+}
+
 export function useDocumentState(documentId: string, projectId: string) {
   const [content, setContent] = useState('');
   const [documentTitle, setDocumentTitle] = useState<string>('');
@@ -46,8 +62,9 @@ export function useDocumentState(documentId: string, projectId: string) {
           }
           
           setActualDocumentId(document.id);
-          setContent(document.content || '');
-          setDocumentTitle(document.title);
+          const loadedContent = document.content || '';
+          setContent(loadedContent);
+          setDocumentTitle(deriveTitleFromXmd(loadedContent) ?? document.title);
           setLastSaved(new Date(document.updatedAt));
           setParagraphModes(document.metadata?.paragraphModes || {});
           setIsLoading(false);
@@ -58,8 +75,9 @@ export function useDocumentState(documentId: string, projectId: string) {
         try {
           const document = await api.documents.get(documentId);
           setActualDocumentId(document.id);
-          setContent(document.content || '');
-          setDocumentTitle(document.title);
+          const loadedContent = document.content || '';
+          setContent(loadedContent);
+          setDocumentTitle(deriveTitleFromXmd(loadedContent) ?? document.title);
           setLastSaved(new Date(document.updatedAt));
           setParagraphModes(document.metadata?.paragraphModes || {});
           setIsLoading(false);
@@ -90,11 +108,13 @@ export function useDocumentState(documentId: string, projectId: string) {
 
       setIsSaving(true);
       try {
+        const derivedTitle = deriveTitleFromXmd(contentToSave);
         // Get current document to preserve metadata (especially paragraphModes)
         const currentDocument = await api.documents.get(actualDocumentId);
         
         // Update document with content change, preserving existing metadata
         const document = await api.documents.update(actualDocumentId, {
+          ...(derivedTitle ? { title: derivedTitle } : null),
           content: contentToSave,
           metadata: {
             ...currentDocument.metadata,
@@ -119,6 +139,10 @@ export function useDocumentState(documentId: string, projectId: string) {
   const updateContent = useCallback(
     (newContent: string) => {
       setContent(newContent);
+      const derivedTitle = deriveTitleFromXmd(newContent);
+      if (derivedTitle) {
+        setDocumentTitle(derivedTitle);
+      }
 
       // Clear existing timeout
       if (saveTimeoutRef.current) {

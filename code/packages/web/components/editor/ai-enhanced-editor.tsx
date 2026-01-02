@@ -26,6 +26,11 @@ interface AIEnhancedEditorProps {
   paragraphModes?: Record<string, ParagraphMode>;
   documentId?: string;
   onCurrentParagraphChange?: (paragraphId: string | null) => void;
+  onDocumentAIMetricsChange?: (payload: {
+    metrics: Record<string, number> | null;
+    analyzedSections: number;
+    isAnalyzing: boolean;
+  }) => void;
   thinkPanelOpen?: boolean;
   openParagraphId?: string | null;
   onOpenPanel?: (paragraphId: string) => void;
@@ -50,6 +55,7 @@ export function AIEnhancedEditor({
   paragraphModes: _paragraphModes = {},
   documentId: _documentId,
   onCurrentParagraphChange,
+  onDocumentAIMetricsChange,
   thinkPanelOpen = false,
   openParagraphId = null,
   onOpenPanel,
@@ -66,6 +72,7 @@ export function AIEnhancedEditor({
   const clearDeltaTimeoutRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   const { paragraphs, getAnalysis, isAnalyzing, analyze: analyzeParagraph } = useAIAnalysis(value, model);
+  const lastDocMetricsSigRef = useRef<string>('');
   const editorViewRef = useRef<EditorView | null>(null);
   const isMouseOverToolbarRef = useRef(false);
 
@@ -204,13 +211,59 @@ export function AIEnhancedEditor({
     }
     
     // Update current paragraph ID when cursor moves
-    if (position && onCurrentParagraphChange) {
-      const paraId = findParagraphAtCursor(position.line);
+    const paraId = position ? findParagraphAtCursor(position.line) : null;
+    if (onCurrentParagraphChange) {
       onCurrentParagraphChange(paraId);
-    } else if (onCurrentParagraphChange) {
-      onCurrentParagraphChange(null);
     }
   }, [findParagraphAtCursor, onCursorPositionChange, onCurrentParagraphChange]);
+
+  // Emit doc-level AI metrics: average numeric metrics across all analyzed sections/paragraphs.
+  // "Meaningful change" definition: the rounded displayed values change or analyzed section count changes.
+  useEffect(() => {
+    if (!onDocumentAIMetricsChange) return;
+
+    const analyzed = paragraphs.filter((p) => Boolean(p.analysis));
+    const analyzedSections = analyzed.length;
+
+    if (analyzedSections === 0) {
+      const sig = `none:${isAnalyzing ? 1 : 0}`;
+      if (sig !== lastDocMetricsSigRef.current) {
+        lastDocMetricsSigRef.current = sig;
+        onDocumentAIMetricsChange({ metrics: null, analyzedSections: 0, isAnalyzing });
+      }
+      return;
+    }
+
+    const sums: Record<string, number> = {};
+    const counts: Record<string, number> = {};
+
+    for (const p of analyzed) {
+      const a = p.analysis as unknown as Record<string, unknown>;
+      for (const [k, v] of Object.entries(a)) {
+        if (typeof v !== 'number' || Number.isNaN(v)) continue;
+        sums[k] = (sums[k] ?? 0) + v;
+        counts[k] = (counts[k] ?? 0) + 1;
+      }
+    }
+
+    const metrics: Record<string, number> = {};
+    for (const [k, sum] of Object.entries(sums)) {
+      const c = counts[k] ?? 0;
+      if (c <= 0) continue;
+      metrics[k] = sum / c;
+    }
+
+    const roundedPairs = Object.keys(metrics)
+      .sort()
+      .map((k) => `${k}:${Math.round(metrics[k])}`)
+      .join('|');
+    const sig = `a:${analyzedSections}:${isAnalyzing ? 1 : 0}:${roundedPairs}`;
+
+    if (sig !== lastDocMetricsSigRef.current) {
+      lastDocMetricsSigRef.current = sig;
+      onDocumentAIMetricsChange({ metrics, analyzedSections, isAnalyzing });
+    }
+  }, [paragraphs, isAnalyzing, onDocumentAIMetricsChange]);
   
   // Get paragraph start position in document (for positioning toolbar above)
   // Since useAIAnalysis doesn't track line numbers, we need to find the paragraph in the document

@@ -5,53 +5,80 @@
 
 /// <reference types="vitest" />
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { DocumentOutline } from '../document-outline';
-import * as shared from '@zadoox/shared';
-
-// Mock the shared package
-vi.mock('@zadoox/shared', () => ({
-  extractOutlineItems: vi.fn(),
-}));
+import type { DocumentNode } from '@zadoox/shared';
 
 describe('DocumentOutline', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
   it('should render "No outline available" when there are no headings', () => {
-    vi.mocked(shared.extractOutlineItems).mockReturnValueOnce([]);
+    const ir: DocumentNode = {
+      id: 'doc',
+      type: 'document',
+      docId: 'doc-1',
+      children: [{ id: 'p1', type: 'paragraph', text: 'Just text' }],
+    };
 
-    render(<DocumentOutline content="# Test" />);
+    render(<DocumentOutline content="Just text" ir={ir} />);
 
     expect(screen.getByText('No outline available')).toBeInTheDocument();
   });
 
   it('should render headings when content has headings', () => {
-    const mockItems = [
-      { kind: 'heading', level: 1, text: 'Introduction', id: 'introduction' },
-      { kind: 'heading', level: 2, text: 'Getting Started', id: 'getting-started' },
-    ];
+    const ir: DocumentNode = {
+      id: 'doc',
+      type: 'document',
+      docId: 'doc-1',
+      children: [
+        {
+          id: 's1',
+          type: 'section',
+          level: 1,
+          title: 'Introduction',
+          children: [
+            {
+              id: 's2',
+              type: 'section',
+              level: 2,
+              title: 'Getting Started',
+              children: [],
+            },
+          ],
+        },
+      ],
+    };
 
-    vi.mocked(shared.extractOutlineItems).mockReturnValueOnce(mockItems as any);
-
-    render(<DocumentOutline content="# Introduction\n## Getting Started" />);
+    render(<DocumentOutline content="# Introduction\n## Getting Started" ir={ir} />);
 
     expect(screen.getByText('Introduction')).toBeInTheDocument();
     expect(screen.getByText('Getting Started')).toBeInTheDocument();
   });
 
   it('should render figures in the outline', () => {
-    const mockItems = [
-      { kind: 'heading', level: 1, text: 'Intro', id: 'intro' },
-      { kind: 'figure', id: 'figure-fig-generated-1', text: 'Figure — A caption', figureNumber: 1, caption: 'A caption' },
-      { kind: 'figure', id: 'figure-fig-generated-2', text: 'Figure 2', figureNumber: 2, caption: null },
-    ];
+    const ir: DocumentNode = {
+      id: 'doc',
+      type: 'document',
+      docId: 'doc-1',
+      children: [
+        { id: 's1', type: 'section', level: 1, title: 'Intro', children: [] },
+        {
+          id: 'f1',
+          type: 'figure',
+          src: 'x',
+          caption: 'A caption',
+          label: 'fig:generated-1',
+        },
+        {
+          id: 'f2',
+          type: 'figure',
+          src: 'x',
+          caption: '',
+          label: 'fig:generated-2',
+        },
+      ],
+    };
 
-    vi.mocked(shared.extractOutlineItems).mockReturnValueOnce(mockItems as any);
-
-    render(<DocumentOutline content="# Intro\n![A caption](x){#fig:generated-1}\n![](x){#fig:generated-2}" />);
+    render(<DocumentOutline content="# Intro" ir={ir} />);
 
     expect(screen.getByText('Figure — A caption')).toBeInTheDocument();
     expect(screen.getByText('Figure 2')).toBeInTheDocument();

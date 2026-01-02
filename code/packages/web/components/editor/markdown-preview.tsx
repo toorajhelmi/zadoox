@@ -1,15 +1,23 @@
 'use client';
 
 import { renderMarkdownToHtml, extractHeadings } from '@zadoox/shared';
-import { useMemo, useEffect, useRef } from 'react';
+import { useMemo, useEffect, useRef, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 interface MarkdownPreviewProps {
   content: string;
 }
 
+const TRANSPARENT_PIXEL =
+  // 1x1 transparent GIF
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+
 export function MarkdownPreview({ content }: MarkdownPreviewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const assetUrlCacheRef = useRef<Map<string, string>>(new Map());
+  const assetInFlightRef = useRef<Set<string>>(new Set());
+  const abortRef = useRef<AbortController | null>(null);
   const html = useMemo(() => {
     if (!content.trim()) {
       return '';
@@ -174,61 +182,140 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
     });
     
     htmlContent = processedHtml;
+
+    // IMPORTANT: Never leave <img src="zadoox-asset://..."> in the DOM.
+    // Browsers treat that as an unknown URL scheme and will fail before our JS can swap it.
+    // Instead, replace it with a placeholder src + a data-asset-key we can resolve.
+    htmlContent = htmlContent.replace(
+      /<img([^>]*?)\s+src="zadoox-asset:\/\/([^"]+)"([^>]*)>/gim,
+      (_m, preAttrs, key, postAttrs) =>
+        `<img${preAttrs} src="${TRANSPARENT_PIXEL}" data-asset-key="${String(key)}"${postAttrs}>`
+    );
     
     return htmlContent;
   }, [content]);
 
-  // Resolve zadoox-asset:// images by fetching from backend with Authorization header.
-  // This avoids relying on cookie-based sessions for <img src> requests.
+  // Track auth token so asset fetching can retry when a session becomes available.
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const imgs = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
-    const assetImgs = imgs.filter((img) => (img.getAttribute('src') || '').startsWith('zadoox-asset://'));
-    if (assetImgs.length === 0) return;
-
-    const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
     const supabase = createClient();
-    const abort = new AbortController();
-
-    const objectUrls: string[] = [];
+    let cancelled = false;
 
     (async () => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) return;
-
-      await Promise.all(
-        assetImgs.map(async (img) => {
-          const raw = img.getAttribute('src') || '';
-          const key = raw.replace('zadoox-asset://', '');
-          if (!key) return;
-
-          try {
-            const res = await fetch(`${API_BASE}/assets/${encodeURIComponent(key)}`, {
-              headers: { Authorization: `Bearer ${token}` },
-              signal: abort.signal,
-            });
-            if (!res.ok) return;
-            const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
-            objectUrls.push(url);
-            img.src = url;
-          } catch {
-            // ignore
-          }
-        })
-      );
+      if (cancelled) return;
+      setAccessToken(session?.access_token ?? null);
     })();
 
+    // IMPORTANT: don't detach the method from `supabase.auth` (it relies on `this` internally).
+    const maybeOnAuthStateChange = (supabase.auth as unknown as { onAuthStateChange?: unknown }).onAuthStateChange;
+    const sub =
+      typeof maybeOnAuthStateChange === 'function'
+        ? (supabase.auth as unknown as {
+            onAuthStateChange: (cb: (event: unknown, session: { access_token?: string } | null) => void) => {
+              data: { subscription: { unsubscribe: () => void } };
+            };
+          }).onAuthStateChange((_event, session) => {
+            if (cancelled) return;
+            setAccessToken(session?.access_token ?? null);
+          })
+        : null;
+
     return () => {
-      abort.abort();
-      for (const u of objectUrls) URL.revokeObjectURL(u);
+      cancelled = true;
+      sub?.data.subscription.unsubscribe();
     };
-  }, [html]);
+  }, []);
+
+  // Resolve zadoox-asset:// images by fetching from backend with Authorization header.
+  // This avoids relying on cookie-based sessions for <img src> requests.
+  const resolveAssetImages = useCallback(async () => {
+    const container = containerRef.current;
+    if (!container) return;
+    const token = accessToken;
+    if (!token) return;
+
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
+    if (!abortRef.current) abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
+
+    const imgs = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
+    const assetImgs = imgs.filter((img) => {
+      const key = img.dataset.assetKey;
+      if (!key) return false;
+      // Only try to resolve if still on placeholder or missing.
+      const src = img.getAttribute('src') || '';
+      return src === TRANSPARENT_PIXEL || src.trim() === '';
+    });
+    if (assetImgs.length === 0) return;
+
+    await Promise.all(
+      assetImgs.map(async (img) => {
+        const key = img.dataset.assetKey || '';
+        if (!key) return;
+
+        const cached = assetUrlCacheRef.current.get(key);
+        if (cached) {
+          img.src = cached;
+          return;
+        }
+
+        if (assetInFlightRef.current.has(key)) return;
+        assetInFlightRef.current.add(key);
+        try {
+          const res = await fetch(`${API_BASE}/assets/${encodeURIComponent(key)}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal,
+          });
+          if (!res.ok) return;
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          assetUrlCacheRef.current.set(key, url);
+          img.src = url;
+        } catch {
+          // ignore
+        } finally {
+          assetInFlightRef.current.delete(key);
+        }
+      })
+    );
+  }, [accessToken]);
+
+  useEffect(() => {
+    void resolveAssetImages();
+  }, [html, accessToken, resolveAssetImages]);
+
+  // If the preview DOM is replaced/reconciled (or images are inserted later),
+  // keep resolving any placeholder asset images.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const obs = new MutationObserver(() => {
+      void resolveAssetImages();
+    });
+    obs.observe(container, { childList: true, subtree: true });
+
+    return () => {
+      obs.disconnect();
+    };
+  }, [resolveAssetImages]);
+
+  // Cleanup blob URLs + in-flight fetch on unmount
+  useEffect(() => {
+    const cache = assetUrlCacheRef.current;
+    const inflight = assetInFlightRef.current;
+    return () => {
+      abortRef.current?.abort();
+      abortRef.current = null;
+      for (const url of cache.values()) {
+        URL.revokeObjectURL(url);
+      }
+      cache.clear();
+      inflight.clear();
+    };
+  }, []);
 
   // Handle citation link clicks
   useEffect(() => {

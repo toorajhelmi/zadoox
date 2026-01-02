@@ -1,17 +1,19 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { ChevronRightIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
 import { EditorSidebar } from './editor-sidebar';
 import { EditorToolbar } from './editor-toolbar';
 import { EditorStatusBar } from './editor-status-bar';
 import { AIEnhancedEditor } from './ai-enhanced-editor';
 import { MarkdownPreview } from './markdown-preview';
+import { IrPreview } from './ir-preview';
 import { FormattingToolbar } from './formatting-toolbar';
 import { ThinkModePanel } from './think-mode-panel';
 import { InlineAIChat } from './inline-ai-chat';
 import { InlineAIHint } from './inline-ai-hint';
 import { useDocumentState } from '@/hooks/use-document-state';
+import { useIrDocument } from '@/hooks/use-ir-document';
 import { api } from '@/lib/api/client';
 import type { FormatType } from './floating-format-menu';
 import { useChangeTracking } from '@/hooks/use-change-tracking';
@@ -26,7 +28,7 @@ interface EditorLayoutProps {
   documentId: string;
 }
 
-type ViewMode = 'edit' | 'preview' | 'split';
+type ViewMode = 'edit' | 'preview' | 'split' | 'ir';
 
 type SidebarTab = 'outline' | 'history';
 
@@ -59,6 +61,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   }, []);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
+  // Editor/preview splitter state (used in split mode)
+  const [editorPaneWidth, setEditorPaneWidth] = useState<number>(0); // px; 0 => default (50%)
+  const [isResizingEditorPane, setIsResizingEditorPane] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
   const [latestVersion, setLatestVersion] = useState<number | null>(null);
   const [cursorPosition, setCursorPosition] = useState<{ line: number; column: number } | null>(null);
@@ -77,11 +82,61 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const editorContainerRef = useRef<HTMLDivElement | null>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isUserInputRef = useRef<boolean>(false); // Track if content change is from user input
+  const [docAIMetrics, setDocAIMetrics] = useState<{
+    metrics: Record<string, number> | null;
+    analyzedSections: number;
+    isAnalyzing: boolean;
+  } | null>(null);
+
+  const currentTextStyle = (() => {
+    const view = editorViewRef.current;
+    if (!view) return 'paragraph' as const;
+    try {
+      const sel = view.state.selection.main;
+      const line = view.state.doc.lineAt(sel.head).text;
+      const m = /^(#{1,6})\s+/.exec(line.trimStart());
+      if (!m) return 'paragraph' as const;
+      const level = m[1].length;
+      if (level <= 1) return 'heading1' as const;
+      if (level === 2) return 'heading2' as const;
+      return 'heading3' as const;
+    } catch {
+      return 'paragraph' as const;
+    }
+  })();
+
+  // Phase 11: keep IR updated as XMD changes (debounced), compute node-level delta + events.
+  const irState = useIrDocument({
+    docId: actualDocumentId || documentId,
+    xmd: content,
+    debounceMs: 250,
+    enabled: Boolean(actualDocumentId || documentId),
+  });
 
   // Sidebar resize handlers
   const handleSidebarResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setIsResizingSidebar(true);
+  }, []);
+
+  // Editor/preview splitter resize handlers (split + compare modes)
+  const handleEditorPaneResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizingEditorPane(true);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('editor-pane-width');
+      if (saved) {
+        const next = parseInt(saved, 10);
+        if (Number.isFinite(next) && next > 0) {
+          setEditorPaneWidth(next);
+        }
+      }
+    } catch {
+      // ignore
+    }
   }, []);
 
   useEffect(() => {
@@ -114,6 +169,41 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isResizingSidebar]);
+
+  useEffect(() => {
+    if (!isResizingEditorPane) return;
+
+    const MIN_EDITOR_WIDTH = 360;
+    const MIN_PREVIEW_WIDTH = 360;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      e.preventDefault();
+      if (!editorContainerRef.current) return;
+
+      const rect = editorContainerRef.current.getBoundingClientRect();
+      const raw = e.clientX - rect.left;
+      const maxEditor = Math.max(MIN_EDITOR_WIDTH, rect.width - MIN_PREVIEW_WIDTH);
+      const clamped = Math.max(MIN_EDITOR_WIDTH, Math.min(maxEditor, raw));
+
+      setEditorPaneWidth(clamped);
+      try {
+        localStorage.setItem('editor-pane-width', clamped.toString());
+      } catch {
+        // ignore
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingEditorPane(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove, { passive: false });
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingEditorPane]);
 
   function buildInlineBlocksAroundCursor(fullText: string, cursorLine0: number) {
     const lines = fullText.split('\n');
@@ -784,7 +874,44 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
 
     const hasRange = typeof from === 'number' && typeof to === 'number' && from >= 0 && to >= 0 && to > from;
 
+    const applyHeadingToRange = (level: number | null) => {
+      if (!view) return;
+      const doc = view.state.doc;
+      const rangeFrom = typeof from === 'number' ? from : view.state.selection.main.head;
+      const rangeTo = typeof to === 'number' ? to : rangeFrom;
+
+      const startLine = doc.lineAt(rangeFrom);
+      const endLine = doc.lineAt(rangeTo);
+
+      const lines: Array<{ from: number; to: number; text: string }> = [];
+      for (let n = startLine.number; n <= endLine.number; n++) {
+        const l = doc.line(n);
+        lines.push({ from: l.from, to: l.to, text: l.text });
+      }
+
+      const replaceLine = (lineText: string) => {
+        const stripped = lineText.replace(/^\s*#{1,6}\s+/, '');
+        if (level === null) return stripped; // "Normal"
+        const hashes = '#'.repeat(level);
+        return `${hashes} ${stripped}`;
+      };
+
+      // Build new document content by editing from bottom to top to keep indices valid.
+      let next = baseContent;
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const l = lines[i];
+        const replaced = replaceLine(l.text);
+        next = next.slice(0, l.from) + replaced + next.slice(l.to);
+      }
+      applyUserEdit(next);
+    };
+
     if (hasRange) {
+      if (format === 'heading1') return applyHeadingToRange(1);
+      if (format === 'heading2') return applyHeadingToRange(2);
+      if (format === 'heading3') return applyHeadingToRange(3);
+      if (format === 'paragraph') return applyHeadingToRange(null);
+
       // Format selected text using exact positions from CodeMirror
       let formattedText = '';
       const selectedText = baseContent.slice(from!, to!);
@@ -820,6 +947,11 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         baseContent.slice(to!);
       applyUserEdit(newContent);
     } else {
+      if (format === 'heading1') return applyHeadingToRange(1);
+      if (format === 'heading2') return applyHeadingToRange(2);
+      if (format === 'heading3') return applyHeadingToRange(3);
+      if (format === 'paragraph') return applyHeadingToRange(null);
+
       // No selection - insert placeholder at cursor position (fallback to end)
       let placeholder = '';
       switch (format) {
@@ -855,7 +987,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   return (
     <div className="flex h-screen bg-vscode-bg text-vscode-text">
       {/* Sidebar */}
-      <div ref={sidebarRef} className="flex items-stretch relative">
+      <div ref={sidebarRef} className="flex items-stretch relative h-full">
         {/* Overlay for sidebar - prevents interaction when inline chat or think panel is open */}
         {sidebarOpen && (inlineAIChatOpen || thinkPanelOpen) && (
           <div className="absolute inset-0 bg-black/30 pointer-events-auto" style={{ zIndex: 45 }} />
@@ -872,11 +1004,12 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           </button>
         )}
         {sidebarOpen && (
-          <div style={{ width: `${sidebarWidth}px`, minWidth: `${sidebarWidth}px` }} className="relative">
+          <div style={{ width: `${sidebarWidth}px`, minWidth: `${sidebarWidth}px` }} className="relative h-full">
             <EditorSidebar
           isOpen={sidebarOpen}
           onToggle={() => setSidebarOpen(!sidebarOpen)}
           content={content}
+          ir={irState.ir}
           documentId={actualDocumentId}
           lastSaved={lastSaved}
           activeTab={sidebarTab}
@@ -962,7 +1095,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           documentTitle={documentTitle}
           isSaving={isSaving}
           lastSaved={lastSaved}
-          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           canUndo={undoRedo.canUndo}
@@ -985,6 +1117,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         <FormattingToolbar
           onFormat={handleFormat}
           viewMode={viewMode}
+          currentStyle={currentTextStyle}
         />
 
         {/* Change Tracking Banner - shown at top when tracking is active */}
@@ -1019,7 +1152,22 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         {/* Editor/Preview */}
         <div className="flex-1 overflow-hidden flex relative" ref={editorContainerRef}>
           {(viewMode === 'edit' || viewMode === 'split') && (
-            <div className={viewMode === 'split' ? 'flex-1 border-r border-vscode-border overflow-hidden relative' : 'flex-1 overflow-hidden relative'}>
+            <div
+              className={
+                viewMode === 'split'
+                  ? 'overflow-hidden relative'
+                  : 'flex-1 overflow-hidden relative'
+              }
+              style={
+                viewMode === 'split'
+                  ? {
+                      width: editorPaneWidth > 0 ? `${editorPaneWidth}px` : '50%',
+                      minWidth: '360px',
+                      maxWidth: '80%',
+                    }
+                  : undefined
+              }
+            >
               {/* Inline AI Hint - Shows toned-down prompt */}
               {!thinkPanelOpen && !inlineAIChatOpen && cursorScreenPosition && cursorPosition && (
                 <InlineAIHint
@@ -1265,6 +1413,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 onChange={handleContentChange}
                 onSelectionChange={handleSelectionChange}
                 onCursorPositionChange={handleCursorPositionChange}
+                onDocumentAIMetricsChange={(payload) => setDocAIMetrics(payload)}
                 model="auto"
                 paragraphModes={paragraphModes}
                 documentId={actualDocumentId}
@@ -1411,9 +1560,32 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             }}
           />
           
-          {(viewMode === 'preview' || viewMode === 'split') && (
-            <div className={viewMode === 'split' ? 'flex-1 overflow-auto' : 'flex-1'}>
-              <MarkdownPreview content={content} />
+          {viewMode === 'split' && (
+            <div
+              onMouseDown={handleEditorPaneResizeStart}
+              className={`w-1 h-full cursor-col-resize hover:bg-vscode-blue transition-colors z-10 ${
+                isResizingEditorPane ? 'bg-vscode-blue' : 'bg-transparent'
+              }`}
+              style={{ userSelect: 'none' }}
+              aria-label="Resize editor pane"
+            />
+          )}
+
+          {(viewMode === 'preview' || viewMode === 'split' || viewMode === 'ir') && (
+            <div
+              className={
+                viewMode === 'split'
+                  ? 'flex-1 overflow-hidden'
+                  : 'flex-1 overflow-hidden'
+              }
+            >
+              {viewMode === 'ir' ? (
+                <div className="h-full">
+                  <IrPreview docId={actualDocumentId || documentId} content={content} ir={irState.ir} />
+                </div>
+              ) : (
+                <MarkdownPreview content={content} />
+              )}
             </div>
           )}
 
@@ -1433,7 +1605,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           isSaving={isSaving}
           lastSaved={lastSaved}
           content={content}
-          cursorPosition={cursorPosition}
+          docAI={docAIMetrics ?? undefined}
         />
       </div>
     </div>

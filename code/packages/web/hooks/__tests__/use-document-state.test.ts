@@ -59,6 +59,60 @@ describe('useDocumentState - Core Functionality', () => {
     expect(result.current.documentId).toBe('doc-1');
   });
 
+  it('should derive document title from the first H1 heading', async () => {
+    const mockDocument: Document = {
+      id: 'doc-1',
+      projectId: 'project-1',
+      title: 'Untitled Document',
+      content: '# Philosophical Implications of Quantum Mechanics\n\nBody',
+      metadata: { type: 'standalone' },
+      createdAt: new Date('2024-01-01'),
+      updatedAt: new Date('2024-01-02'),
+    };
+
+    vi.mocked(api.documents.get).mockResolvedValueOnce(mockDocument);
+
+    const { result } = renderHook(() => useDocumentState('doc-1', 'project-1'));
+
+    await waitFor(
+      () => {
+        expect(result.current.isLoading).toBe(false);
+      },
+      { timeout: 10000 }
+    );
+
+    expect(result.current.documentTitle).toBe('Philosophical Implications of Quantum Mechanics');
+  });
+
+  it('should update documentTitle immediately when user adds an H1', async () => {
+    const mockDocument: Document = {
+      id: 'doc-1',
+      projectId: 'project-1',
+      title: 'Untitled Document',
+      content: '',
+      metadata: { type: 'standalone' },
+      createdAt: new Date('2024-01-01'),
+      updatedAt: new Date('2024-01-02'),
+    };
+
+    vi.mocked(api.documents.get).mockResolvedValueOnce(mockDocument);
+
+    const { result } = renderHook(() => useDocumentState('doc-1', 'project-1'));
+
+    await waitFor(
+      () => {
+        expect(result.current.isLoading).toBe(false);
+      },
+      { timeout: 10000 }
+    );
+
+    act(() => {
+      result.current.updateContent('# My Title\n\nBody');
+    });
+
+    expect(result.current.documentTitle).toBe('My Title');
+  });
+
   it('should create "Untitled Document" when documentId is "default" and project has no documents', async () => {
     const mockDocument: Document = {
       id: 'doc-new',

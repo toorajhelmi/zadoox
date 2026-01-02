@@ -1,19 +1,18 @@
 'use client';
 
-import { Bars3Icon, EyeIcon, PencilIcon, Squares2X2Icon, ChevronRightIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon } from '@heroicons/react/24/outline';
+import { EyeIcon, PencilIcon, Squares2X2Icon, ChevronRightIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api/client';
 import type { Project } from '@zadoox/shared';
 
-type ViewMode = 'edit' | 'preview' | 'split';
+type ViewMode = 'edit' | 'preview' | 'split' | 'ir';
 
 interface EditorToolbarProps {
   projectId: string;
   documentTitle?: string;
   isSaving: boolean;
   lastSaved: Date | null;
-  onToggleSidebar: () => void;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
   canUndo?: boolean;
@@ -27,7 +26,6 @@ export function EditorToolbar({
   documentTitle,
   isSaving: _isSaving, 
   lastSaved: _lastSaved, 
-  onToggleSidebar,
   viewMode,
   onViewModeChange,
   canUndo = false,
@@ -64,17 +62,9 @@ export function EditorToolbar({
 
   return (
     <div className="h-12 bg-vscode-sidebar border-b border-vscode-border flex items-center justify-between px-4">
-      <div className="flex items-center gap-4">
-        <button
-          onClick={onToggleSidebar}
-          className="text-vscode-text-secondary hover:text-vscode-text transition-colors"
-          aria-label="Toggle sidebar"
-        >
-          <Bars3Icon className="w-5 h-5" />
-        </button>
-
+      <div className="flex items-center gap-4 min-w-0">
         {/* Breadcrumbs */}
-        <nav className="flex items-center gap-1.5 text-sm" aria-label="Breadcrumb">
+        <nav className="flex items-center gap-1.5 text-sm min-w-0" aria-label="Breadcrumb">
           <button
             onClick={() => router.push('/dashboard/projects')}
             className="text-vscode-text-secondary hover:text-vscode-text transition-colors"
@@ -94,12 +84,16 @@ export function EditorToolbar({
                 : 'hover:text-vscode-text'
             }`}
           >
-            {project?.name || (projectMissing ? 'Project (missing)' : 'Project')}
+            <span className="block min-w-0 truncate max-w-[14rem]">
+              {project?.name || (projectMissing ? 'Project (missing)' : 'Project')}
+            </span>
           </button>
           {documentTitle && (
             <>
               <ChevronRightIcon className="w-4 h-4 text-vscode-text-secondary" />
-              <span className="text-vscode-text">{documentTitle}</span>
+              <span className="text-vscode-text min-w-0 truncate max-w-[18rem]" title={documentTitle}>
+                {documentTitle}
+              </span>
             </>
           )}
         </nav>
@@ -159,6 +153,18 @@ export function EditorToolbar({
             aria-label="Split view"
           >
             <Squares2X2Icon className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => onViewModeChange('ir')}
+            className={`px-3 py-1 text-sm rounded transition-colors ${
+              viewMode === 'ir'
+                ? 'bg-vscode-active text-vscode-text'
+                : 'text-vscode-text-secondary hover:text-vscode-text'
+            }`}
+            aria-label="IR preview"
+            title="IR Preview"
+          >
+            <SparklesIcon className="w-4 h-4" />
           </button>
           <button
             onClick={() => onViewModeChange('preview')}

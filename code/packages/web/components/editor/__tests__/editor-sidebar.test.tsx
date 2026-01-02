@@ -6,21 +6,14 @@
 /// <reference types="vitest" />
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { EditorSidebar } from '../editor-sidebar';
-import * as shared from '@zadoox/shared';
-
-// Mock the shared package
-vi.mock('@zadoox/shared', () => ({
-  extractOutlineItems: vi.fn(),
-}));
 
 describe('EditorSidebar', () => {
   const mockOnToggle = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(shared.extractOutlineItems).mockReturnValueOnce([]);
   });
 
   it('should not render sidebar content when sidebar is closed', () => {
