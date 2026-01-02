@@ -256,14 +256,17 @@ class FigureCardWidget extends WidgetType {
     hoverBar.style.flexDirection = 'column';
     hoverBar.style.visibility = 'hidden';
 
-    const makeIconBtn = (opts: { label: string; svg: string }) => {
+    const makeIconBtn = (opts: { label: string; svg: string; selected?: boolean }) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.setAttribute('aria-label', opts.label);
       b.title = opts.label;
+      const selected = Boolean(opts.selected);
       b.className =
-        'w-7 h-7 flex items-center justify-center rounded border border-vscode-border bg-vscode-buttonBg text-vscode-text ' +
-        'hover:bg-vscode-buttonHoverBg transition-colors';
+        'w-7 h-7 flex items-center justify-center rounded border border-vscode-border transition-colors ' +
+        (selected
+          ? 'bg-vscode-active text-vscode-text'
+          : 'bg-transparent text-vscode-text-secondary hover:text-vscode-text hover:bg-vscode-buttonHoverBg');
       const span = document.createElement('span');
       span.innerHTML = opts.svg;
       b.appendChild(span);
@@ -351,14 +354,18 @@ class FigureCardWidget extends WidgetType {
         '</svg>',
     };
 
+    const currentPlacement = placement === 'inline' ? 'inline' : 'block';
+    const currentAlign = (align ?? (currentPlacement === 'inline' ? 'left' : 'left')) as 'left' | 'center' | 'right';
+    const currentPct = parsePercentWidth(width);
+
     // Editing controls in hover bar so they're always accessible (including inline placement).
     const btnEditIcon = makeIconBtn({ label: 'Edit', svg: icon.edit });
     const btnRegenIcon = makeIconBtn({ label: 'Regenerate', svg: icon.regen });
     const btnTrashIcon = makeIconBtn({ label: 'Delete', svg: icon.trash });
 
-    const btnLeft = makeIconBtn({ label: 'Align left', svg: icon.alignLeft });
-    const btnCenter = makeIconBtn({ label: 'Align center', svg: icon.alignCenter });
-    const btnRight = makeIconBtn({ label: 'Align right', svg: icon.alignRight });
+    const btnLeft = makeIconBtn({ label: 'Align left', svg: icon.alignLeft, selected: currentAlign === 'left' });
+    const btnCenter = makeIconBtn({ label: 'Align center', svg: icon.alignCenter, selected: currentAlign === 'center' });
+    const btnRight = makeIconBtn({ label: 'Align right', svg: icon.alignRight, selected: currentAlign === 'right' });
     btnLeft.addEventListener('click', (e) => {
       e.preventDefault(); e.stopPropagation();
       applyAttrUpdate({ align: 'left' });
@@ -372,9 +379,9 @@ class FigureCardWidget extends WidgetType {
       applyAttrUpdate({ align: 'right' });
     });
 
-    const btnS = makeIconBtn({ label: 'Size small (33%)', svg: icon.sizeS });
-    const btnM = makeIconBtn({ label: 'Size medium (50%)', svg: icon.sizeM });
-    const btnL = makeIconBtn({ label: 'Size large (100%)', svg: icon.sizeL });
+    const btnS = makeIconBtn({ label: 'Size small (33%)', svg: icon.sizeS, selected: currentPct === 33 });
+    const btnM = makeIconBtn({ label: 'Size medium (50%)', svg: icon.sizeM, selected: currentPct === 50 });
+    const btnL = makeIconBtn({ label: 'Size large (100%)', svg: icon.sizeL, selected: currentPct === 100 });
     btnS.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '33%' }); });
     btnM.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '50%' }); });
     btnL.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '100%' }); });
@@ -413,8 +420,8 @@ class FigureCardWidget extends WidgetType {
       stepWidth(stepPct);
     });
 
-    const btnInline = makeIconBtn({ label: 'Placement inline', svg: icon.inline });
-    const btnBlock = makeIconBtn({ label: 'Placement block', svg: icon.block });
+    const btnInline = makeIconBtn({ label: 'Placement inline', svg: icon.inline, selected: currentPlacement === 'inline' });
+    const btnBlock = makeIconBtn({ label: 'Placement block', svg: icon.block, selected: currentPlacement === 'block' });
     btnInline.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ placement: 'inline' }); });
     btnBlock.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ placement: 'block' }); });
 
