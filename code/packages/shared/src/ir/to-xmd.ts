@@ -24,6 +24,8 @@ function renderNodes(nodes: IrNode[]): string {
 
 function renderNode(node: IrNode): string {
   switch (node.type) {
+    case 'document_title':
+      return `@ ${node.text}`;
     case 'section': {
       const heading = `${'#'.repeat(Math.max(1, Math.min(6, node.level)))} ${node.title}`;
       const body = node.children.length ? renderNodes(node.children) : '';

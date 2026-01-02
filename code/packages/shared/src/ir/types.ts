@@ -9,6 +9,7 @@
 
 export type IrNodeType =
   | 'document'
+  | 'document_title'
   | 'section'
   | 'paragraph'
   | 'list'
@@ -46,6 +47,11 @@ export interface DocumentNode extends BaseNode {
   type: 'document';
   docId: string;
   children: IrNode[];
+}
+
+export interface DocumentTitleNode extends BaseNode {
+  type: 'document_title';
+  text: string;
 }
 
 export interface SectionNode extends BaseNode {
@@ -104,6 +110,7 @@ export interface RawXmdBlockNode extends BaseNode {
 
 export type IrNode =
   | DocumentNode
+  | DocumentTitleNode
   | SectionNode
   | ParagraphNode
   | ListNode

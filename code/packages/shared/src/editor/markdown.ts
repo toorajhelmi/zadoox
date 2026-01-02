@@ -115,12 +115,13 @@ export function renderMarkdownToHtml(content: string): string {
       if (align === 'right') imgStyleParts.push('margin-left:auto');
       const imgStyle = imgStyleParts.length > 0 ? ` style="${imgStyleParts.join(';')}"` : '';
 
+      // Caption alignment should be independent of figure/image alignment.
+      // Product rule: captions are always centered.
       const captionStyleParts: string[] = [];
       captionStyleParts.push('display:block');
       captionStyleParts.push('width:100%');
-      if (align === 'center') captionStyleParts.push('text-align:center');
-      if (align === 'right') captionStyleParts.push('text-align:right');
-      const captionStyle = captionStyleParts.length > 0 ? ` style="${captionStyleParts.join(';')}"` : '';
+      captionStyleParts.push('text-align:center');
+      const captionStyle = ` style="${captionStyleParts.join(';')}"`;
 
       // For inline placement, float so surrounding text can wrap.
       // Default to float-left when placement="inline" (even if no align was specified),

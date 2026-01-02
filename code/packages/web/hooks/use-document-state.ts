@@ -12,6 +12,13 @@ function deriveTitleFromXmd(xmd: string): string | null {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
+    // XMD Title marker: "@ Title"
+    const t = /^@\s+(.+)$/.exec(trimmed);
+    if (t) {
+      const title = (t[1] || '').trim();
+      if (!title) return null;
+      return title.length > 160 ? `${title.slice(0, 157)}...` : title;
+    }
     // Only H1: "# Title" (not "##")
     const m = /^#(?!#)\s+(.+)$/.exec(trimmed);
     if (!m) continue;
@@ -31,6 +38,7 @@ export function useDocumentState(documentId: string, projectId: string) {
   const [isLoading, setIsLoading] = useState(true);
   const [actualDocumentId, setActualDocumentId] = useState<string>(documentId);
   const [paragraphModes, setParagraphModes] = useState<Record<string, ParagraphMode>>({});
+  const [documentMetadata, setDocumentMetadata] = useState<Record<string, any>>({});
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load document content (or create "Untitled Document" if project has no documents)
@@ -67,6 +75,7 @@ export function useDocumentState(documentId: string, projectId: string) {
           setDocumentTitle(deriveTitleFromXmd(loadedContent) ?? document.title);
           setLastSaved(new Date(document.updatedAt));
           setParagraphModes(document.metadata?.paragraphModes || {});
+          setDocumentMetadata(document.metadata || {});
           setIsLoading(false);
           return;
         }
@@ -80,6 +89,7 @@ export function useDocumentState(documentId: string, projectId: string) {
           setDocumentTitle(deriveTitleFromXmd(loadedContent) ?? document.title);
           setLastSaved(new Date(document.updatedAt));
           setParagraphModes(document.metadata?.paragraphModes || {});
+          setDocumentMetadata(document.metadata || {});
           setIsLoading(false);
         } catch (error) {
           console.error('Failed to load document:', error);
@@ -125,6 +135,7 @@ export function useDocumentState(documentId: string, projectId: string) {
         setDocumentTitle(document.title);
         setLastSaved(new Date(document.updatedAt));
         setParagraphModes(document.metadata?.paragraphModes || {});
+        setDocumentMetadata(document.metadata || {});
       } catch (error) {
         console.error('Failed to save document:', error);
         // Don't update lastSaved on error - user will see "Not saved" status
@@ -227,6 +238,8 @@ export function useDocumentState(documentId: string, projectId: string) {
     isLoading,
     documentId: actualDocumentId,
     paragraphModes,
+    documentMetadata,
+    setDocumentMetadata,
     handleModeToggle,
     saveDocument: async (contentToSave: string, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
       await saveDocument(contentToSave, changeType);

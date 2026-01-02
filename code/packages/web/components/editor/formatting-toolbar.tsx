@@ -14,7 +14,7 @@ import type { FormatType } from './floating-format-menu';
 interface FormattingToolbarProps {
   onFormat: (format: FormatType) => void;
   viewMode: 'edit' | 'preview' | 'split' | 'ir';
-  currentStyle?: 'paragraph' | 'heading1' | 'heading2' | 'heading3';
+  currentStyle?: 'paragraph' | 'title' | 'heading1' | 'heading2' | 'heading3';
 }
 
 export function FormattingToolbar({ onFormat, viewMode, currentStyle = 'paragraph' }: FormattingToolbarProps) {
@@ -39,7 +39,7 @@ export function FormattingToolbar({ onFormat, viewMode, currentStyle = 'paragrap
       <div className="mr-2">
         <select
           aria-label="Text style"
-          className="h-7 px-2 text-xs bg-vscode-buttonBg hover:bg-vscode-buttonHoverBg text-vscode-buttonText rounded border border-vscode-border transition-colors"
+          className="h-7 px-2 text-xs bg-transparent hover:bg-vscode-active text-vscode-text rounded border border-vscode-border transition-colors"
           value={currentStyle}
           onChange={(e) => {
             const v = e.target.value as FormatType;
@@ -47,9 +47,10 @@ export function FormattingToolbar({ onFormat, viewMode, currentStyle = 'paragrap
           }}
         >
           <option value="paragraph">Normal</option>
-          <option value="heading1">Title</option>
-          <option value="heading2">Section</option>
-          <option value="heading3">Subsection</option>
+          <option value="title">Title</option>
+          <option value="heading1">Section</option>
+          <option value="heading2">Subsection</option>
+          <option value="heading3">Subsubsection</option>
         </select>
       </div>
 

@@ -6,39 +6,41 @@ import { createClient } from '@/lib/supabase/client';
 
 interface MarkdownPreviewProps {
   content: string;
+  /**
+   * Optional pre-rendered HTML (e.g. IR -> HTML).
+   * When provided, we skip Markdown parsing and just run the shared post-processing steps
+   * (asset URL rewrite, citation linking, etc).
+   */
+  htmlOverride?: string;
 }
 
 const TRANSPARENT_PIXEL =
   // 1x1 transparent GIF
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
 
-export function MarkdownPreview({ content }: MarkdownPreviewProps) {
+export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const assetUrlCacheRef = useRef<Map<string, string>>(new Map());
   const assetInFlightRef = useRef<Set<string>>(new Set());
   const abortRef = useRef<AbortController | null>(null);
   const html = useMemo(() => {
-    if (!content.trim()) {
+    if (!content.trim() && !htmlOverride?.trim()) {
       return '';
     }
     
-    // Extract headings from markdown before rendering
-    const headings = extractHeadings(content);
+    let htmlContent = htmlOverride?.trim().length ? htmlOverride : renderMarkdownToHtml(content);
     
-    // Render markdown to HTML
-    let htmlContent = renderMarkdownToHtml(content);
-    
-    // Add IDs to headings for outline navigation
-    // Replace headings in order, matching by level and text
-    headings.forEach((heading) => {
-      const headingTag = `h${heading.level}`;
-      // Create regex to match heading tag with the exact text
-      // Escape special characters in the text for regex
-      const escapedText = heading.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(`<${headingTag}>${escapedText}</${headingTag}>`);
-      htmlContent = htmlContent.replace(regex, `<${headingTag} id="${heading.id}">${heading.text}</${headingTag}>`);
-    });
+    // If we're rendering from raw markdown, add heading IDs for outline navigation.
+    if (!htmlOverride?.trim().length) {
+      const headings = extractHeadings(content);
+      headings.forEach((heading) => {
+        const headingTag = `h${heading.level}`;
+        const escapedText = heading.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`<${headingTag}>${escapedText}</${headingTag}>`);
+        htmlContent = htmlContent.replace(regex, `<${headingTag} id="${heading.id}">${heading.text}</${headingTag}>`);
+      });
+    }
     
     // Add IDs to reference entries in References section FIRST (before converting citations to links)
     // This ensures references have IDs before citations link to them
@@ -449,6 +451,12 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
         }}
       />
       <style jsx global>{`
+        .markdown-content .doc-title {
+          font-size: 2.2em;
+          font-weight: 800;
+          margin: 0.2em 0 0.7em 0;
+          color: #ffffff;
+        }
         .markdown-content h1 {
           font-size: 2em;
           font-weight: bold;
@@ -465,6 +473,12 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
           font-size: 1.25em;
           font-weight: bold;
           margin: 0.6em 0 0.3em 0;
+          color: #ffffff;
+        }
+        .markdown-content h4 {
+          font-size: 1.1em;
+          font-weight: bold;
+          margin: 0.55em 0 0.25em 0;
           color: #ffffff;
         }
         .markdown-content p {

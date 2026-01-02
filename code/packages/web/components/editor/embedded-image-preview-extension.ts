@@ -102,6 +102,19 @@ class FigureCardWidget extends WidgetType {
       }
       wrap.style.outline = '1px dashed rgba(120, 170, 255, 0.55)';
       wrap.style.outlineOffset = '3px';
+
+      // Align the whole card within the editor (best-effort).
+      // We don't do true inline wrapping inside CodeMirror, but alignment should still match preview intent.
+      if (align === 'center') {
+        wrap.style.marginLeft = 'auto';
+        wrap.style.marginRight = 'auto';
+      } else if (align === 'right') {
+        wrap.style.marginLeft = 'auto';
+        wrap.style.marginRight = '0';
+      } else if (align === 'left') {
+        wrap.style.marginLeft = '0';
+        wrap.style.marginRight = 'auto';
+      }
     } else {
       // Block placement: the card should occupy the full editor width (prevents caret showing beside it).
       wrap.style.width = '100%';
@@ -214,8 +227,8 @@ class FigureCardWidget extends WidgetType {
     caption.style.fontSize = '12px';
     caption.style.color = '#9aa0a6';
     caption.style.fontStyle = 'italic';
-    if (align === 'center') caption.style.textAlign = 'center';
-    if (align === 'right') caption.style.textAlign = 'right';
+    // Product rule: captions are always centered (independent of figure alignment).
+    caption.style.textAlign = 'center';
     wrap.appendChild(caption);
 
     // Hover toolbar (quick controls)

@@ -4,6 +4,5 @@
  */
 
 export * from './markdown';
-export * from './latex';
 export * from './placeholders';
 

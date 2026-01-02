@@ -6,7 +6,9 @@ import { computeIrDelta } from '../delta';
 describe('parseXmdToIr', () => {
   it('parses basic structure and stays stable across runs', () => {
     const xmd = [
-      '# Title',
+      '@ Title',
+      '',
+      '# Intro',
       '',
       'Hello world.',
       '',
@@ -37,8 +39,8 @@ describe('parseXmdToIr', () => {
   });
 
   it('produces node-level deltas when content changes', () => {
-    const xmd1 = ['# Title', '', 'Hello world.'].join('\n');
-    const xmd2 = ['# Title', '', 'Hello changed.'].join('\n');
+    const xmd1 = ['@ Title', '', 'Hello world.'].join('\n');
+    const xmd2 = ['@ Title', '', 'Hello changed.'].join('\n');
 
     const ir1 = parseXmdToIr({ docId: 'doc-2', xmd: xmd1 });
     const ir2 = parseXmdToIr({ docId: 'doc-2', xmd: xmd2 });

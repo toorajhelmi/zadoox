@@ -37,6 +37,7 @@ vi.mock('date-fns', () => ({
 
 describe('EditorToolbar', () => {
   const mockOnViewModeChange = vi.fn();
+  const mockOnEditFormatChange = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -51,6 +52,8 @@ describe('EditorToolbar', () => {
         lastSaved={null}
         viewMode="edit"
         onViewModeChange={mockOnViewModeChange}
+        editFormat="markdown"
+        onEditFormatChange={mockOnEditFormatChange}
       />
     );
 

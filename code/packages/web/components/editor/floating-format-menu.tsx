@@ -24,6 +24,7 @@ export type FormatType =
   | 'code' 
   | 'link'
   | 'paragraph'
+  | 'title'
   | 'heading1'
   | 'heading2'
   | 'heading3';
