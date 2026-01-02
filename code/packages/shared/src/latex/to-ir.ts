@@ -368,9 +368,8 @@ function parseBlocks(latex: string): Block[] {
     if (/^\\author\{[^}]*\}\s*$/.test(line.trim())) {
       const m = /^\\author\{([^}]*)\}\s*$/.exec(line.trim());
       const text = latexInlineToMarkdown((m?.[1] ?? '').trim());
-      if (text.trim().length > 0) {
-        blocks.push({ kind: 'author', text, raw: line, blockIndex, startOffset: start, endOffset: end });
-      }
+      // Preserve explicit author marker even if empty (\author{} means "no author")
+      blocks.push({ kind: 'author', text, raw: line, blockIndex, startOffset: start, endOffset: end });
       i++;
       blockIndex++;
       continue;
@@ -378,9 +377,8 @@ function parseBlocks(latex: string): Block[] {
     if (/^\\date\{[^}]*\}\s*$/.test(line.trim())) {
       const m = /^\\date\{([^}]*)\}\s*$/.exec(line.trim());
       const text = latexInlineToMarkdown((m?.[1] ?? '').trim());
-      if (text.trim().length > 0) {
-        blocks.push({ kind: 'date', text, raw: line, blockIndex, startOffset: start, endOffset: end });
-      }
+      // Preserve explicit date marker even if empty (\date{} means "no date" / suppress default)
+      blocks.push({ kind: 'date', text, raw: line, blockIndex, startOffset: start, endOffset: end });
       i++;
       blockIndex++;
       continue;

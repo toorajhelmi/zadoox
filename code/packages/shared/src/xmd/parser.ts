@@ -67,20 +67,18 @@ function parseDocTitle(line: string): { title: string } | null {
 }
 
 function parseDocAuthor(line: string): { text: string } | null {
-  // XMD author marker: "@^ Author Name"
-  const m = /^@\^\s+(.+)$/.exec(line.trim());
+  // XMD author marker: "@^ Author Name" (empty allowed: "@^")
+  const m = /^@\^\s*(.*)$/.exec(line.trim());
   if (!m) return null;
   const text = (m[1] || '').trim();
-  if (!text) return null;
   return { text };
 }
 
 function parseDocDate(line: string): { text: string } | null {
-  // XMD date marker: "@= 2026-01-02"
-  const m = /^@=\s+(.+)$/.exec(line.trim());
+  // XMD date marker: "@= 2026-01-02" (empty allowed: "@=")
+  const m = /^@=\s*(.*)$/.exec(line.trim());
   if (!m) return null;
   const text = (m[1] || '').trim();
-  if (!text) return null;
   return { text };
 }
 
