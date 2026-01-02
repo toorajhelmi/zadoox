@@ -88,7 +88,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     isAnalyzing: boolean;
   } | null>(null);
 
-  const currentTextStyle = useMemo(() => {
+  const currentTextStyle = (() => {
     const view = editorViewRef.current;
     if (!view) return 'paragraph' as const;
     try {
@@ -103,7 +103,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     } catch {
       return 'paragraph' as const;
     }
-  }, [content, cursorPosition]);
+  })();
 
   // Phase 11: keep IR updated as XMD changes (debounced), compute node-level delta + events.
   const irState = useIrDocument({
