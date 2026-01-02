@@ -43,7 +43,7 @@ describe('EditorToolbar', () => {
     vi.clearAllMocks();
   });
 
-  it('should render IR preview view mode button', () => {
+  it('should render preview view mode button', () => {
     render(
       <EditorToolbar
         projectId="project-1"
@@ -57,6 +57,6 @@ describe('EditorToolbar', () => {
       />
     );
 
-    expect(screen.getByLabelText('IR preview')).toBeInTheDocument();
+    expect(screen.getByLabelText('Preview mode')).toBeInTheDocument();
   });
 });
