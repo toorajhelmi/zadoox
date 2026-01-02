@@ -73,6 +73,10 @@ function renderNode(node: IrNode): string {
   switch (node.type) {
     case 'document_title':
       return `\\title{${escapeLatexText(node.text)}}`;
+    case 'document_author':
+      return `\\author{${escapeLatexText(node.text)}}`;
+    case 'document_date':
+      return `\\date{${escapeLatexText(node.text)}}`;
     case 'section': {
       const cmd =
         node.level <= 1
@@ -102,14 +106,20 @@ function renderNode(node: IrNode): string {
       return `\\begin{equation}\n${node.latex}\n\\end{equation}`;
     }
     case 'figure': {
-      // IR-compatible LaTeX should compile without \\usepackage.
-      // So we avoid emitting \\includegraphics (requires graphicx) and instead keep a comment placeholder.
+      // Use a real LaTeX figure environment so the LaTeX->IR parser can round-trip this back to XMD.
+      // Keep it compilable without \\usepackage by *not* emitting \\includegraphics (graphicx).
+      // Instead, embed the source as a structured comment.
       const src = escapeLatexText(node.src);
-      const cap = node.caption ? `caption: ${escapeLatexText(node.caption)}` : 'caption:';
-      const lbl = node.label ? `label: ${escapeLatexText(node.label)}` : '';
-      const parts = [`% [figure] src: ${src}`, `% ${cap}`];
-      if (lbl) parts.push(`% ${lbl}`);
-      return parts.join('\n');
+      const caption = escapeLatexText(node.caption ?? '');
+      const label = node.label ? escapeLatexText(node.label) : '';
+
+      const lines: string[] = [];
+      lines.push('\\begin{figure}');
+      lines.push(`% zadoox-src: ${src}`);
+      if (caption.trim().length > 0) lines.push(`\\caption{${caption}}`);
+      if (label.trim().length > 0) lines.push(`\\label{${label}}`);
+      lines.push('\\end{figure}');
+      return lines.join('\n');
     }
     case 'table': {
       // Minimal: degrade to a markdown-ish table inside verbatim.

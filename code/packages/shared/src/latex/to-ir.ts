@@ -196,7 +196,7 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
       const node: RawLatexBlockNode = {
         type: 'raw_latex_block',
         id: stableNodeId({ docId, nodeType: 'raw_latex_block', path }),
-        latex: b.latex ?? b.raw,
+        latex: b.kind === 'raw' ? b.latex : b.raw,
         source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
       };
       appendToCurrentContainer(node);
@@ -278,6 +278,16 @@ type Block =
   | {
       kind: 'math';
       latex: string;
+      raw: string;
+      blockIndex: number;
+      startOffset: number;
+      endOffset: number;
+    }
+  | {
+      kind: 'figure';
+      src: string;
+      caption: string;
+      label?: string;
       raw: string;
       blockIndex: number;
       startOffset: number;
