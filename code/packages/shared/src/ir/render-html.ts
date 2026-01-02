@@ -70,8 +70,12 @@ function renderNode(node: IrNode): string {
 
       const src = escapeHtml(node.src ?? '');
       const cap = escapeHtml(node.caption ?? '');
-      const caption = cap.trim().length > 0 ? `<em class="figure-caption">${cap}</em>` : '';
-      return `<span class="figure"><img src="${src}" alt="${cap}" />${caption}</span>`;
+      const caption =
+        cap.trim().length > 0
+          ? `<em class="figure-caption" style="display:block;width:100%;text-align:center">${cap}</em>`
+          : '';
+      // Keep caption centered relative to the image width by using an inner inline-block wrapper.
+      return `<span class="figure"><span class="figure-inner" style="display:inline-block;max-width:100%;margin-left:0;margin-right:auto"><img src="${src}" alt="${cap}" style="display:block;max-width:100%" />${caption}</span></span>`;
     }
     case 'table': {
       // Simple HTML table rendering.
