@@ -7,7 +7,6 @@ import { EditorToolbar } from './editor-toolbar';
 import { EditorStatusBar } from './editor-status-bar';
 import { AIEnhancedEditor } from './ai-enhanced-editor';
 import { CodeMirrorEditor } from './codemirror-editor';
-import { MarkdownPreview } from './markdown-preview';
 import { IrPreview } from './ir-preview';
 import { FormattingToolbar } from './formatting-toolbar';
 import { ThinkModePanel } from './think-mode-panel';
@@ -1733,13 +1732,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                   : 'flex-1 overflow-hidden'
               }
             >
-              {viewMode === 'ir' ? (
-                <div className="h-full">
-                  <IrPreview docId={actualDocumentId || documentId} content={content} ir={irState.ir} />
-                </div>
-              ) : (
-                <MarkdownPreview content={content} />
-              )}
+              <div className="h-full">
+                <IrPreview docId={actualDocumentId || documentId} content={content} ir={irState.ir} />
+              </div>
             </div>
           )}
 

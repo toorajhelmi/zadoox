@@ -462,6 +462,7 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
           color: #9aa0a6;
           font-size: 0.95em;
           margin: 0.1em 0;
+          text-align: center;
         }
         .markdown-content h1 {
           font-size: 2em;
