@@ -27,6 +27,13 @@ export interface DocumentMetadata {
   brainstormingSessions?: Record<string, BrainstormingSession>; // paragraphId -> session mapping
   researchSessions?: Record<string, ResearchSession>; // paragraphId -> session mapping
   insertedSources?: ResearchSource[]; // All sources that have been inserted into the document
+  /**
+   * Phase 12: cached alternate representation + last edited format.
+   * Stored in metadata so it round-trips through the existing document update API.
+   */
+  latex?: string;
+  lastEditedFormat?: 'markdown' | 'latex';
+  irHashAtLastSync?: string;
 }
 
 /**

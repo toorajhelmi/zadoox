@@ -1,6 +1,9 @@
 import { stableNodeId } from '../ir/id';
 import type {
   CodeBlockNode,
+  DocumentAuthorNode,
+  DocumentDateNode,
+  DocumentTitleNode,
   DocumentNode,
   FigureNode,
   IrNode,
@@ -13,6 +16,9 @@ import type {
 } from '../ir/types';
 
 type Block =
+  | { kind: 'title'; title: string; raw: string; startOffset: number; endOffset: number }
+  | { kind: 'author'; text: string; raw: string; startOffset: number; endOffset: number }
+  | { kind: 'date'; text: string; raw: string; startOffset: number; endOffset: number }
   | { kind: 'heading'; level: number; title: string; raw: string; startOffset: number; endOffset: number }
   | { kind: 'code'; language?: string; code: string; raw: string; startOffset: number; endOffset: number }
   | { kind: 'math'; latex: string; raw: string; startOffset: number; endOffset: number }
@@ -49,6 +55,31 @@ function parseHeading(line: string): { level: number; title: string } | null {
   const m = /^(#{1,6})\s+(.+)$/.exec(line.trim());
   if (!m) return null;
   return { level: m[1].length, title: m[2].trim() };
+}
+
+function parseDocTitle(line: string): { title: string } | null {
+  // XMD title marker: "@ Title"
+  const m = /^@\s+(.+)$/.exec(line.trim());
+  if (!m) return null;
+  const title = (m[1] || '').trim();
+  if (!title) return null;
+  return { title };
+}
+
+function parseDocAuthor(line: string): { text: string } | null {
+  // XMD author marker: "@^ Author Name" (empty allowed: "@^")
+  const m = /^@\^\s*(.*)$/.exec(line.trim());
+  if (!m) return null;
+  const text = (m[1] || '').trim();
+  return { text };
+}
+
+function parseDocDate(line: string): { text: string } | null {
+  // XMD date marker: "@= 2026-01-02" (empty allowed: "@=")
+  const m = /^@=\s*(.*)$/.exec(line.trim());
+  if (!m) return null;
+  const text = (m[1] || '').trim();
+  return { text };
 }
 
 function parseListItem(line: string): { ordered: boolean; item: string } | null {
@@ -109,6 +140,46 @@ function parseBlocks(xmd: string): Block[] {
 
     // Skip pure blank lines
     if (isBlank(line)) {
+      i++;
+      continue;
+    }
+
+    // Document title (XMD): "@ Title"
+    const docAuthor = parseDocAuthor(line);
+    if (docAuthor) {
+      blocks.push({
+        kind: 'author',
+        text: docAuthor.text,
+        raw: line,
+        startOffset: start,
+        endOffset: end,
+      });
+      i++;
+      continue;
+    }
+
+    const docDate = parseDocDate(line);
+    if (docDate) {
+      blocks.push({
+        kind: 'date',
+        text: docDate.text,
+        raw: line,
+        startOffset: start,
+        endOffset: end,
+      });
+      i++;
+      continue;
+    }
+
+    const docTitle = parseDocTitle(line);
+    if (docTitle) {
+      blocks.push({
+        kind: 'title',
+        title: docTitle.title,
+        raw: line,
+        startOffset: start,
+        endOffset: end,
+      });
       i++;
       continue;
     }
@@ -327,6 +398,9 @@ export function parseXmdToIr(params: { docId: string; xmd: string }): DocumentNo
   };
 
   const sectionStack: SectionNode[] = [];
+  let titleCount = 0;
+  let authorCount = 0;
+  let dateCount = 0;
 
   const appendToCurrentContainer = (node: IrNode) => {
     const current = sectionStack[sectionStack.length - 1];
@@ -347,7 +421,7 @@ export function parseXmdToIr(params: { docId: string; xmd: string }): DocumentNo
 
   // Path counters are per-container. Keep a simple stack of counters tied to section stack.
   type Counters = Record<string, number>;
-  const countersStack: Counters[] = [{ section: 0, paragraph: 0, list: 0, code_block: 0, math_block: 0, figure: 0, table: 0, raw_xmd_block: 0 }];
+  const countersStack: Counters[] = [{ section: 0, paragraph: 0, list: 0, code_block: 0, math_block: 0, figure: 0, table: 0, raw_xmd_block: 0, document_title: 0 }];
 
   const currentCounters = () => countersStack[countersStack.length - 1]!;
 
@@ -392,11 +466,51 @@ export function parseXmdToIr(params: { docId: string; xmd: string }): DocumentNo
 
         // Open section and push new counter scope for its children
         openSection(node);
-        countersStack.push({ section: 0, paragraph: 0, list: 0, code_block: 0, math_block: 0, figure: 0, table: 0, raw_xmd_block: 0 });
+        countersStack.push({ section: 0, paragraph: 0, list: 0, code_block: 0, math_block: 0, figure: 0, table: 0, raw_xmd_block: 0, document_title: 0 });
         return;
       }
 
       const counters = currentCounters();
+
+      if (b.kind === 'title') {
+        const idx = titleCount++;
+        const path = `title[${idx}]`;
+        const node: DocumentTitleNode = {
+          type: 'document_title',
+          id: stableNodeId({ docId, nodeType: 'document_title', path }),
+          text: b.title,
+          source: { blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
+        };
+        // Titles are always document-level nodes (never nested under sections).
+        doc.children.push(node);
+        return;
+      }
+
+      if (b.kind === 'author') {
+        const idx = authorCount++;
+        const path = `author[${idx}]`;
+        const node: DocumentAuthorNode = {
+          type: 'document_author',
+          id: stableNodeId({ docId, nodeType: 'document_author', path }),
+          text: b.text,
+          source: { blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
+        };
+        doc.children.push(node);
+        return;
+      }
+
+      if (b.kind === 'date') {
+        const idx = dateCount++;
+        const path = `date[${idx}]`;
+        const node: DocumentDateNode = {
+          type: 'document_date',
+          id: stableNodeId({ docId, nodeType: 'document_date', path }),
+          text: b.text,
+          source: { blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
+        };
+        doc.children.push(node);
+        return;
+      }
 
       if (b.kind === 'paragraph') {
         const idx = counters.paragraph ?? 0;

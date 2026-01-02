@@ -6,7 +6,7 @@ import { EditorSidebar } from './editor-sidebar';
 import { EditorToolbar } from './editor-toolbar';
 import { EditorStatusBar } from './editor-status-bar';
 import { AIEnhancedEditor } from './ai-enhanced-editor';
-import { MarkdownPreview } from './markdown-preview';
+import { CodeMirrorEditor } from './codemirror-editor';
 import { IrPreview } from './ir-preview';
 import { FormattingToolbar } from './formatting-toolbar';
 import { ThinkModePanel } from './think-mode-panel';
@@ -22,6 +22,7 @@ import type { ResearchSource, DocumentStyle } from '@zadoox/shared';
 import type { InlineEditBlock, InlineEditOperation } from '@zadoox/shared';
 import { extractCitedSourceIds } from '@/lib/utils/citation';
 import type { QuickOption } from '@/lib/services/context-options';
+import { irToLatexDocument, irToXmd, parseLatexToIr, parseXmdToIr } from '@zadoox/shared';
 
 interface EditorLayoutProps {
   projectId: string;
@@ -29,11 +30,25 @@ interface EditorLayoutProps {
 }
 
 type ViewMode = 'edit' | 'preview' | 'split' | 'ir';
+type EditFormat = 'markdown' | 'latex';
 
 type SidebarTab = 'outline' | 'history';
 
 export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
-  const { content, documentTitle, updateContent, setContentWithoutSave, isSaving, lastSaved, documentId: actualDocumentId, saveDocument: originalSaveDocument, paragraphModes, handleModeToggle: handleModeToggleFromHook } = useDocumentState(documentId, projectId);
+  const {
+    content,
+    documentTitle,
+    updateContent,
+    setContentWithoutSave,
+    isSaving,
+    lastSaved,
+    documentId: actualDocumentId,
+    saveDocument: originalSaveDocument,
+    paragraphModes,
+    handleModeToggle: handleModeToggleFromHook,
+    documentMetadata,
+    setDocumentMetadata,
+  } = useDocumentState(documentId, projectId);
   const previousContentRef = useRef<string>(content);
   
   // Update previousContentRef when content changes from outside (e.g., document load)
@@ -61,6 +76,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   }, []);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
+  const [editFormat, setEditFormat] = useState<EditFormat>('markdown');
+  const [latexDraft, setLatexDraft] = useState<string>('');
   // Editor/preview splitter state (used in split mode)
   const [editorPaneWidth, setEditorPaneWidth] = useState<number>(0); // px; 0 => default (50%)
   const [isResizingEditorPane, setIsResizingEditorPane] = useState(false);
@@ -94,12 +111,14 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     try {
       const sel = view.state.selection.main;
       const line = view.state.doc.lineAt(sel.head).text;
+      const t = /^@\s+/.exec(line.trimStart());
+      if (t) return 'title' as const;
       const m = /^(#{1,6})\s+/.exec(line.trimStart());
       if (!m) return 'paragraph' as const;
       const level = m[1].length;
-      if (level <= 1) return 'heading1' as const;
-      if (level === 2) return 'heading2' as const;
-      return 'heading3' as const;
+      if (level === 1) return 'heading1' as const; // Section
+      if (level === 2) return 'heading2' as const; // Subsection
+      return 'heading3' as const; // Subsubsection+
     } catch {
       return 'paragraph' as const;
     }
@@ -112,6 +131,82 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     debounceMs: 250,
     enabled: Boolean(actualDocumentId || documentId),
   });
+
+  // Initialize edit format / cached latex from metadata (Phase 12).
+  useEffect(() => {
+    const last = (documentMetadata as any)?.lastEditedFormat as EditFormat | undefined;
+    const latex = (documentMetadata as any)?.latex as string | undefined;
+    if (last === 'latex' || last === 'markdown') {
+      setEditFormat(last);
+    }
+    if (typeof latex === 'string') {
+      // Avoid overwriting while the user is actively typing in LaTeX (prevents cursor/scroll reset).
+      // We intentionally do NOT regenerate LaTeX from IR here; the LaTeX draft is treated as the
+      // persisted editing surface when lastEditedFormat === 'latex'.
+      const shouldAdopt = latexDraft.length === 0 || editFormat !== 'latex';
+      if (shouldAdopt) setLatexDraft(latex);
+    } else if (last === 'latex' && !latexDraft) {
+      // If last format is LaTeX but we have no cached latex yet, derive it from IR/XMD.
+      try {
+        const ir = irState.ir;
+        if (ir) setLatexDraft(irToLatexDocument(ir));
+      } catch {
+        // ignore
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actualDocumentId, (documentMetadata as any)?.lastEditedFormat, (documentMetadata as any)?.latex]);
+
+  const handleEditFormatChange = useCallback(
+    async (next: EditFormat) => {
+      if (next === editFormat) return;
+      if (!actualDocumentId || actualDocumentId === 'default') {
+        setEditFormat(next);
+        return;
+      }
+
+      try {
+        if (next === 'latex') {
+          const ir = irState.ir ?? parseXmdToIr({ docId: actualDocumentId, xmd: content });
+          const latex = irToLatexDocument(ir);
+          // #region agent log
+          try {
+            const figureLines = (content || '').split('\n').filter((l) => l.includes('![') && l.includes('](') && l.includes('{'));
+            const commentCount = (latex.match(/% zadoox-(align|placement|width|desc):/g) || []).length;
+            fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'figattrs1',hypothesisId:'FA2',location:'editor-layout.tsx:handleEditFormatChange',message:'MD->IR->LaTeX on switch',data:{docId:actualDocumentId,figureLineCount:figureLines.length,figureLine0:(figureLines[0]||'').slice(0,240),latexLen:latex.length,zadooxCommentCount:commentCount},timestamp:Date.now()})}).catch(()=>{});
+          } catch {}
+          // #endregion
+          setLatexDraft(latex);
+          setEditFormat('latex');
+          const nextMeta = { ...(documentMetadata as any), latex, lastEditedFormat: 'latex' as const };
+          setDocumentMetadata(nextMeta);
+          await api.documents.update(actualDocumentId, {
+            content,
+            metadata: nextMeta,
+            changeType: 'manual-save',
+            changeDescription: 'Switched editor to LaTeX',
+          });
+          return;
+        }
+
+        // next === 'markdown'
+        setEditFormat('markdown');
+        const nextMeta = { ...(documentMetadata as any), latex: latexDraft, lastEditedFormat: 'markdown' as const };
+        setDocumentMetadata(nextMeta);
+        await api.documents.update(actualDocumentId, {
+          content,
+          metadata: nextMeta,
+          changeType: 'manual-save',
+          changeDescription: 'Switched editor to Markdown',
+        });
+      } catch (e) {
+        console.error('Failed to switch edit format:', e);
+        // Keep UI responsive even if persistence fails.
+        setEditFormat(next);
+      }
+    },
+    [actualDocumentId, content, documentMetadata, editFormat, irState.ir, latexDraft, setDocumentMetadata]
+  );
 
   // Sidebar resize handlers
   const handleSidebarResizeStart = useCallback((e: React.MouseEvent) => {
@@ -662,11 +757,28 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       // If selectedVersion === null, allow editing (fall through)
       // Mark this as user input before updating content
       isUserInputRef.current = true;
-      updateContent(value);
+      if (editFormat === 'markdown') {
+        updateContent(value);
+      } else {
+        // LaTeX edit surface -> LaTeX -> IR -> XMD (content)
+        setLatexDraft(value);
+        // Persist "last active format" and keep a current cached LaTeX string in metadata
+        // so a refresh reopens in LaTeX reliably.
+        const nextMeta = { ...(documentMetadata as any), lastEditedFormat: 'latex', latex: value };
+        setDocumentMetadata(nextMeta);
+        try {
+          const ir = parseLatexToIr({ docId: actualDocumentId || documentId, latex: value });
+          const nextXmd = irToXmd(ir);
+          updateContent(nextXmd);
+        } catch (err) {
+          // Never block typing; keep draft visible even if conversion fails.
+          console.error('Failed to parse LaTeX to IR:', err);
+        }
+      }
 
       // Add to undo history (debounced to avoid too many history entries)
       // Only add if not in change tracking mode (change tracking handles its own history)
-      if (!changeTracking.isTracking) {
+      if (!changeTracking.isTracking && editFormat === 'markdown') {
         if (debounceTimeoutRef.current) {
           clearTimeout(debounceTimeoutRef.current);
         }
@@ -695,7 +807,19 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         }, 300); // Debounce for 300ms
       }
     },
-    [updateContent, selectedVersion, latestVersion, cursorPosition, undoRedo, changeTracking.isTracking]
+    [
+      updateContent,
+      selectedVersion,
+      latestVersion,
+      cursorPosition,
+      undoRedo,
+      changeTracking.isTracking,
+      editFormat,
+      actualDocumentId,
+      documentId,
+      documentMetadata,
+      setDocumentMetadata,
+    ]
   );
 
   // Handle selection changes from editor
@@ -890,7 +1014,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       }
 
       const replaceLine = (lineText: string) => {
-        const stripped = lineText.replace(/^\s*#{1,6}\s+/, '');
+        const stripped = lineText.replace(/^\s*(?:@\s+|#{1,6}\s+)/, '');
         if (level === null) return stripped; // "Normal"
         const hashes = '#'.repeat(level);
         return `${hashes} ${stripped}`;
@@ -906,7 +1030,19 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       applyUserEdit(next);
     };
 
+    const applyTitleToLine = () => {
+      if (!view) return;
+      const doc = view.state.doc;
+      const pos = typeof from === 'number' ? from : view.state.selection.main.head;
+      const l = doc.lineAt(pos);
+      const stripped = l.text.replace(/^\s*(?:@\s+|#{1,6}\s+)/, '');
+      const replaced = `@ ${stripped}`;
+      const next = baseContent.slice(0, l.from) + replaced + baseContent.slice(l.to);
+      applyUserEdit(next);
+    };
+
     if (hasRange) {
+      if (format === 'title') return applyTitleToLine();
       if (format === 'heading1') return applyHeadingToRange(1);
       if (format === 'heading2') return applyHeadingToRange(2);
       if (format === 'heading3') return applyHeadingToRange(3);
@@ -947,6 +1083,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         baseContent.slice(to!);
       applyUserEdit(newContent);
     } else {
+      if (format === 'title') return applyTitleToLine();
       if (format === 'heading1') return applyHeadingToRange(1);
       if (format === 'heading2') return applyHeadingToRange(2);
       if (format === 'heading3') return applyHeadingToRange(3);
@@ -1097,6 +1234,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           lastSaved={lastSaved}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
+          editFormat={editFormat}
+          onEditFormatChange={handleEditFormatChange}
           canUndo={undoRedo.canUndo}
           canRedo={undoRedo.canRedo}
           onUndo={() => {
@@ -1114,11 +1253,13 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         />
 
         {/* Formatting Toolbar */}
-        <FormattingToolbar
-          onFormat={handleFormat}
-          viewMode={viewMode}
-          currentStyle={currentTextStyle}
-        />
+        {editFormat === 'markdown' && (
+          <FormattingToolbar
+            onFormat={handleFormat}
+            viewMode={viewMode}
+            currentStyle={currentTextStyle}
+          />
+        )}
 
         {/* Change Tracking Banner - shown at top when tracking is active */}
         {changeTracking.isTracking && (
@@ -1408,51 +1549,79 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 />
               )}
 
-              <AIEnhancedEditor
-                value={pendingChangeContent?.new ?? content}
-                onChange={handleContentChange}
-                onSelectionChange={handleSelectionChange}
-                onCursorPositionChange={handleCursorPositionChange}
-                onDocumentAIMetricsChange={(payload) => setDocAIMetrics(payload)}
-                model="auto"
-                paragraphModes={paragraphModes}
-                documentId={actualDocumentId}
-                thinkPanelOpen={thinkPanelOpen}
-                openParagraphId={openParagraphId}
-                onOpenPanel={handleOpenPanel}
-                onEditorViewReady={(view) => {
-                  editorViewRef.current = view;
-                }}
-                readOnly={(() => {
-                  // Disable editing when change tracking is active
-                  if (changeTracking.isTracking) {
-                    return true;
-                  }
-                  // Disable editing when Think panel is open
-                  if (thinkPanelOpen) {
-                    return true;
-                  }
-                  // Disable editing when inline AI chat is open
-                  if (inlineAIChatOpen) {
-                    return true;
-                  }
-                  // Handle undefined/null latestVersion and ensure it's a valid number
-                  let safeLatestVersion: number | null = null;
-                  if (latestVersion !== undefined && latestVersion !== null && !isNaN(Number(latestVersion))) {
-                    safeLatestVersion = Number(latestVersion);
-                  }
-                  const isReadOnly = selectedVersion !== null && 
-                                    safeLatestVersion !== null && 
-                                    Number(selectedVersion) !== Number(safeLatestVersion);
-                  return isReadOnly;
-                })()}
-                changes={changeTracking.mappedChanges}
-                onAcceptChange={changeTracking.acceptChange}
-                onRejectChange={changeTracking.rejectChange}
-                onSaveWithType={async (contentToSave, changeType) => {
-                  await saveDocument(contentToSave, changeType);
-                }}
-              />
+              {editFormat === 'markdown' ? (
+                <AIEnhancedEditor
+                  value={pendingChangeContent?.new ?? content}
+                  onChange={handleContentChange}
+                  onSelectionChange={handleSelectionChange}
+                  onCursorPositionChange={handleCursorPositionChange}
+                  onDocumentAIMetricsChange={(payload) => setDocAIMetrics(payload)}
+                  model="auto"
+                  paragraphModes={paragraphModes}
+                  documentId={actualDocumentId}
+                  thinkPanelOpen={thinkPanelOpen}
+                  openParagraphId={openParagraphId}
+                  onOpenPanel={handleOpenPanel}
+                  onEditorViewReady={(view) => {
+                    editorViewRef.current = view;
+                  }}
+                  readOnly={(() => {
+                    // Disable editing when change tracking is active
+                    if (changeTracking.isTracking) {
+                      return true;
+                    }
+                    // Disable editing when Think panel is open
+                    if (thinkPanelOpen) {
+                      return true;
+                    }
+                    // Disable editing when inline AI chat is open
+                    if (inlineAIChatOpen) {
+                      return true;
+                    }
+                    // Handle undefined/null latestVersion and ensure it's a valid number
+                    let safeLatestVersion: number | null = null;
+                    if (latestVersion !== undefined && latestVersion !== null && !isNaN(Number(latestVersion))) {
+                      safeLatestVersion = Number(latestVersion);
+                    }
+                    const isReadOnly =
+                      selectedVersion !== null &&
+                      safeLatestVersion !== null &&
+                      Number(selectedVersion) !== Number(safeLatestVersion);
+                    return isReadOnly;
+                  })()}
+                  changes={changeTracking.mappedChanges}
+                  onAcceptChange={changeTracking.acceptChange}
+                  onRejectChange={changeTracking.rejectChange}
+                  onSaveWithType={async (contentToSave, changeType) => {
+                    await saveDocument(contentToSave, changeType);
+                  }}
+                />
+              ) : (
+                <CodeMirrorEditor
+                  value={latexDraft}
+                  onChange={handleContentChange}
+                  onCursorPositionChange={handleCursorPositionChange}
+                  onEditorViewReady={(view) => {
+                    editorViewRef.current = view;
+                  }}
+                  language="plain"
+                  enableFormatMenu={false}
+                  readOnly={(() => {
+                    if (changeTracking.isTracking) return true;
+                    if (thinkPanelOpen) return true;
+                    if (inlineAIChatOpen) return true;
+                    let safeLatestVersion: number | null = null;
+                    if (latestVersion !== undefined && latestVersion !== null && !isNaN(Number(latestVersion))) {
+                      safeLatestVersion = Number(latestVersion);
+                    }
+                    const isReadOnly =
+                      selectedVersion !== null &&
+                      safeLatestVersion !== null &&
+                      Number(selectedVersion) !== Number(safeLatestVersion);
+                    return isReadOnly;
+                  })()}
+                />
+              )}
               
             </div>
           )}
@@ -1579,13 +1748,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                   : 'flex-1 overflow-hidden'
               }
             >
-              {viewMode === 'ir' ? (
-                <div className="h-full">
-                  <IrPreview docId={actualDocumentId || documentId} content={content} ir={irState.ir} />
-                </div>
-              ) : (
-                <MarkdownPreview content={content} />
-              )}
+              <div className="h-full">
+                <IrPreview docId={actualDocumentId || documentId} content={content} ir={irState.ir} />
+              </div>
             </div>
           )}
 

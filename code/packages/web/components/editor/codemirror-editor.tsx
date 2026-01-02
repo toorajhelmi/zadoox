@@ -21,6 +21,8 @@ interface CodeMirrorEditorProps {
   extensions?: any[];
   onEditorViewReady?: (view: EditorView | null) => void;
   readOnly?: boolean;
+  language?: 'markdown' | 'plain';
+  enableFormatMenu?: boolean;
 }
 
 const PLACEHOLDER_TEXT = 'Start editing...';
@@ -63,7 +65,17 @@ function customLineNumbers() {
   });
 }
 
-export function CodeMirrorEditor({ value, onChange, onSelectionChange, onCursorPositionChange, extensions = [], onEditorViewReady, readOnly = false }: CodeMirrorEditorProps) {
+export function CodeMirrorEditor({
+  value,
+  onChange,
+  onSelectionChange,
+  onCursorPositionChange,
+  extensions = [],
+  onEditorViewReady,
+  readOnly = false,
+  language = 'markdown',
+  enableFormatMenu = true,
+}: CodeMirrorEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
@@ -332,11 +344,15 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange, onCursorP
             });
           }
           
-          setShowFormatMenu(true);
+          if (enableFormatMenu) {
+            setShowFormatMenu(true);
+          } else {
+            setShowFormatMenu(false);
+          }
         }, 150);
       }
     });
-  }, [onSelectionChange, onEditorViewReady, onCursorPositionChange]);
+  }, [onSelectionChange, onEditorViewReady, onCursorPositionChange, enableFormatMenu]);
 
   return (
     <div ref={editorContainerRef} className="h-full w-full relative">
@@ -344,7 +360,13 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange, onCursorP
         <CodeMirror
           value={displayValue}
           onChange={handleChange}
-          extensions={[markdown(), EditorView.lineWrapping, customLineNumbers(), selectionExtension(), ...extensions]}
+          extensions={[
+            ...(language === 'markdown' ? [markdown()] : []),
+            EditorView.lineWrapping,
+            customLineNumbers(),
+            selectionExtension(),
+            ...extensions,
+          ]}
           theme={oneDark}
           basicSetup={{
             lineNumbers: false, // Disable default line numbers, use custom
@@ -357,7 +379,7 @@ export function CodeMirrorEditor({ value, onChange, onSelectionChange, onCursorP
           editable={!readOnly}
         />
       </div>
-      {showFormatMenu && (
+      {enableFormatMenu && showFormatMenu && (
         <FloatingFormatMenu
           position={formatMenuPosition}
           onFormat={handleFormatInternal}

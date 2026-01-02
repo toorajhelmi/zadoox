@@ -6,39 +6,41 @@ import { createClient } from '@/lib/supabase/client';
 
 interface MarkdownPreviewProps {
   content: string;
+  /**
+   * Optional pre-rendered HTML (e.g. IR -> HTML).
+   * When provided, we skip Markdown parsing and just run the shared post-processing steps
+   * (asset URL rewrite, citation linking, etc).
+   */
+  htmlOverride?: string;
 }
 
 const TRANSPARENT_PIXEL =
   // 1x1 transparent GIF
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
 
-export function MarkdownPreview({ content }: MarkdownPreviewProps) {
+export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const assetUrlCacheRef = useRef<Map<string, string>>(new Map());
   const assetInFlightRef = useRef<Set<string>>(new Set());
   const abortRef = useRef<AbortController | null>(null);
   const html = useMemo(() => {
-    if (!content.trim()) {
+    if (!content.trim() && !htmlOverride?.trim()) {
       return '';
     }
     
-    // Extract headings from markdown before rendering
-    const headings = extractHeadings(content);
+    let htmlContent = htmlOverride?.trim().length ? htmlOverride : renderMarkdownToHtml(content);
     
-    // Render markdown to HTML
-    let htmlContent = renderMarkdownToHtml(content);
-    
-    // Add IDs to headings for outline navigation
-    // Replace headings in order, matching by level and text
-    headings.forEach((heading) => {
-      const headingTag = `h${heading.level}`;
-      // Create regex to match heading tag with the exact text
-      // Escape special characters in the text for regex
-      const escapedText = heading.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(`<${headingTag}>${escapedText}</${headingTag}>`);
-      htmlContent = htmlContent.replace(regex, `<${headingTag} id="${heading.id}">${heading.text}</${headingTag}>`);
-    });
+    // If we're rendering from raw markdown, add heading IDs for outline navigation.
+    if (!htmlOverride?.trim().length) {
+      const headings = extractHeadings(content);
+      headings.forEach((heading) => {
+        const headingTag = `h${heading.level}`;
+        const escapedText = heading.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`<${headingTag}>${escapedText}</${headingTag}>`);
+        htmlContent = htmlContent.replace(regex, `<${headingTag} id="${heading.id}">${heading.text}</${headingTag}>`);
+      });
+    }
     
     // Add IDs to reference entries in References section FIRST (before converting citations to links)
     // This ensures references have IDs before citations link to them
@@ -193,7 +195,7 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
     );
     
     return htmlContent;
-  }, [content]);
+  }, [content, htmlOverride]);
 
   // Track auth token so asset fetching can retry when a session becomes available.
   useEffect(() => {
@@ -230,6 +232,33 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
 
   // Resolve zadoox-asset:// images by fetching from backend with Authorization header.
   // This avoids relying on cookie-based sessions for <img src> requests.
+  const clampFigureCaptionsToImageWidth = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const figures = Array.from(container.querySelectorAll('.figure-inner')) as HTMLElement[];
+    for (const inner of figures) {
+      const img = inner.querySelector('img') as HTMLImageElement | null;
+      const caption = inner.querySelector('.figure-caption') as HTMLElement | null;
+      if (!img || !caption) continue;
+
+      const apply = () => {
+        const w = img.getBoundingClientRect().width;
+        if (!Number.isFinite(w) || w <= 0) return;
+        // Constrain caption to the *rendered* image width (important when images are scaled by height).
+        caption.style.maxWidth = `${w}px`;
+        caption.style.marginLeft = 'auto';
+        caption.style.marginRight = 'auto';
+      };
+
+      if (img.complete) {
+        apply();
+      } else {
+        img.addEventListener('load', apply, { once: true });
+      }
+    }
+  }, []);
+
   const resolveAssetImages = useCallback(async () => {
     const container = containerRef.current;
     if (!container) return;
@@ -273,6 +302,9 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
           const url = URL.createObjectURL(blob);
           assetUrlCacheRef.current.set(key, url);
           img.src = url;
+          // After setting the final src, clamp caption width to the rendered image width.
+          // (The browser may scale the image by max-height, so measured width is what matters.)
+          clampFigureCaptionsToImageWidth();
         } catch {
           // ignore
         } finally {
@@ -280,7 +312,7 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
         }
       })
     );
-  }, [accessToken]);
+  }, [accessToken, clampFigureCaptionsToImageWidth]);
 
   useEffect(() => {
     void resolveAssetImages();
@@ -294,13 +326,19 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
 
     const obs = new MutationObserver(() => {
       void resolveAssetImages();
+      clampFigureCaptionsToImageWidth();
     });
     obs.observe(container, { childList: true, subtree: true });
 
     return () => {
       obs.disconnect();
     };
-  }, [resolveAssetImages]);
+  }, [resolveAssetImages, clampFigureCaptionsToImageWidth]);
+
+  // Also clamp captions after each HTML change (non-asset images / already-loaded images).
+  useEffect(() => {
+    clampFigureCaptionsToImageWidth();
+  }, [html, clampFigureCaptionsToImageWidth]);
 
   // Cleanup blob URLs + in-flight fetch on unmount
   useEffect(() => {
@@ -449,6 +487,19 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
         }}
       />
       <style jsx global>{`
+        .markdown-content .doc-title {
+          font-size: 2.2em;
+          font-weight: 800;
+          margin: 0.2em 0 0.7em 0;
+          color: #ffffff;
+        }
+        .markdown-content .doc-author,
+        .markdown-content .doc-date {
+          color: #9aa0a6;
+          font-size: 0.95em;
+          margin: 0.1em 0;
+          text-align: center;
+        }
         .markdown-content h1 {
           font-size: 2em;
           font-weight: bold;
@@ -465,6 +516,12 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
           font-size: 1.25em;
           font-weight: bold;
           margin: 0.6em 0 0.3em 0;
+          color: #ffffff;
+        }
+        .markdown-content h4 {
+          font-size: 1.1em;
+          font-weight: bold;
+          margin: 0.55em 0 0.25em 0;
           color: #ffffff;
         }
         .markdown-content p {
@@ -495,7 +552,8 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
           font-style: italic;
         }
         .markdown-content .figure-caption {
-          display: inline-block;
+          /* Let the renderer control block/width via inline styles so captions align to image width */
+          display: block;
           margin-top: 0.25em;
           color: #9aa0a6;
         }

@@ -37,12 +37,13 @@ vi.mock('date-fns', () => ({
 
 describe('EditorToolbar', () => {
   const mockOnViewModeChange = vi.fn();
+  const mockOnEditFormatChange = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('should render IR preview view mode button', () => {
+  it('should render preview view mode button', () => {
     render(
       <EditorToolbar
         projectId="project-1"
@@ -51,9 +52,11 @@ describe('EditorToolbar', () => {
         lastSaved={null}
         viewMode="edit"
         onViewModeChange={mockOnViewModeChange}
+        editFormat="markdown"
+        onEditFormatChange={mockOnEditFormatChange}
       />
     );
 
-    expect(screen.getByLabelText('IR preview')).toBeInTheDocument();
+    expect(screen.getByLabelText('Preview mode')).toBeInTheDocument();
   });
 });

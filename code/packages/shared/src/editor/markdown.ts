@@ -115,27 +115,54 @@ export function renderMarkdownToHtml(content: string): string {
       if (align === 'right') imgStyleParts.push('margin-left:auto');
       const imgStyle = imgStyleParts.length > 0 ? ` style="${imgStyleParts.join(';')}"` : '';
 
-      const captionStyleParts: string[] = [];
-      captionStyleParts.push('display:block');
-      captionStyleParts.push('width:100%');
-      if (align === 'center') captionStyleParts.push('text-align:center');
-      if (align === 'right') captionStyleParts.push('text-align:right');
-      const captionStyle = captionStyleParts.length > 0 ? ` style="${captionStyleParts.join(';')}"` : '';
+      // Caption should be centered relative to the image width.
+      // We achieve this by placing image+caption inside an "inner" wrapper that matches image width.
+      const captionStyle = ` style="display:block;width:100%;text-align:center;white-space:normal;overflow-wrap:anywhere;word-break:break-word"`;
+
+      const innerStyleParts: string[] = [];
+      if (placement === 'inline') {
+        // Inline figures: keep caption width <= image width by using shrink-to-fit inner wrapper.
+        // Only fill the wrapper when an explicit width is set.
+        innerStyleParts.push('display:inline-block');
+        innerStyleParts.push('max-width:100%');
+        if (width) innerStyleParts.push('width:100%');
+      } else {
+        innerStyleParts.push('display:inline-block');
+        innerStyleParts.push('max-width:100%');
+        if (width) innerStyleParts.push(`width:${width}`);
+        // Alignment handled by wrapper's text-align in block mode.
+      }
+      const innerStyle = ` style="${innerStyleParts.join(';')}"`;
 
       // For inline placement, float so surrounding text can wrap.
       // Default to float-left when placement="inline" (even if no align was specified),
       // and float-right when align="right".
       const wrapperStyleParts: string[] = [];
       if (placement === 'inline') {
-        // Ensure wrapper hugs the image/caption block.
-        wrapperStyleParts.push('display:inline-block');
-        if (width) wrapperStyleParts.push(`width:${width}`);
-        const floatSide = align === 'right' ? 'right' : 'left';
-        wrapperStyleParts.push(`float:${floatSide}`);
-        wrapperStyleParts.push(floatSide === 'left' ? 'margin:0 12px 12px 0' : 'margin:0 0 12px 12px');
+        if (align === 'center') {
+          // Center + inline is ambiguous for wrapping. We treat it as a centered block so it matches
+          // the edit-mode behavior and avoids awkward wrap around a centered float.
+          wrapperStyleParts.push('display:block');
+          wrapperStyleParts.push('width:fit-content');
+          wrapperStyleParts.push('max-width:100%');
+          if (width) wrapperStyleParts.push(`width:${width}`);
+          wrapperStyleParts.push('margin:0 auto 12px auto');
+        } else {
+          // Ensure wrapper hugs the image/caption block.
+          wrapperStyleParts.push('display:inline-block');
+          if (width) wrapperStyleParts.push(`width:${width}`);
+          const floatSide = align === 'right' ? 'right' : 'left';
+          wrapperStyleParts.push(`float:${floatSide}`);
+          wrapperStyleParts.push(floatSide === 'left' ? 'margin:0 12px 12px 0' : 'margin:0 0 12px 12px');
+        }
       } else {
         wrapperStyleParts.push('display:block');
         wrapperStyleParts.push('width:100%');
+        // Align the inner wrapper within the full-width figure wrapper.
+        // This makes alignment visible even when no explicit width is set.
+        if (align === 'center') wrapperStyleParts.push('text-align:center');
+        else if (align === 'right') wrapperStyleParts.push('text-align:right');
+        else wrapperStyleParts.push('text-align:left');
       }
       const wrapperStyle =
         wrapperStyleParts.length > 0 ? ` style="${wrapperStyleParts.join(';')}"` : '';
@@ -146,12 +173,41 @@ export function renderMarkdownToHtml(content: string): string {
           : '';
 
       const idAttr = figureDomId ? ` id="${figureDomId}"` : '';
-      return `<span class="figure"${idAttr}${wrapperStyle}><img src="${safeUrl}" alt="${safeAlt}"${imgStyle} />${caption}</span>`;
+      // Put <img> + caption inside an inner wrapper so the caption aligns to the image width.
+      // Also, for block placement with explicit width, make the image fill the inner width.
+      const imgHtml =
+        placement !== 'inline' && width
+          ? `<img src="${safeUrl}" alt="${safeAlt}" style="display:block;width:100%;max-width:100%" />`
+          : `<img src="${safeUrl}" alt="${safeAlt}"${imgStyle} />`;
+      return `<span class="figure"${idAttr}${wrapperStyle}><span class="figure-inner"${innerStyle}>${imgHtml}${caption}</span></span>`;
     }
   );
 
   // Plain images (no attribute blocks)
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/gim, '<img src="$2" alt="$1" />');
+  // Zadoox convention: treat the image alt text as a visible caption in preview.
+  // This keeps preview consistent with the editor's embedded figure card and avoids requiring
+  // a non-standard caption syntax.
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/gim, (_m, alt, url) => {
+    const safeAlt = String(alt || '');
+    const safeUrl = String(url || '');
+
+    const captionStyleParts: string[] = [];
+    captionStyleParts.push('display:block');
+    captionStyleParts.push('width:100%');
+    captionStyleParts.push('text-align:center');
+    captionStyleParts.push('white-space:normal');
+    captionStyleParts.push('overflow-wrap:anywhere');
+    captionStyleParts.push('word-break:break-word');
+    const captionStyle = ` style="${captionStyleParts.join(';')}"`;
+
+    const caption =
+      safeAlt.trim().length > 0
+        ? `<em class="figure-caption"${captionStyle}>${safeAlt}</em>`
+        : '';
+
+    // Wrap in figure-inner so the preview layer can clamp caption width to the rendered image width.
+    return `<span class="figure"><span class="figure-inner" style="display:inline-block;max-width:100%"><img src="${safeUrl}" alt="${safeAlt}" style="display:block;max-width:100%" />${caption}</span></span>`;
+  });
 
   // Links
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2">$1</a>');

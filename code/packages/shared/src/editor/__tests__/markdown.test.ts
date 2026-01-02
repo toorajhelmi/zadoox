@@ -88,7 +88,9 @@ describe('Markdown Utilities', () => {
       const markdown = '![Alt](image.png)';
       const html = renderMarkdownToHtml(markdown);
 
-      expect(html).toContain('<img src="image.png" alt="Alt" />');
+      expect(html).toContain('class="figure"');
+      expect(html).toContain('<img src="image.png" alt="Alt"');
+      expect(html).toContain('class="figure-caption"');
     });
 
     it('should render images with attribute blocks without showing attributes', () => {
@@ -107,8 +109,9 @@ describe('Markdown Utilities', () => {
       const markdown =
         '![Caption](image.png){#fig:generated-123 label="Figure {REF}.1" align="center" width="50%" placement="block"}';
       const html = renderMarkdownToHtml(markdown);
-      expect(html).toContain('max-width:50%');
-      expect(html).toContain('margin-left:auto');
+      // Width is applied to the inner wrapper; image fills that inner width.
+      expect(html).toContain('width:50%');
+      // Alignment for block figures is handled by wrapper text-align.
       expect(html).toContain('text-align:center');
     });
 
@@ -117,6 +120,15 @@ describe('Markdown Utilities', () => {
         '![Caption](image.png){#fig:generated-123 label="Figure {REF}.1" placement="inline"}\n\nNext paragraph text';
       const html = renderMarkdownToHtml(markdown);
       expect(html).toContain('float:left');
+    });
+
+    it('should center inline figures when align="center" (no float)', () => {
+      const markdown =
+        '![Caption](image.png){#fig:generated-123 label="Figure {REF}.1" placement="inline" align="center"}';
+      const html = renderMarkdownToHtml(markdown);
+      expect(html).toContain('margin:0 auto 12px auto');
+      expect(html).not.toContain('float:left');
+      expect(html).not.toContain('float:right');
     });
 
     it('should not break asset URLs containing "__" (no accidental italics)', () => {

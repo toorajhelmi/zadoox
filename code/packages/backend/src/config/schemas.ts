@@ -72,10 +72,16 @@ export const schemas = {
       content: { type: 'string' },
       metadata: {
         type: 'object',
+        // IMPORTANT: document metadata is extensible (paragraphModes, researchSessions, lastEditedFormat, latex, etc).
+        // If we don't allow additional properties here, Fastify's response serializer will drop them.
+        additionalProperties: true,
         properties: {
           chapterNumber: { type: 'number', nullable: true },
           type: { type: 'string', enum: ['chapter', 'section', 'standalone'] },
           order: { type: 'number', nullable: true },
+          lastEditedFormat: { type: 'string', enum: ['latex', 'markdown'], nullable: true },
+          latex: { type: 'string', nullable: true },
+          irHashAtLastSync: { type: 'string', nullable: true },
         },
         required: ['type'],
       },
@@ -105,10 +111,14 @@ export const schemas = {
       content: { type: 'string' },
       metadata: {
         type: 'object',
+        additionalProperties: true,
         properties: {
           chapterNumber: { type: 'number' },
           type: { type: 'string', enum: ['chapter', 'section', 'standalone'] },
           order: { type: 'number' },
+          lastEditedFormat: { type: 'string', enum: ['latex', 'markdown'] },
+          latex: { type: 'string' },
+          irHashAtLastSync: { type: 'string' },
         },
       },
     },
@@ -122,10 +132,14 @@ export const schemas = {
       content: { type: 'string' },
       metadata: {
         type: 'object',
+        additionalProperties: true,
         properties: {
           chapterNumber: { type: 'number' },
           type: { type: 'string', enum: ['chapter', 'section', 'standalone'] },
           order: { type: 'number' },
+          lastEditedFormat: { type: 'string', enum: ['latex', 'markdown'] },
+          latex: { type: 'string' },
+          irHashAtLastSync: { type: 'string' },
         },
       },
     },

@@ -1,12 +1,13 @@
 'use client';
 
-import { EyeIcon, PencilIcon, Squares2X2Icon, ChevronRightIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { PencilIcon, Squares2X2Icon, EyeIcon, ChevronRightIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api/client';
 import type { Project } from '@zadoox/shared';
 
 type ViewMode = 'edit' | 'preview' | 'split' | 'ir';
+type EditFormat = 'markdown' | 'latex';
 
 interface EditorToolbarProps {
   projectId: string;
@@ -15,6 +16,8 @@ interface EditorToolbarProps {
   lastSaved: Date | null;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
+  editFormat: EditFormat;
+  onEditFormatChange: (format: EditFormat) => void;
   canUndo?: boolean;
   canRedo?: boolean;
   onUndo?: () => void;
@@ -28,6 +31,8 @@ export function EditorToolbar({
   lastSaved: _lastSaved, 
   viewMode,
   onViewModeChange,
+  editFormat,
+  onEditFormatChange,
   canUndo = false,
   canRedo = false,
   onUndo,
@@ -144,6 +149,17 @@ export function EditorToolbar({
             <PencilIcon className="w-4 h-4" />
           </button>
           <button
+            onClick={() => onViewModeChange('preview')}
+            className={`px-3 py-1 text-sm rounded transition-colors ${
+              viewMode === 'preview'
+                ? 'bg-vscode-active text-vscode-text'
+                : 'text-vscode-text-secondary hover:text-vscode-text'
+            }`}
+            aria-label="Preview mode"
+          >
+            <EyeIcon className="w-4 h-4" />
+          </button>
+          <button
             onClick={() => onViewModeChange('split')}
             className={`px-3 py-1 text-sm rounded transition-colors ${
               viewMode === 'split'
@@ -154,28 +170,33 @@ export function EditorToolbar({
           >
             <Squares2X2Icon className="w-4 h-4" />
           </button>
+        </div>
+
+        {/* Edit Format Toggle (Phase 12) */}
+        <div className="flex items-center gap-1 border-l border-vscode-border pl-4">
           <button
-            onClick={() => onViewModeChange('ir')}
+            onClick={() => onEditFormatChange('markdown')}
             className={`px-3 py-1 text-sm rounded transition-colors ${
-              viewMode === 'ir'
+              editFormat === 'markdown'
                 ? 'bg-vscode-active text-vscode-text'
                 : 'text-vscode-text-secondary hover:text-vscode-text'
             }`}
-            aria-label="IR preview"
-            title="IR Preview"
+            aria-label="Markdown edit mode"
+            title="Edit Markdown (XMD)"
           >
-            <SparklesIcon className="w-4 h-4" />
+            MD
           </button>
           <button
-            onClick={() => onViewModeChange('preview')}
+            onClick={() => onEditFormatChange('latex')}
             className={`px-3 py-1 text-sm rounded transition-colors ${
-              viewMode === 'preview'
+              editFormat === 'latex'
                 ? 'bg-vscode-active text-vscode-text'
                 : 'text-vscode-text-secondary hover:text-vscode-text'
             }`}
-            aria-label="Preview mode"
+            aria-label="LaTeX edit mode"
+            title="Edit LaTeX (subset)"
           >
-            <EyeIcon className="w-4 h-4" />
+            LaTeX
           </button>
         </div>
       </div>

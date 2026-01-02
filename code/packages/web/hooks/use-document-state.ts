@@ -12,6 +12,13 @@ function deriveTitleFromXmd(xmd: string): string | null {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
+    // XMD Title marker: "@ Title"
+    const t = /^@\s+(.+)$/.exec(trimmed);
+    if (t) {
+      const title = (t[1] || '').trim();
+      if (!title) return null;
+      return title.length > 160 ? `${title.slice(0, 157)}...` : title;
+    }
     // Only H1: "# Title" (not "##")
     const m = /^#(?!#)\s+(.+)$/.exec(trimmed);
     if (!m) continue;
@@ -31,6 +38,7 @@ export function useDocumentState(documentId: string, projectId: string) {
   const [isLoading, setIsLoading] = useState(true);
   const [actualDocumentId, setActualDocumentId] = useState<string>(documentId);
   const [paragraphModes, setParagraphModes] = useState<Record<string, ParagraphMode>>({});
+  const [documentMetadata, setDocumentMetadata] = useState<Record<string, any>>({});
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load document content (or create "Untitled Document" if project has no documents)
@@ -67,6 +75,7 @@ export function useDocumentState(documentId: string, projectId: string) {
           setDocumentTitle(deriveTitleFromXmd(loadedContent) ?? document.title);
           setLastSaved(new Date(document.updatedAt));
           setParagraphModes(document.metadata?.paragraphModes || {});
+          setDocumentMetadata(document.metadata || {});
           setIsLoading(false);
           return;
         }
@@ -80,6 +89,7 @@ export function useDocumentState(documentId: string, projectId: string) {
           setDocumentTitle(deriveTitleFromXmd(loadedContent) ?? document.title);
           setLastSaved(new Date(document.updatedAt));
           setParagraphModes(document.metadata?.paragraphModes || {});
+          setDocumentMetadata(document.metadata || {});
           setIsLoading(false);
         } catch (error) {
           console.error('Failed to load document:', error);
@@ -106,33 +116,50 @@ export function useDocumentState(documentId: string, projectId: string) {
         return;
       }
 
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'cursorjump1',hypothesisId:'CJ1',location:'use-document-state.ts:saveDocument',message:'saveDocument start',data:{docId:actualDocumentId,changeType,contentLen:contentToSave.length,localLastEditedFormat:documentMetadata?.lastEditedFormat},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       setIsSaving(true);
       try {
         const derivedTitle = deriveTitleFromXmd(contentToSave);
         // Get current document to preserve metadata (especially paragraphModes)
         const currentDocument = await api.documents.get(actualDocumentId);
+        // Merge server metadata with local metadata (local wins) to avoid races where an autosave
+        // overwrites fields like lastEditedFormat/latex that were just updated in the UI.
+        const mergedMetadata = {
+          ...(currentDocument.metadata || {}),
+          ...(documentMetadata || {}),
+          paragraphModes: paragraphModes, // Preserve current paragraph modes
+        };
         
         // Update document with content change, preserving existing metadata
         const document = await api.documents.update(actualDocumentId, {
           ...(derivedTitle ? { title: derivedTitle } : null),
           content: contentToSave,
-          metadata: {
-            ...currentDocument.metadata,
-            paragraphModes: paragraphModes, // Preserve current paragraph modes
-          },
+          metadata: mergedMetadata,
           changeType,
         });
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'cursorjump1',hypothesisId:'CJ1',location:'use-document-state.ts:saveDocument',message:'saveDocument success',data:{docId:actualDocumentId,returnedLastEditedFormat:document.metadata?.lastEditedFormat,returnedLatexLen:typeof document.metadata?.latex==='string'?document.metadata.latex.length:0},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         setDocumentTitle(document.title);
         setLastSaved(new Date(document.updatedAt));
         setParagraphModes(document.metadata?.paragraphModes || {});
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'cursorjump3',hypothesisId:'CJ5',location:'use-document-state.ts:saveDocument',message:'about to setDocumentMetadata(from server)',data:{docId:actualDocumentId,serverLatexLen:typeof document.metadata?.latex==='string'?document.metadata.latex.length:0,localLatexLen:typeof documentMetadata?.latex==='string'?documentMetadata.latex.length:0,serverLastEditedFormat:document.metadata?.lastEditedFormat,localLastEditedFormat:documentMetadata?.lastEditedFormat},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        setDocumentMetadata(document.metadata || {});
       } catch (error) {
         console.error('Failed to save document:', error);
         // Don't update lastSaved on error - user will see "Not saved" status
       } finally {
         setIsSaving(false);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'cursorjump1',hypothesisId:'CJ1',location:'use-document-state.ts:saveDocument',message:'saveDocument end (setIsSaving false)',data:{docId:actualDocumentId,changeType},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
       }
     },
-    [actualDocumentId, paragraphModes]
+    [actualDocumentId, paragraphModes, documentMetadata]
   );
 
   // Update content with auto-save
@@ -227,6 +254,8 @@ export function useDocumentState(documentId: string, projectId: string) {
     isLoading,
     documentId: actualDocumentId,
     paragraphModes,
+    documentMetadata,
+    setDocumentMetadata,
     handleModeToggle,
     saveDocument: async (contentToSave: string, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
       await saveDocument(contentToSave, changeType);

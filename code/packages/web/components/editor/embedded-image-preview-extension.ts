@@ -102,10 +102,37 @@ class FigureCardWidget extends WidgetType {
       }
       wrap.style.outline = '1px dashed rgba(120, 170, 255, 0.55)';
       wrap.style.outlineOffset = '3px';
+
+      // Align the whole card within the editor (best-effort).
+      // We don't do true inline wrapping inside CodeMirror, but alignment should still match preview intent.
+      // NOTE: margin-left:auto does not right-align reliably for inline widgets. Use float for right/left.
+      wrap.style.display = 'inline-block';
+      if (align === 'right') {
+        wrap.style.float = 'right';
+        wrap.style.margin = '8px 0 8px 12px';
+      } else if (align === 'center') {
+        // "Center + inline" is ambiguous; keep it visually centered within a full line.
+        wrap.style.display = 'block';
+        // Shrink to content so margin:auto can actually center it (block default width is 100%).
+        if (!width) {
+          (wrap.style as unknown as { width?: string }).width = 'fit-content';
+          wrap.style.maxWidth = '100%';
+        }
+        wrap.style.float = 'none';
+        wrap.style.marginLeft = 'auto';
+        wrap.style.marginRight = 'auto';
+      } else {
+        // Default/left
+        wrap.style.float = 'left';
+        wrap.style.margin = '8px 12px 8px 0';
+      }
     } else {
       // Block placement: the card should occupy the full editor width (prevents caret showing beside it).
       wrap.style.width = '100%';
       wrap.style.maxWidth = '100%';
+      // Align the figure content (inner wrapper) within the full-width card.
+      // This ensures align changes are visible even when width is not explicitly set.
+      wrap.style.textAlign = align === 'center' ? 'center' : align === 'right' ? 'right' : 'left';
     }
 
     const img = document.createElement('img');
@@ -208,15 +235,64 @@ class FigureCardWidget extends WidgetType {
       wrap.appendChild(badge);
     }
 
+    // Inner wrapper so caption width follows the image width (even when no explicit width attr exists).
+    // This prevents "caption centered across full page" when image is smaller than the editor width.
+    const inner = document.createElement('div');
+    if (placement === 'inline') {
+      // Inline figures: keep caption width <= image width.
+      // Use shrink-to-fit inner wrapper; only fill the wrapper when an explicit width is set.
+      inner.style.display = 'inline-block';
+      inner.style.maxWidth = '100%';
+      if (width) inner.style.width = '100%';
+    } else {
+      inner.style.display = 'inline-block';
+      inner.style.maxWidth = '100%';
+      if (width) inner.style.width = width;
+      // Alignment is handled by wrap.style.textAlign in block mode.
+    }
+
+    // If we explicitly sized the figure (block + width), make the image fill the inner width.
+    if (placement !== 'inline' && width) {
+      img.style.width = '100%';
+      img.style.maxWidth = '100%';
+    }
+
     const caption = document.createElement('div');
     caption.textContent = this.alt || 'Figure';
     caption.style.marginTop = '6px';
     caption.style.fontSize = '12px';
     caption.style.color = '#9aa0a6';
     caption.style.fontStyle = 'italic';
-    if (align === 'center') caption.style.textAlign = 'center';
-    if (align === 'right') caption.style.textAlign = 'right';
-    wrap.appendChild(caption);
+    // Product rule: caption text centered relative to the image width (via inner wrapper)
+    caption.style.textAlign = 'center';
+    caption.style.display = 'block';
+    caption.style.width = '100%';
+    // Ensure long captions wrap within the figure width (never overflow wider than the image).
+    caption.style.whiteSpace = 'normal';
+    (caption.style as unknown as { overflowWrap?: string }).overflowWrap = 'anywhere';
+    caption.style.wordBreak = 'break-word';
+
+    const clampCaption = () => {
+      try {
+        const w = img.getBoundingClientRect().width;
+        if (!Number.isFinite(w) || w <= 0) return;
+        caption.style.maxWidth = `${w}px`;
+        caption.style.marginLeft = 'auto';
+        caption.style.marginRight = 'auto';
+      } catch {
+        // ignore
+      }
+    };
+
+    if (img.complete) {
+      clampCaption();
+    } else {
+      img.addEventListener('load', clampCaption, { once: true });
+    }
+
+    inner.appendChild(img);
+    inner.appendChild(caption);
+    wrap.appendChild(inner);
 
     // Hover toolbar (quick controls)
     const hoverBar = document.createElement('div');
@@ -243,14 +319,17 @@ class FigureCardWidget extends WidgetType {
     hoverBar.style.flexDirection = 'column';
     hoverBar.style.visibility = 'hidden';
 
-    const makeIconBtn = (opts: { label: string; svg: string }) => {
+    const makeIconBtn = (opts: { label: string; svg: string; selected?: boolean }) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.setAttribute('aria-label', opts.label);
       b.title = opts.label;
+      const selected = Boolean(opts.selected);
       b.className =
-        'w-7 h-7 flex items-center justify-center rounded border border-vscode-border bg-vscode-buttonBg text-vscode-text ' +
-        'hover:bg-vscode-buttonHoverBg transition-colors';
+        'w-7 h-7 flex items-center justify-center rounded border border-vscode-border transition-colors ' +
+        (selected
+          ? 'bg-vscode-active text-vscode-text'
+          : 'bg-transparent text-vscode-text-secondary hover:text-vscode-text hover:bg-vscode-buttonHoverBg');
       const span = document.createElement('span');
       span.innerHTML = opts.svg;
       b.appendChild(span);
@@ -282,6 +361,9 @@ class FigureCardWidget extends WidgetType {
 
       const attrBlock = nextAttrs.trim().length > 0 ? `{${nextAttrs.trim()}}` : '';
       const nextText = `![${currentCaption}](${currentSrc})${attrBlock}`;
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'figattrs1',hypothesisId:'FA1',location:'embedded-image-preview-extension.ts:applyAttrUpdate',message:'Figure wizard writes markdown',data:{nextText:nextText.slice(0,240),nextTextLen:nextText.length,updates},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       view.dispatch({ changes: { from: this.from, to: this.to, insert: nextText } });
     };
 
@@ -338,33 +420,38 @@ class FigureCardWidget extends WidgetType {
         '</svg>',
     };
 
+    const currentPlacement = placement === 'inline' ? 'inline' : 'block';
+    const currentAlign = (align ?? (currentPlacement === 'inline' ? 'left' : 'left')) as 'left' | 'center' | 'right';
+    const currentPct = parsePercentWidth(width);
+
     // Editing controls in hover bar so they're always accessible (including inline placement).
     const btnEditIcon = makeIconBtn({ label: 'Edit', svg: icon.edit });
     const btnRegenIcon = makeIconBtn({ label: 'Regenerate', svg: icon.regen });
     const btnTrashIcon = makeIconBtn({ label: 'Delete', svg: icon.trash });
 
-    const btnLeft = makeIconBtn({ label: 'Align left', svg: icon.alignLeft });
-    const btnCenter = makeIconBtn({ label: 'Align center', svg: icon.alignCenter });
-    const btnRight = makeIconBtn({ label: 'Align right', svg: icon.alignRight });
-    btnLeft.addEventListener('click', (e) => {
+    const btnLeft = makeIconBtn({ label: 'Align left', svg: icon.alignLeft, selected: currentAlign === 'left' });
+    const btnCenter = makeIconBtn({ label: 'Align center', svg: icon.alignCenter, selected: currentAlign === 'center' });
+    const btnRight = makeIconBtn({ label: 'Align right', svg: icon.alignRight, selected: currentAlign === 'right' });
+    btnLeft.addEventListener('pointerdown', (e) => {
       e.preventDefault(); e.stopPropagation();
       applyAttrUpdate({ align: 'left' });
     });
-    btnCenter.addEventListener('click', (e) => {
+    btnCenter.addEventListener('pointerdown', (e) => {
       e.preventDefault(); e.stopPropagation();
       applyAttrUpdate({ align: 'center' });
     });
-    btnRight.addEventListener('click', (e) => {
+    btnRight.addEventListener('pointerdown', (e) => {
       e.preventDefault(); e.stopPropagation();
       applyAttrUpdate({ align: 'right' });
     });
 
-    const btnS = makeIconBtn({ label: 'Size small (33%)', svg: icon.sizeS });
-    const btnM = makeIconBtn({ label: 'Size medium (50%)', svg: icon.sizeM });
-    const btnL = makeIconBtn({ label: 'Size large (100%)', svg: icon.sizeL });
-    btnS.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '33%' }); });
-    btnM.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '50%' }); });
-    btnL.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '100%' }); });
+    const btnS = makeIconBtn({ label: 'Size small (33%)', svg: icon.sizeS, selected: currentPct === 33 });
+    const btnM = makeIconBtn({ label: 'Size medium (50%)', svg: icon.sizeM, selected: currentPct === 50 });
+    const btnL = makeIconBtn({ label: 'Size large (100%)', svg: icon.sizeL, selected: currentPct === 100 });
+    // Use pointerdown so the first interaction applies immediately (click can be eaten by focus/hover transitions).
+    btnS.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '33%' }); });
+    btnM.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '50%' }); });
+    btnL.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '100%' }); });
 
     const iconMinus =
       '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
@@ -388,22 +475,22 @@ class FigureCardWidget extends WidgetType {
       applyAttrUpdate({ width: formatPercentWidth(nextPct) });
     };
 
-    btnSmaller.addEventListener('click', (e) => {
+    btnSmaller.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
       stepWidth(-stepPct);
     });
 
-    btnLarger.addEventListener('click', (e) => {
+    btnLarger.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
       stepWidth(stepPct);
     });
 
-    const btnInline = makeIconBtn({ label: 'Placement inline', svg: icon.inline });
-    const btnBlock = makeIconBtn({ label: 'Placement block', svg: icon.block });
-    btnInline.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ placement: 'inline' }); });
-    btnBlock.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ placement: 'block' }); });
+    const btnInline = makeIconBtn({ label: 'Placement inline', svg: icon.inline, selected: currentPlacement === 'inline' });
+    const btnBlock = makeIconBtn({ label: 'Placement block', svg: icon.block, selected: currentPlacement === 'block' });
+    btnInline.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ placement: 'inline' }); });
+    btnBlock.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ placement: 'block' }); });
 
     const rowActions = makeRow();
     rowActions.appendChild(btnEditIcon);

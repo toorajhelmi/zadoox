@@ -942,21 +942,42 @@ Goal: Introduce **IR (Intermediate Representation)** as Zadoox’s internal cano
 
 ---
 
-### Phase 12: Web App - Export UI ✅
+### Phase 12: Web App - Editor MD ↔ LaTeX Switch (IR-backed) ✅
 **Status**: Not Started
 
-- [ ] Export dialog/modal
-- [ ] Export format selection (LaTeX, PDF)
-- [ ] Export button/trigger
-- [ ] Download handling
-- [ ] Export progress indicator
-- [ ] Error handling
+- [ ] Add an **Edit view switch** (toggle) to swap between **MD** and **LaTeX** editing modes
+- [ ] Make **IR the in-memory source of truth** while editing:
+  - [ ] On MD edits: update IR (existing XMD/MD → IR path)
+  - [ ] On LaTeX edits: update IR via **supported-subset LaTeX → IR** parser
+- [ ] On mode switch, **derive the other format from IR** (no direct MD↔LaTeX conversion):
+  - [ ] Switching to LaTeX: render LaTeX from IR and populate editor
+  - [ ] Switching to MD: render MD/XMD from IR and populate editor
+- [ ] Persist both representations on switch:
+  - [ ] When user switches **MD → LaTeX**, save **both** MD and generated LaTeX
+  - [ ] When user switches **LaTeX → MD**, save **both** LaTeX and generated MD
+- [ ] When **both MD/XMD and LaTeX already exist**, decide whether to **reuse/update** vs **regenerate/overwrite** on switch:
+  - [ ] **Approach (prevent divergence by design)**:
+    - [ ] On document open, load in the **last edited format** (MD or LaTeX) and build/update IR from that source
+    - [ ] Treat the other format as a **derived cache** (may be stale) and only regenerate it from IR at switch time
+    - [ ] Store `lastEditedFormat` + `irHashAtLastSync` so switch can quickly decide “already in sync” vs “regenerate”
+    - [ ] (Optional hardening) If multiple sessions can edit, detect stale writes via version/etag and prompt instead of overwriting
+  - [ ] Track per-representation metadata (at minimum): `lastSyncedFrom` (MD|LaTeX), `lastSyncedAt`, and/or a stable `irHashAtLastSync`
+  - [ ] If the target representation is **already in sync** with current IR (`irHashAtLastSync` matches), **reuse** it (no regeneration)
+  - [ ] If only the current-mode representation is dirty and IR reflects it, **regenerate** the other side from IR
+  - [ ] If both sides have diverged since last sync (conflict), **prompt** user before overwriting, with a safe fallback to prevent data loss
+- [ ] Add **LaTeX support validation** (subset only):
+  - [ ] Detect unsupported LaTeX commands/environments as user types (or on switch)
+  - [ ] Show a clear warning listing unsupported constructs
+  - [ ] If unsupported constructs exist, user **cannot switch back to MD** (round-trip blocked) until removed
+- [ ] UX polish:
+  - [ ] Confirm dialog on switch if it will overwrite the non-active representation
+  - [ ] Preserve cursor/scroll as much as possible across switches
+  - [ ] Error handling + safe fallback (never lose user text)
 
 **Deliverables**:
-- Export UI working
-- Can export to LaTeX
-- Can export to PDF
-- Downloads working
+- Editor can switch between MD and LaTeX modes using IR as the canonical model
+- Switching updates/saves **both** representations (MD and LaTeX)
+- Unsupported LaTeX constructs produce warnings and correctly **block MD round-trip**
 
 ---
 
@@ -1078,7 +1099,7 @@ code/
 11. **Phase 9**: Basic editor
 12. **Phase 10**: Editor features
 13. **Phase 11**: AI integration
-14. **Phase 12**: Export UI
+14. **Phase 12**: Editor MD ↔ LaTeX Switch (IR-backed)
 15. **Phase 14**: Integration & testing (integration tests, E2E)
 
 ---
@@ -1112,7 +1133,7 @@ Phase 11 (AI UI) ─────────┤
     ↓                     │
 Phase 6 (Export) ─────────┤
     ↓                     │
-Phase 12 (Export UI) ─────┤
+Phase 12 (MD ↔ LaTeX Switch) ─────┤
     ↓                     │
 Phase 14 (Integration) ←──┘
 ```
@@ -1129,7 +1150,7 @@ Phase 14 (Integration) ←──┘
 4. ✅ Document editor supports Extended Markdown
 5. ✅ Placeholder system works ({REF}, {CH})
 6. ✅ AI suggestions work (inline, expand, improve)
-7. ✅ Can export to LaTeX
+7. ✅ Editor can switch between MD and LaTeX (IR-backed, round-trip safe)
 8. ✅ Can export to PDF
 9. ✅ Documents persist in database
 10. ✅ Images can be uploaded and inserted
