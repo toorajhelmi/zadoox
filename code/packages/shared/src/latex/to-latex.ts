@@ -209,9 +209,13 @@ function parseFigureAttrsFromXmd(raw: string | undefined): {
 } {
   const s = (raw ?? '').trim();
   if (!s.startsWith('![') || !s.includes('](')) return {};
-  const m = /\{([\s\S]*?)\}\s*$/.exec(s);
+  // Attribute block can contain placeholder tokens like {REF}/{CH} which include braces.
+  // Mirror the permissive pattern used by the markdown renderer.
+  const m = /(\{(?:\{REF\}|\{CH\}|[^}])*\})\s*$/.exec(s);
   if (!m) return {};
-  const attrs = (m[1] ?? '').trim();
+  const rawBlock = (m[1] ?? '').trim();
+  const attrs =
+    rawBlock.startsWith('{') && rawBlock.endsWith('}') ? rawBlock.slice(1, -1).trim() : rawBlock;
   return {
     align: parseAttrValue(attrs, 'align') ?? undefined,
     placement: parseAttrValue(attrs, 'placement') ?? undefined,
