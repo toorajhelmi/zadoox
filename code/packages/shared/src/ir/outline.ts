@@ -80,7 +80,9 @@ export function extractOutlineItemsFromIr(ir: DocumentNode): OutlineItem[] {
   // #region agent log
   try {
     fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'outline1',hypothesisId:'OL2',location:'ir/outline.ts:extractOutlineItemsFromIr',message:'Outline extraction summary',data:{typeCounts,itemsLen:items.length,itemsHeadingCount,itemsFigureCount},timestamp:Date.now()})}).catch(()=>{});
-  } catch {}
+  } catch (e) {
+    void e;
+  }
   // #endregion
 
   return items;
