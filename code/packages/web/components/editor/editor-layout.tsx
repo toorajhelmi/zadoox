@@ -803,7 +803,19 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         }, 300); // Debounce for 300ms
       }
     },
-    [updateContent, selectedVersion, latestVersion, cursorPosition, undoRedo, changeTracking.isTracking, editFormat, actualDocumentId, documentId]
+    [
+      updateContent,
+      selectedVersion,
+      latestVersion,
+      cursorPosition,
+      undoRedo,
+      changeTracking.isTracking,
+      editFormat,
+      actualDocumentId,
+      documentId,
+      documentMetadata,
+      setDocumentMetadata,
+    ]
   );
 
   // Handle selection changes from editor

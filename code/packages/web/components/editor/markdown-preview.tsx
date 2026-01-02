@@ -312,7 +312,7 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
         }
       })
     );
-  }, [accessToken]);
+  }, [accessToken, clampFigureCaptionsToImageWidth]);
 
   useEffect(() => {
     void resolveAssetImages();
@@ -333,7 +333,7 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
     return () => {
       obs.disconnect();
     };
-  }, [resolveAssetImages]);
+  }, [resolveAssetImages, clampFigureCaptionsToImageWidth]);
 
   // Also clamp captions after each HTML change (non-asset images / already-loaded images).
   useEffect(() => {
