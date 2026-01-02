@@ -1,6 +1,8 @@
 import { stableNodeId } from '../ir/id';
 import type {
   CodeBlockNode,
+  DocumentAuthorNode,
+  DocumentDateNode,
   DocumentTitleNode,
   DocumentNode,
   FigureNode,
@@ -15,6 +17,8 @@ import type {
 
 type Block =
   | { kind: 'title'; title: string; raw: string; startOffset: number; endOffset: number }
+  | { kind: 'author'; text: string; raw: string; startOffset: number; endOffset: number }
+  | { kind: 'date'; text: string; raw: string; startOffset: number; endOffset: number }
   | { kind: 'heading'; level: number; title: string; raw: string; startOffset: number; endOffset: number }
   | { kind: 'code'; language?: string; code: string; raw: string; startOffset: number; endOffset: number }
   | { kind: 'math'; latex: string; raw: string; startOffset: number; endOffset: number }
@@ -60,6 +64,24 @@ function parseDocTitle(line: string): { title: string } | null {
   const title = (m[1] || '').trim();
   if (!title) return null;
   return { title };
+}
+
+function parseDocAuthor(line: string): { text: string } | null {
+  // XMD author marker: "@^ Author Name"
+  const m = /^@\^\s+(.+)$/.exec(line.trim());
+  if (!m) return null;
+  const text = (m[1] || '').trim();
+  if (!text) return null;
+  return { text };
+}
+
+function parseDocDate(line: string): { text: string } | null {
+  // XMD date marker: "@= 2026-01-02"
+  const m = /^@=\s+(.+)$/.exec(line.trim());
+  if (!m) return null;
+  const text = (m[1] || '').trim();
+  if (!text) return null;
+  return { text };
 }
 
 function parseListItem(line: string): { ordered: boolean; item: string } | null {
@@ -125,6 +147,32 @@ function parseBlocks(xmd: string): Block[] {
     }
 
     // Document title (XMD): "@ Title"
+    const docAuthor = parseDocAuthor(line);
+    if (docAuthor) {
+      blocks.push({
+        kind: 'author',
+        text: docAuthor.text,
+        raw: line,
+        startOffset: start,
+        endOffset: end,
+      });
+      i++;
+      continue;
+    }
+
+    const docDate = parseDocDate(line);
+    if (docDate) {
+      blocks.push({
+        kind: 'date',
+        text: docDate.text,
+        raw: line,
+        startOffset: start,
+        endOffset: end,
+      });
+      i++;
+      continue;
+    }
+
     const docTitle = parseDocTitle(line);
     if (docTitle) {
       blocks.push({
@@ -353,6 +401,8 @@ export function parseXmdToIr(params: { docId: string; xmd: string }): DocumentNo
 
   const sectionStack: SectionNode[] = [];
   let titleCount = 0;
+  let authorCount = 0;
+  let dateCount = 0;
 
   const appendToCurrentContainer = (node: IrNode) => {
     const current = sectionStack[sectionStack.length - 1];
@@ -434,6 +484,32 @@ export function parseXmdToIr(params: { docId: string; xmd: string }): DocumentNo
           source: { blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
         };
         // Titles are always document-level nodes (never nested under sections).
+        doc.children.push(node);
+        return;
+      }
+
+      if (b.kind === 'author') {
+        const idx = authorCount++;
+        const path = `author[${idx}]`;
+        const node: DocumentAuthorNode = {
+          type: 'document_author',
+          id: stableNodeId({ docId, nodeType: 'document_author', path }),
+          text: b.text,
+          source: { blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
+        };
+        doc.children.push(node);
+        return;
+      }
+
+      if (b.kind === 'date') {
+        const idx = dateCount++;
+        const path = `date[${idx}]`;
+        const node: DocumentDateNode = {
+          type: 'document_date',
+          id: stableNodeId({ docId, nodeType: 'document_date', path }),
+          text: b.text,
+          source: { blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
+        };
         doc.children.push(node);
         return;
       }

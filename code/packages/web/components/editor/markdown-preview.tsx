@@ -457,6 +457,12 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
           margin: 0.2em 0 0.7em 0;
           color: #ffffff;
         }
+        .markdown-content .doc-author,
+        .markdown-content .doc-date {
+          color: #9aa0a6;
+          font-size: 0.95em;
+          margin: 0.1em 0;
+        }
         .markdown-content h1 {
           font-size: 2em;
           font-weight: bold;

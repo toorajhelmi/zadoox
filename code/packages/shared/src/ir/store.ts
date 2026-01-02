@@ -24,6 +24,10 @@ function nodeContentForHash(node: IrNode): string {
       return `doc:${node.docId}`;
     case 'document_title':
       return `doctitle:${normalizeWhitespace(node.text)}`;
+    case 'document_author':
+      return `docauthor:${normalizeWhitespace(node.text)}`;
+    case 'document_date':
+      return `docdate:${normalizeWhitespace(node.text)}`;
     case 'section':
       return `sec:${node.level}:${normalizeWhitespace(node.title)}`;
     case 'paragraph':

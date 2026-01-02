@@ -2,6 +2,8 @@ import { stableNodeId } from '../ir/id';
 import type {
   CodeBlockNode,
   DocumentTitleNode,
+  DocumentAuthorNode,
+  DocumentDateNode,
   DocumentNode,
   IrNode,
   ListNode,
@@ -39,6 +41,8 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
 
   const sectionStack: SectionNode[] = [];
   let titleCount = 0;
+  let authorCount = 0;
+  let dateCount = 0;
   type Counters = Record<string, number>;
   const countersStack: Counters[] = [{ section: 0, paragraph: 0, list: 0, code_block: 0, math_block: 0, raw_latex_block: 0 }];
   const sectionPathStack: string[] = [];
@@ -101,6 +105,32 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
       }
 
       const counters = currentCounters();
+
+      if (b.kind === 'author') {
+        const idx = authorCount++;
+        const path = `author[${idx}]`;
+        const node: DocumentAuthorNode = {
+          type: 'document_author',
+          id: stableNodeId({ docId, nodeType: 'document_author', path }),
+          text: b.text,
+          source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
+        };
+        doc.children.push(node);
+        return;
+      }
+
+      if (b.kind === 'date') {
+        const idx = dateCount++;
+        const path = `date[${idx}]`;
+        const node: DocumentDateNode = {
+          type: 'document_date',
+          id: stableNodeId({ docId, nodeType: 'document_date', path }),
+          text: b.text,
+          source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
+        };
+        doc.children.push(node);
+        return;
+      }
 
       if (b.kind === 'paragraph') {
         const idx = counters.paragraph ?? 0;
@@ -190,6 +220,22 @@ type Block =
   | {
       kind: 'title';
       title: string;
+      raw: string;
+      blockIndex: number;
+      startOffset: number;
+      endOffset: number;
+    }
+  | {
+      kind: 'author';
+      text: string;
+      raw: string;
+      blockIndex: number;
+      startOffset: number;
+      endOffset: number;
+    }
+  | {
+      kind: 'date';
+      text: string;
       raw: string;
       blockIndex: number;
       startOffset: number;
@@ -320,11 +366,17 @@ function parseBlocks(latex: string): Block[] {
       continue;
     }
     if (/^\\author\{[^}]*\}\s*$/.test(line.trim())) {
+      const m = /^\\author\{([^}]*)\}\s*$/.exec(line.trim());
+      const text = latexInlineToMarkdown((m?.[1] ?? '').trim());
+      blocks.push({ kind: 'author', text, raw: line, blockIndex, startOffset: start, endOffset: end });
       i++;
       blockIndex++;
       continue;
     }
     if (/^\\date\{[^}]*\}\s*$/.test(line.trim())) {
+      const m = /^\\date\{([^}]*)\}\s*$/.exec(line.trim());
+      const text = latexInlineToMarkdown((m?.[1] ?? '').trim());
+      blocks.push({ kind: 'date', text, raw: line, blockIndex, startOffset: start, endOffset: end });
       i++;
       blockIndex++;
       continue;

@@ -23,6 +23,14 @@ function renderNode(node: IrNode): string {
       const text = escapeHtml(node.text ?? '');
       return `<h1 class="doc-title">${text}</h1>`;
     }
+    case 'document_author': {
+      const text = escapeHtml(node.text ?? '');
+      return `<div class="doc-author">${text}</div>`;
+    }
+    case 'document_date': {
+      const text = escapeHtml(node.text ?? '');
+      return `<div class="doc-date">${text}</div>`;
+    }
     case 'section': {
       // Distinguish title from sections: section level 1 => h2, level 2 => h3, level 3 => h4...
       const tagLevel = Math.max(2, Math.min(6, (node.level ?? 1) + 1));

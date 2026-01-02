@@ -7,6 +7,8 @@ describe('parseXmdToIr', () => {
   it('parses basic structure and stays stable across runs', () => {
     const xmd = [
       '@ Title',
+      '@^ Ada Lovelace',
+      '@= 1843-01-01',
       '',
       '# Intro',
       '',

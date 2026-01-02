@@ -27,9 +27,15 @@ export function irToLatex(doc: DocumentNode): string {
 export function irToLatexDocument(doc: DocumentNode): string {
   const titleNode = doc.children.find((n) => n.type === 'document_title');
   const titleLine = titleNode ? `\\title{${escapeLatexText(titleNode.text)}}` : '';
+  const authorNode = doc.children.find((n) => n.type === 'document_author');
+  const dateNode = doc.children.find((n) => n.type === 'document_date');
+  const authorLine = authorNode ? `\\author{${escapeLatexText(authorNode.text)}}` : '';
+  const dateLine = dateNode ? `\\date{${escapeLatexText(dateNode.text)}}` : '';
 
   // Exclude title nodes from body (we place \\title in preamble for standard LaTeX structure).
-  const bodyNodes = doc.children.filter((n) => n.type !== 'document_title');
+  const bodyNodes = doc.children.filter(
+    (n) => n.type !== 'document_title' && n.type !== 'document_author' && n.type !== 'document_date'
+  );
   const body = renderNodes(bodyNodes).trimEnd();
 
   // Minimal, broadly compatible, and IR-compatible:
@@ -39,14 +45,16 @@ export function irToLatexDocument(doc: DocumentNode): string {
   ];
   if (titleLine) {
     preambleParts.push(titleLine);
-    // Provide empty author/date so \\maketitle doesn't error and stays stable.
-    preambleParts.push('\\author{}');
-    preambleParts.push('\\date{}');
+  }
+  // If we have either title/author/date, include all 3 (empty is OK) so \\maketitle stays stable.
+  if (titleLine || authorLine || dateLine) {
+    preambleParts.push(authorLine || '\\author{}');
+    preambleParts.push(dateLine || '\\date{}');
   }
 
   const preamble = `${preambleParts.join('\n')}\n\n`;
   const begin = '\\begin{document}\n';
-  const maketitle = titleLine ? '\\maketitle\n\n' : '';
+  const maketitle = titleLine || authorLine || dateLine ? '\\maketitle\n\n' : '';
   const end = '\n\\end{document}\n';
 
   return `${preamble}${begin}${maketitle}${body}${end}`;
