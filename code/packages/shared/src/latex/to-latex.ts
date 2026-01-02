@@ -43,18 +43,17 @@ export function irToLatexDocument(doc: DocumentNode): string {
   const preambleParts = [
     '\\documentclass{article}',
   ];
-  if (titleLine) {
-    preambleParts.push(titleLine);
-  }
-  // If we have either title/author/date, include all 3 (empty is OK) so \\maketitle stays stable.
-  if (titleLine || authorLine || dateLine) {
-    preambleParts.push(authorLine || '\\author{}');
-    preambleParts.push(dateLine || '\\date{}');
-  }
+  if (titleLine) preambleParts.push(titleLine);
+  // Only emit author/date if IR actually has them (i.e. present in XMD or added in LaTeX then parsed).
+  if (authorLine) preambleParts.push(authorLine);
+  if (dateLine) preambleParts.push(dateLine);
+  // NOTE: If title exists but date does not, LaTeX defaults to \today. If we want "no date shown"
+  // without injecting date semantics into IR, we'd need a policy decision; for now we do not inject.
 
   const preamble = `${preambleParts.join('\n')}\n\n`;
   const begin = '\\begin{document}\n';
-  const maketitle = titleLine || authorLine || dateLine ? '\\maketitle\n\n' : '';
+  // \maketitle requires at least \title{...}.
+  const maketitle = titleLine ? '\\maketitle\n\n' : '';
   const end = '\n\\end{document}\n';
 
   return `${preamble}${begin}${maketitle}${body}${end}`;

@@ -368,7 +368,9 @@ function parseBlocks(latex: string): Block[] {
     if (/^\\author\{[^}]*\}\s*$/.test(line.trim())) {
       const m = /^\\author\{([^}]*)\}\s*$/.exec(line.trim());
       const text = latexInlineToMarkdown((m?.[1] ?? '').trim());
-      blocks.push({ kind: 'author', text, raw: line, blockIndex, startOffset: start, endOffset: end });
+      if (text.trim().length > 0) {
+        blocks.push({ kind: 'author', text, raw: line, blockIndex, startOffset: start, endOffset: end });
+      }
       i++;
       blockIndex++;
       continue;
@@ -376,7 +378,9 @@ function parseBlocks(latex: string): Block[] {
     if (/^\\date\{[^}]*\}\s*$/.test(line.trim())) {
       const m = /^\\date\{([^}]*)\}\s*$/.exec(line.trim());
       const text = latexInlineToMarkdown((m?.[1] ?? '').trim());
-      blocks.push({ kind: 'date', text, raw: line, blockIndex, startOffset: start, endOffset: end });
+      if (text.trim().length > 0) {
+        blocks.push({ kind: 'date', text, raw: line, blockIndex, startOffset: start, endOffset: end });
+      }
       i++;
       blockIndex++;
       continue;
