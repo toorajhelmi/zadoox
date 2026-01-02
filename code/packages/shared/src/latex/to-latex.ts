@@ -32,13 +32,10 @@ export function irToLatexDocument(doc: DocumentNode): string {
   const bodyNodes = doc.children.filter((n) => n.type !== 'document_title');
   const body = renderNodes(bodyNodes).trimEnd();
 
-  // Minimal, broadly compatible.
-  // Note: these packages are required by commands we generate.
+  // Minimal, broadly compatible, and IR-compatible:
+  // avoid \\usepackage and other preamble directives that are not represented in IR.
   const preambleParts = [
     '\\documentclass{article}',
-    '\\usepackage{graphicx}',
-    '\\usepackage{hyperref}',
-    '\\usepackage{amsmath}',
   ];
   if (titleLine) {
     preambleParts.push(titleLine);
@@ -98,12 +95,14 @@ function renderNode(node: IrNode): string {
       return `\\begin{equation}\n${node.latex}\n\\end{equation}`;
     }
     case 'figure': {
-      // Minimal, semantic: embed image; caption is not yet modeled as a full figure env.
-      // (Phase 12 is editing-mode switching; export template concerns later.)
-      const img = `\\includegraphics{${escapeLatexText(node.src)}}`;
-      const cap = node.caption ? `\n% caption: ${escapeLatexText(node.caption)}` : '';
-      const lbl = node.label ? `\n% label: ${escapeLatexText(node.label)}` : '';
-      return `${img}${cap}${lbl}`.trimEnd();
+      // IR-compatible LaTeX should compile without \\usepackage.
+      // So we avoid emitting \\includegraphics (requires graphicx) and instead keep a comment placeholder.
+      const src = escapeLatexText(node.src);
+      const cap = node.caption ? `caption: ${escapeLatexText(node.caption)}` : 'caption:';
+      const lbl = node.label ? `label: ${escapeLatexText(node.label)}` : '';
+      const parts = [`% [figure] src: ${src}`, `% ${cap}`];
+      if (lbl) parts.push(`% ${lbl}`);
+      return parts.join('\n');
     }
     case 'table': {
       // Minimal: degrade to a markdown-ish table inside verbatim.
@@ -137,9 +136,12 @@ function renderNode(node: IrNode): string {
 function mdInlineToLatex(text: string): string {
   let s = text ?? '';
 
-  // Links: [text](url) -> \href{url}{text}
+  // Links: keep compilable without packages (avoid \\href/\\url).
+  // Render as: "text (url)".
   s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, t, url) => {
-    return `\\href{${escapeLatexText(String(url))}}{${escapeLatexText(String(t))}}`;
+    const tt = escapeLatexText(String(t));
+    const uu = escapeLatexText(String(url));
+    return `${tt} (${uu})`;
   });
 
   // Bold: **text** -> \textbf{text}
