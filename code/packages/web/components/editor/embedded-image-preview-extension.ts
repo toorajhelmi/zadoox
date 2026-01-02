@@ -256,6 +256,10 @@ class FigureCardWidget extends WidgetType {
     caption.style.textAlign = 'center';
     caption.style.display = 'block';
     caption.style.width = '100%';
+    // Ensure long captions wrap within the figure width (never overflow wider than the image).
+    caption.style.whiteSpace = 'normal';
+    (caption.style as unknown as { overflowWrap?: string }).overflowWrap = 'anywhere';
+    caption.style.wordBreak = 'break-word';
 
     inner.appendChild(img);
     inner.appendChild(caption);

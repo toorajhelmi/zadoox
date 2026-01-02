@@ -117,7 +117,7 @@ export function renderMarkdownToHtml(content: string): string {
 
       // Caption should be centered relative to the image width.
       // We achieve this by placing image+caption inside an "inner" wrapper that matches image width.
-      const captionStyle = ` style="display:block;width:100%;text-align:center"`;
+      const captionStyle = ` style="display:block;width:100%;text-align:center;white-space:normal;overflow-wrap:anywhere;word-break:break-word"`;
 
       const innerStyleParts: string[] = [];
       if (placement === 'inline') {
@@ -185,6 +185,9 @@ export function renderMarkdownToHtml(content: string): string {
     captionStyleParts.push('display:block');
     captionStyleParts.push('width:100%');
     captionStyleParts.push('text-align:center');
+    captionStyleParts.push('white-space:normal');
+    captionStyleParts.push('overflow-wrap:anywhere');
+    captionStyleParts.push('word-break:break-word');
     const captionStyle = ` style="${captionStyleParts.join(';')}"`;
 
     const caption =
