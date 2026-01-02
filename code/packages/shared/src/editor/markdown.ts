@@ -116,11 +116,18 @@ export function renderMarkdownToHtml(content: string): string {
       const imgStyle = imgStyleParts.length > 0 ? ` style="${imgStyleParts.join(';')}"` : '';
 
       // Caption alignment should be independent of figure/image alignment.
-      // Product rule: captions are always centered.
+      // Product rule: captions are always centered (text), but the caption box should match
+      // the figure's width/alignment so it sits under the image.
       const captionStyleParts: string[] = [];
       captionStyleParts.push('display:block');
-      captionStyleParts.push('width:100%');
       captionStyleParts.push('text-align:center');
+      if (placement !== 'inline' && width) {
+        captionStyleParts.push(`max-width:${width}`);
+        if (align === 'center') captionStyleParts.push('margin-left:auto', 'margin-right:auto');
+        if (align === 'right') captionStyleParts.push('margin-left:auto');
+      } else {
+        captionStyleParts.push('width:100%');
+      }
       const captionStyle = ` style="${captionStyleParts.join(';')}"`;
 
       // For inline placement, float so surrounding text can wrap.

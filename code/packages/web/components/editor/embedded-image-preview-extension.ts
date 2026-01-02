@@ -227,8 +227,23 @@ class FigureCardWidget extends WidgetType {
     caption.style.fontSize = '12px';
     caption.style.color = '#9aa0a6';
     caption.style.fontStyle = 'italic';
-    // Product rule: captions are always centered (independent of figure alignment).
+    // Product rule: captions are always centered (text), but the caption *box* should track
+    // the figure's width/alignment so it appears under the image (not centered across full page).
     caption.style.textAlign = 'center';
+    if (placement !== 'inline' && width) {
+      caption.style.maxWidth = width;
+      // Align the caption box to match image alignment.
+      if (align === 'center') {
+        caption.style.marginLeft = 'auto';
+        caption.style.marginRight = 'auto';
+      } else if (align === 'right') {
+        caption.style.marginLeft = 'auto';
+        caption.style.marginRight = '0';
+      } else if (align === 'left') {
+        caption.style.marginLeft = '0';
+        caption.style.marginRight = 'auto';
+      }
+    }
     wrap.appendChild(caption);
 
     // Hover toolbar (quick controls)
