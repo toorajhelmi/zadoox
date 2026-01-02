@@ -122,9 +122,11 @@ export function renderMarkdownToHtml(content: string): string {
       captionStyleParts.push('display:block');
       captionStyleParts.push('text-align:center');
       if (placement !== 'inline' && width) {
-        captionStyleParts.push(`max-width:${width}`);
+        captionStyleParts.push(`width:${width}`);
+        captionStyleParts.push('max-width:100%');
         if (align === 'center') captionStyleParts.push('margin-left:auto', 'margin-right:auto');
-        if (align === 'right') captionStyleParts.push('margin-left:auto');
+        if (align === 'right') captionStyleParts.push('margin-left:auto', 'margin-right:0');
+        if (align === 'left') captionStyleParts.push('margin-left:0', 'margin-right:auto');
       } else {
         captionStyleParts.push('width:100%');
       }

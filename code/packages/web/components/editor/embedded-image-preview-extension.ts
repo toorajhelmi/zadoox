@@ -231,7 +231,8 @@ class FigureCardWidget extends WidgetType {
     // the figure's width/alignment so it appears under the image (not centered across full page).
     caption.style.textAlign = 'center';
     if (placement !== 'inline' && width) {
-      caption.style.maxWidth = width;
+      caption.style.width = width;
+      caption.style.maxWidth = '100%';
       // Align the caption box to match image alignment.
       if (align === 'center') {
         caption.style.marginLeft = 'auto';
