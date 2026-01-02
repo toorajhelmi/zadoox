@@ -219,7 +219,8 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
       const node: RawLatexBlockNode = {
         type: 'raw_latex_block',
         id: stableNodeId({ docId, nodeType: 'raw_latex_block', path }),
-        latex: b.kind === 'raw' ? b.latex : b.raw,
+        // Every block carries its original raw LaTeX; use it for the raw fallback.
+        latex: b.raw,
         source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
       };
       appendToCurrentContainer(node);
