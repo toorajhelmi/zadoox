@@ -228,9 +228,11 @@ class FigureCardWidget extends WidgetType {
     // This prevents "caption centered across full page" when image is smaller than the editor width.
     const inner = document.createElement('div');
     if (placement === 'inline') {
-      // Wrapper already controls width/float; inner just stacks content.
-      inner.style.display = 'block';
-      inner.style.width = '100%';
+      // Inline figures: keep caption width <= image width.
+      // Use shrink-to-fit inner wrapper; only fill the wrapper when an explicit width is set.
+      inner.style.display = 'inline-block';
+      inner.style.maxWidth = '100%';
+      if (width) inner.style.width = '100%';
     } else {
       inner.style.display = 'inline-block';
       inner.style.maxWidth = '100%';

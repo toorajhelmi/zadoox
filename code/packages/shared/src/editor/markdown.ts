@@ -121,9 +121,11 @@ export function renderMarkdownToHtml(content: string): string {
 
       const innerStyleParts: string[] = [];
       if (placement === 'inline') {
-        // Wrapper is already inline-block/float/width-controlled.
-        innerStyleParts.push('display:block');
-        innerStyleParts.push('width:100%');
+        // Inline figures: keep caption width <= image width by using shrink-to-fit inner wrapper.
+        // Only fill the wrapper when an explicit width is set.
+        innerStyleParts.push('display:inline-block');
+        innerStyleParts.push('max-width:100%');
+        if (width) innerStyleParts.push('width:100%');
       } else {
         innerStyleParts.push('display:inline-block');
         innerStyleParts.push('max-width:100%');
