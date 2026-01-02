@@ -109,8 +109,9 @@ describe('Markdown Utilities', () => {
       const markdown =
         '![Caption](image.png){#fig:generated-123 label="Figure {REF}.1" align="center" width="50%" placement="block"}';
       const html = renderMarkdownToHtml(markdown);
-      expect(html).toContain('max-width:50%');
-      expect(html).toContain('margin-left:auto');
+      // Width is applied to the inner wrapper; image fills that inner width.
+      expect(html).toContain('width:50%');
+      // Alignment for block figures is handled by wrapper text-align.
       expect(html).toContain('text-align:center');
     });
 
