@@ -1,15 +1,20 @@
 'use client';
 
 import { renderMarkdownToHtml, extractHeadings } from '@zadoox/shared';
-import { useMemo, useEffect, useRef } from 'react';
+import { useMemo, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 interface MarkdownPreviewProps {
   content: string;
 }
 
+const TRANSPARENT_PIXEL =
+  // 1x1 transparent GIF
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+
 export function MarkdownPreview({ content }: MarkdownPreviewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   const html = useMemo(() => {
     if (!content.trim()) {
       return '';
@@ -174,9 +179,42 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
     });
     
     htmlContent = processedHtml;
+
+    // IMPORTANT: Never leave <img src="zadoox-asset://..."> in the DOM.
+    // Browsers treat that as an unknown URL scheme and will fail before our JS can swap it.
+    // Instead, replace it with a placeholder src + a data-asset-key we can resolve.
+    htmlContent = htmlContent.replace(
+      /<img([^>]*?)\s+src="zadoox-asset:\/\/([^"]+)"([^>]*)>/gim,
+      (_m, preAttrs, key, postAttrs) =>
+        `<img${preAttrs} src="${TRANSPARENT_PIXEL}" data-asset-key="${String(key)}"${postAttrs}>`
+    );
     
     return htmlContent;
   }, [content]);
+
+  // Track auth token so asset fetching can retry when a session becomes available.
+  useEffect(() => {
+    const supabase = createClient();
+    let cancelled = false;
+
+    (async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (cancelled) return;
+      setAccessToken(session?.access_token ?? null);
+    })();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (cancelled) return;
+      setAccessToken(session?.access_token ?? null);
+    });
+
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
 
   // Resolve zadoox-asset:// images by fetching from backend with Authorization header.
   // This avoids relying on cookie-based sessions for <img src> requests.
@@ -185,26 +223,24 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
     if (!container) return;
 
     const imgs = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
-    const assetImgs = imgs.filter((img) => (img.getAttribute('src') || '').startsWith('zadoox-asset://'));
+    const assetImgs = imgs.filter((img) => {
+      const key = img.dataset.assetKey;
+      return typeof key === 'string' && key.length > 0;
+    });
     if (assetImgs.length === 0) return;
 
     const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
-    const supabase = createClient();
     const abort = new AbortController();
 
     const objectUrls: string[] = [];
 
     (async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) return;
+      const token = accessToken;
+      if (!token) return; // no client token; keep placeholder (auth is required to fetch)
 
       await Promise.all(
         assetImgs.map(async (img) => {
-          const raw = img.getAttribute('src') || '';
-          const key = raw.replace('zadoox-asset://', '');
+          const key = img.dataset.assetKey || '';
           if (!key) return;
 
           try {
@@ -228,7 +264,7 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
       abort.abort();
       for (const u of objectUrls) URL.revokeObjectURL(u);
     };
-  }, [html]);
+  }, [html, accessToken]);
 
   // Handle citation link clicks
   useEffect(() => {

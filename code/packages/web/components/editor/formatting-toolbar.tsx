@@ -13,12 +13,12 @@ import type { FormatType } from './floating-format-menu';
 
 interface FormattingToolbarProps {
   onFormat: (format: FormatType) => void;
-  viewMode: 'edit' | 'preview' | 'split';
+  viewMode: 'edit' | 'preview' | 'split' | 'ir';
 }
 
 export function FormattingToolbar({ onFormat, viewMode }: FormattingToolbarProps) {
   // Only show in edit or split mode
-  if (viewMode === 'preview') {
+  if (viewMode === 'preview' || viewMode === 'ir') {
     return null;
   }
 

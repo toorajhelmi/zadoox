@@ -7,6 +7,7 @@ import { EditorToolbar } from './editor-toolbar';
 import { EditorStatusBar } from './editor-status-bar';
 import { AIEnhancedEditor } from './ai-enhanced-editor';
 import { MarkdownPreview } from './markdown-preview';
+import { IrPreview } from './ir-preview';
 import { FormattingToolbar } from './formatting-toolbar';
 import { ThinkModePanel } from './think-mode-panel';
 import { InlineAIChat } from './inline-ai-chat';
@@ -26,7 +27,7 @@ interface EditorLayoutProps {
   documentId: string;
 }
 
-type ViewMode = 'edit' | 'preview' | 'split';
+type ViewMode = 'edit' | 'preview' | 'split' | 'ir';
 
 type SidebarTab = 'outline' | 'history';
 
@@ -59,6 +60,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   }, []);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
+  // Editor/preview splitter state (used in split mode)
+  const [editorPaneWidth, setEditorPaneWidth] = useState<number>(0); // px; 0 => default (50%)
+  const [isResizingEditorPane, setIsResizingEditorPane] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
   const [latestVersion, setLatestVersion] = useState<number | null>(null);
   const [cursorPosition, setCursorPosition] = useState<{ line: number; column: number } | null>(null);
@@ -82,6 +86,26 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const handleSidebarResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setIsResizingSidebar(true);
+  }, []);
+
+  // Editor/preview splitter resize handlers (split + compare modes)
+  const handleEditorPaneResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizingEditorPane(true);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('editor-pane-width');
+      if (saved) {
+        const next = parseInt(saved, 10);
+        if (Number.isFinite(next) && next > 0) {
+          setEditorPaneWidth(next);
+        }
+      }
+    } catch {
+      // ignore
+    }
   }, []);
 
   useEffect(() => {
@@ -114,6 +138,41 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isResizingSidebar]);
+
+  useEffect(() => {
+    if (!isResizingEditorPane) return;
+
+    const MIN_EDITOR_WIDTH = 360;
+    const MIN_PREVIEW_WIDTH = 360;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      e.preventDefault();
+      if (!editorContainerRef.current) return;
+
+      const rect = editorContainerRef.current.getBoundingClientRect();
+      const raw = e.clientX - rect.left;
+      const maxEditor = Math.max(MIN_EDITOR_WIDTH, rect.width - MIN_PREVIEW_WIDTH);
+      const clamped = Math.max(MIN_EDITOR_WIDTH, Math.min(maxEditor, raw));
+
+      setEditorPaneWidth(clamped);
+      try {
+        localStorage.setItem('editor-pane-width', clamped.toString());
+      } catch {
+        // ignore
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingEditorPane(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove, { passive: false });
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingEditorPane]);
 
   function buildInlineBlocksAroundCursor(fullText: string, cursorLine0: number) {
     const lines = fullText.split('\n');
@@ -1019,7 +1078,22 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         {/* Editor/Preview */}
         <div className="flex-1 overflow-hidden flex relative" ref={editorContainerRef}>
           {(viewMode === 'edit' || viewMode === 'split') && (
-            <div className={viewMode === 'split' ? 'flex-1 border-r border-vscode-border overflow-hidden relative' : 'flex-1 overflow-hidden relative'}>
+            <div
+              className={
+                viewMode === 'split'
+                  ? 'overflow-hidden relative'
+                  : 'flex-1 overflow-hidden relative'
+              }
+              style={
+                viewMode === 'split'
+                  ? {
+                      width: editorPaneWidth > 0 ? `${editorPaneWidth}px` : '50%',
+                      minWidth: '360px',
+                      maxWidth: '80%',
+                    }
+                  : undefined
+              }
+            >
               {/* Inline AI Hint - Shows toned-down prompt */}
               {!thinkPanelOpen && !inlineAIChatOpen && cursorScreenPosition && cursorPosition && (
                 <InlineAIHint
@@ -1411,9 +1485,32 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             }}
           />
           
-          {(viewMode === 'preview' || viewMode === 'split') && (
-            <div className={viewMode === 'split' ? 'flex-1 overflow-auto' : 'flex-1'}>
-              <MarkdownPreview content={content} />
+          {viewMode === 'split' && (
+            <div
+              onMouseDown={handleEditorPaneResizeStart}
+              className={`w-1 h-full cursor-col-resize hover:bg-vscode-blue transition-colors z-10 ${
+                isResizingEditorPane ? 'bg-vscode-blue' : 'bg-transparent'
+              }`}
+              style={{ userSelect: 'none' }}
+              aria-label="Resize editor pane"
+            />
+          )}
+
+          {(viewMode === 'preview' || viewMode === 'split' || viewMode === 'ir') && (
+            <div
+              className={
+                viewMode === 'split'
+                  ? 'flex-1 overflow-hidden'
+                  : 'flex-1 overflow-hidden'
+              }
+            >
+              {viewMode === 'ir' ? (
+                <div className="h-full">
+                  <IrPreview docId={actualDocumentId || documentId} content={content} />
+                </div>
+              ) : (
+                <MarkdownPreview content={content} />
+              )}
             </div>
           )}
 

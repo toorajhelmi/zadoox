@@ -841,18 +841,6 @@ This phase implements undo/redo functionality for document editing, allowing use
 - [ ] Basic formatting toolbar
 - [ ] Find/replace
 - [ ] LaTeX preview (optional, basic)
-
-**Deliverables**:
-- Extended Markdown features working
-- Image insertion working
-- Table support
-- Formatting toolbar functional
-
----
-
-### Phase 11: Web App - AI Integration ✅
-**Status**: Not Started
-
 - [ ] AI suggestion UI component
 - [ ] Inline suggestions (accept with Tab)
 - [ ] AI toolbar/menu:
@@ -866,6 +854,85 @@ This phase implements undo/redo functionality for document editing, allowing use
 - AI features in UI
 - Inline suggestions working
 - AI toolbar functional
+
+---
+
+### Phase 11: IR-First Document Pipeline (XMD → IR) ✅
+**Status**: Not Started
+
+Goal: Introduce **IR (Intermediate Representation)** as Zadoox’s internal canonical document model **without changing user experience**.
+
+**Rules (Phase 11)**:
+- Users still edit **XMD text only**
+- **XMD remains the persisted source of record** (DB + version snapshots). IR is **derived** from XMD.
+- **IR is the internal source of truth** for preview, outline, insights/metrics, and export (consumers read IR, not raw text)
+- AI runs **per node**, not per document
+- Ignore inline formatting in Phase 11 (plain strings are fine)
+- **Do not break existing MD/XMD features**: keep current preview + outline behavior initially and introduce IR **in parallel**; migrate consumers behind a feature flag once parity is proven.
+- Do **not** regenerate XMD from IR on load unless/until round-trip fidelity is proven (avoid “rewriting” user text).
+
+#### Shared Package: IR Types & IDs
+- [ ] Create `packages/shared/src/ir/types.ts` (minimal IR):
+  - [ ] `DocumentNode`
+  - [ ] `SectionNode { id, level, title }`
+  - [ ] `ParagraphNode { id, text }`
+  - [ ] `ListNode { id, ordered, items[] }`
+  - [ ] `CodeBlockNode { id, language?, code }`
+  - [ ] `MathBlockNode { id, latex }`
+  - [ ] `FigureNode { id, src, caption, label? }`
+  - [ ] `TableNode { id, caption?, label?, header[], rows[][] }`
+  - [ ] `RawLatexBlockNode { id, latex }` (future-proof)
+  - [ ] `RawXmdBlockNode { id, xmd }` (lossless fallback for unknown/malformed blocks)
+- [ ] Create `packages/shared/src/ir/id.ts` (stable node IDs):
+  - [ ] Path-based IDs (Phase 11.5 strategy): `sec[0]`, `sec[0]/p[2]`, `sec[1]/table[0]`
+  - [ ] ID formula: `id = hash(docId + ":" + nodeType + ":" + path)`
+
+#### Shared Package: XMD → IR Parser (Block-first)
+- [ ] Create `packages/shared/src/xmd/parser.ts`
+- [ ] **Adapter-first implementation**: reuse existing heuristics already used for preview/outline (headings, paragraphs, figures) and extend incrementally.
+- [ ] Track source mapping per node (at minimum: block index + original text; ideally: character offsets) for debugging + incremental updates later.
+- [ ] Parse blocks structurally (do **not** throw):
+  - [ ] `#`, `##`, … → `SectionNode`
+  - [ ] Blank-line separated text → `ParagraphNode`
+  - [ ] `-` / `1.` → `ListNode`
+  - [ ] ``` fences → `CodeBlockNode`
+  - [ ] `$$...$$` or `:::equation` → `MathBlockNode`
+  - [ ] `:::figure ... :::` → `FigureNode`
+  - [ ] `:::table ... :::` → `TableNode`
+  - [ ] Malformed/unknown blocks → `RawXmdBlockNode` (preserve exact user text; never crash editor)
+
+#### Shared Package: IR Store + Deltas + Events
+- [ ] Create `packages/shared/src/ir/store.ts`:
+  - [ ] Hold `currentIR`
+  - [ ] Track `nodeHash` per node (normalized content hash)
+  - [ ] Helpers: `getNode(id)`, `walkNodes()`, `getOutline()` (derived from sections)
+  - [ ] Normalization rules: trim whitespace, normalize line endings, normalize table cell spacing
+- [ ] Create `packages/shared/src/ir/delta.ts` (node-level diffs):
+  - [ ] Compute added/removed/changed nodes from `nodeHash`
+- [ ] Create `packages/shared/src/ir/events.ts` (document change events):
+  - [ ] Emit events based on IR deltas (node-level)
+
+#### Web App: IR-driven Preview / Outline
+- [ ] **Migration strategy (low risk)**:
+  - [ ] Generate IR in parallel on content changes (debounced) and log/compare outline parity
+  - [ ] Switch **outline** to IR first (lower risk than preview)
+  - [ ] Switch **AI node-scoped analysis** to IR next (paragraph/section nodes map well)
+  - [ ] Switch **preview** last
+- [ ] Create `packages/shared/src/ir/render-html.ts` (or equivalent) to render **HTML from IR**
+  - [ ] (Optional bridge) IR → normalized XMD string → existing `renderMarkdownToHtml()` for parity before a dedicated renderer
+  - [ ] Dedicated IR→HTML renderer once stable
+- [ ] Update web preview + outline to consume IR (not raw XMD) once parity is acceptable
+
+#### Backend: Node-scoped AI Metrics
+- [ ] Update AI metrics service to accept changed node IDs + node payloads, returning metrics per node
+- [ ] Ensure only changed nodes are re-analyzed (debounced/incremental)
+
+**Deliverables**:
+- XMD → IR parsing working (block-first, no-throw)
+- IR store with stable node IDs + node hashes
+- Node-level delta computation + event emission
+- Preview and outline driven from IR
+- AI metrics computed per changed node (not whole-doc)
 
 ---
 

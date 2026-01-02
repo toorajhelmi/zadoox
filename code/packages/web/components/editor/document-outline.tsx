@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { extractOutlineItems } from '@zadoox/shared';
+import { extractOutlineItems, extractOutlineItemsFromIr, parseXmdToIr } from '@zadoox/shared';
 
 interface DocumentOutlineProps {
   content: string;
@@ -9,7 +9,14 @@ interface DocumentOutlineProps {
 
 export function DocumentOutline({ content }: DocumentOutlineProps) {
   const items = useMemo(() => {
-    return extractOutlineItems(content);
+    const useIrOutline = process.env.NEXT_PUBLIC_USE_IR_OUTLINE === 'true';
+    if (!useIrOutline) {
+      return extractOutlineItems(content);
+    }
+
+    // IR is derived from XMD; we do not persist or edit IR directly in Phase 11.
+    const ir = parseXmdToIr({ docId: 'outline-doc', xmd: content });
+    return extractOutlineItemsFromIr(ir);
   }, [content]);
 
   if (items.length === 0) {
