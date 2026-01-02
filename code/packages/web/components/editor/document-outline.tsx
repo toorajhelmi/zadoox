@@ -1,23 +1,20 @@
 'use client';
 
 import { useMemo } from 'react';
-import { extractOutlineItems, extractOutlineItemsFromIr, parseXmdToIr } from '@zadoox/shared';
+import { extractOutlineItemsFromIr, parseXmdToIr, type DocumentNode } from '@zadoox/shared';
+import { DocumentTextIcon, PhotoIcon } from '@heroicons/react/24/outline';
 
 interface DocumentOutlineProps {
   content: string;
+  ir?: DocumentNode | null;
 }
 
-export function DocumentOutline({ content }: DocumentOutlineProps) {
+export function DocumentOutline({ content, ir }: DocumentOutlineProps) {
   const items = useMemo(() => {
-    const useIrOutline = process.env.NEXT_PUBLIC_USE_IR_OUTLINE === 'true';
-    if (!useIrOutline) {
-      return extractOutlineItems(content);
-    }
-
-    // IR is derived from XMD; we do not persist or edit IR directly in Phase 11.
-    const ir = parseXmdToIr({ docId: 'outline-doc', xmd: content });
-    return extractOutlineItemsFromIr(ir);
-  }, [content]);
+    // Phase 11: outline is IR-driven.
+    const derived = ir ?? parseXmdToIr({ docId: 'outline-doc', xmd: content });
+    return extractOutlineItemsFromIr(derived);
+  }, [content, ir]);
 
   if (items.length === 0) {
     return (
@@ -46,10 +43,11 @@ export function DocumentOutline({ content }: DocumentOutlineProps) {
                 key={`heading-${item.id}-${index}`}
                 href={`#${item.id}`}
                 onClick={(e) => handleHeadingClick(e, item.id)}
-                className="block py-1 px-2 text-sm hover:bg-vscode-active rounded transition-colors text-vscode-text-secondary hover:text-vscode-text"
+                className="flex items-center gap-2 py-1 px-2 text-sm hover:bg-vscode-active rounded transition-colors text-vscode-text-secondary hover:text-vscode-text"
                 style={{ paddingLeft: `${(item.level - 1) * 0.75 + 0.5}rem` }}
               >
-                {item.text}
+                <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
+                <span className="truncate">{item.text}</span>
               </a>
             );
           }
@@ -59,11 +57,12 @@ export function DocumentOutline({ content }: DocumentOutlineProps) {
               key={`figure-${item.id}-${index}`}
               href={`#${item.id}`}
               onClick={(e) => handleHeadingClick(e, item.id)}
-              className="block py-1 px-2 text-sm hover:bg-vscode-active rounded transition-colors text-vscode-text-secondary hover:text-vscode-text"
+              className="flex items-center gap-2 py-1 px-2 text-sm hover:bg-vscode-active rounded transition-colors text-vscode-text-secondary hover:text-vscode-text"
               style={{ paddingLeft: `1.25rem` }}
               title={item.caption || undefined}
             >
-              <span className="opacity-80">{item.text}</span>
+              <PhotoIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
+              <span className="opacity-80 truncate">{item.text}</span>
             </a>
           );
         })}

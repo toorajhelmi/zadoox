@@ -945,6 +945,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           isOpen={sidebarOpen}
           onToggle={() => setSidebarOpen(!sidebarOpen)}
           content={content}
+          ir={irState.ir}
           documentId={actualDocumentId}
           lastSaved={lastSaved}
           activeTab={sidebarTab}
