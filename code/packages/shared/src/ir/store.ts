@@ -1,5 +1,5 @@
 import { fnv1a32, hashToId } from './id';
-import type { DocumentNode, IrNode, IrNodeType, TableNode } from './types';
+import type { DocumentNode, IrNode, TableNode } from './types';
 
 export interface IrStoreSnapshot {
   ir: DocumentNode;

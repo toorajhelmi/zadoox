@@ -500,7 +500,7 @@ export function parseXmdToIr(params: { docId: string; xmd: string }): DocumentNo
       const idx = counters.raw_xmd_block ?? 0;
       counters.raw_xmd_block = idx + 1;
       const path = fullPath(`raw[${idx}]`);
-      appendToCurrentContainer(makeRawNode(docId, path, blockIndex, (b as any).raw ?? '', (b as any).startOffset ?? 0, (b as any).endOffset ?? 0));
+      appendToCurrentContainer(makeRawNode(docId, path, blockIndex, b.raw ?? '', b.startOffset ?? 0, b.endOffset ?? 0));
     }
   });
 
