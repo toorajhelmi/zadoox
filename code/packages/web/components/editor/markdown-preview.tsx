@@ -195,7 +195,7 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
     );
     
     return htmlContent;
-  }, [content]);
+  }, [content, htmlOverride]);
 
   // Track auth token so asset fetching can retry when a session becomes available.
   useEffect(() => {
