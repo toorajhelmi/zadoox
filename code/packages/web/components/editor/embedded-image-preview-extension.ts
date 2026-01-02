@@ -105,15 +105,21 @@ class FigureCardWidget extends WidgetType {
 
       // Align the whole card within the editor (best-effort).
       // We don't do true inline wrapping inside CodeMirror, but alignment should still match preview intent.
-      if (align === 'center') {
+      // NOTE: margin-left:auto does not right-align reliably for inline widgets. Use float for right/left.
+      wrap.style.display = 'inline-block';
+      if (align === 'right') {
+        wrap.style.float = 'right';
+        wrap.style.margin = '8px 0 8px 12px';
+      } else if (align === 'center') {
+        // "Center + inline" is ambiguous; keep it visually centered within a full line.
+        wrap.style.display = 'block';
+        wrap.style.float = 'none';
         wrap.style.marginLeft = 'auto';
         wrap.style.marginRight = 'auto';
-      } else if (align === 'right') {
-        wrap.style.marginLeft = 'auto';
-        wrap.style.marginRight = '0';
-      } else if (align === 'left') {
-        wrap.style.marginLeft = '0';
-        wrap.style.marginRight = 'auto';
+      } else {
+        // Default/left
+        wrap.style.float = 'left';
+        wrap.style.margin = '8px 12px 8px 0';
       }
     } else {
       // Block placement: the card should occupy the full editor width (prevents caret showing beside it).
