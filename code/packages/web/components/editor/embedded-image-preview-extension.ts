@@ -221,31 +221,52 @@ class FigureCardWidget extends WidgetType {
       wrap.appendChild(badge);
     }
 
+    // Inner wrapper so caption width follows the image width (even when no explicit width attr exists).
+    // This prevents "caption centered across full page" when image is smaller than the editor width.
+    const inner = document.createElement('div');
+    if (placement === 'inline') {
+      // Wrapper already controls width/float; inner just stacks content.
+      inner.style.display = 'block';
+      inner.style.width = '100%';
+    } else {
+      inner.style.display = 'inline-block';
+      inner.style.maxWidth = '100%';
+      if (width) inner.style.width = width;
+
+      // Align the inner block within the full-width card.
+      if (align === 'center') {
+        inner.style.marginLeft = 'auto';
+        inner.style.marginRight = 'auto';
+      } else if (align === 'right') {
+        inner.style.marginLeft = 'auto';
+        inner.style.marginRight = '0';
+      } else {
+        // Default/left
+        inner.style.marginLeft = '0';
+        inner.style.marginRight = 'auto';
+      }
+    }
+
+    // If we explicitly sized the figure (block + width), make the image fill the inner width.
+    if (placement !== 'inline' && width) {
+      img.style.width = '100%';
+      img.style.maxWidth = '100%';
+    }
+
     const caption = document.createElement('div');
     caption.textContent = this.alt || 'Figure';
     caption.style.marginTop = '6px';
     caption.style.fontSize = '12px';
     caption.style.color = '#9aa0a6';
     caption.style.fontStyle = 'italic';
-    // Product rule: captions are always centered (text), but the caption *box* should track
-    // the figure's width/alignment so it appears under the image (not centered across full page).
+    // Product rule: caption text centered relative to the image width (via inner wrapper)
     caption.style.textAlign = 'center';
-    if (placement !== 'inline' && width) {
-      caption.style.width = width;
-      caption.style.maxWidth = '100%';
-      // Align the caption box to match image alignment.
-      if (align === 'center') {
-        caption.style.marginLeft = 'auto';
-        caption.style.marginRight = 'auto';
-      } else if (align === 'right') {
-        caption.style.marginLeft = 'auto';
-        caption.style.marginRight = '0';
-      } else if (align === 'left') {
-        caption.style.marginLeft = '0';
-        caption.style.marginRight = 'auto';
-      }
-    }
-    wrap.appendChild(caption);
+    caption.style.display = 'block';
+    caption.style.width = '100%';
+
+    inner.appendChild(img);
+    inner.appendChild(caption);
+    wrap.appendChild(inner);
 
     // Hover toolbar (quick controls)
     const hoverBar = document.createElement('div');

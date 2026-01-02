@@ -115,22 +115,24 @@ export function renderMarkdownToHtml(content: string): string {
       if (align === 'right') imgStyleParts.push('margin-left:auto');
       const imgStyle = imgStyleParts.length > 0 ? ` style="${imgStyleParts.join(';')}"` : '';
 
-      // Caption alignment should be independent of figure/image alignment.
-      // Product rule: captions are always centered (text), but the caption box should match
-      // the figure's width/alignment so it sits under the image.
-      const captionStyleParts: string[] = [];
-      captionStyleParts.push('display:block');
-      captionStyleParts.push('text-align:center');
-      if (placement !== 'inline' && width) {
-        captionStyleParts.push(`width:${width}`);
-        captionStyleParts.push('max-width:100%');
-        if (align === 'center') captionStyleParts.push('margin-left:auto', 'margin-right:auto');
-        if (align === 'right') captionStyleParts.push('margin-left:auto', 'margin-right:0');
-        if (align === 'left') captionStyleParts.push('margin-left:0', 'margin-right:auto');
+      // Caption should be centered relative to the image width.
+      // We achieve this by placing image+caption inside an "inner" wrapper that matches image width.
+      const captionStyle = ` style="display:block;width:100%;text-align:center"`;
+
+      const innerStyleParts: string[] = [];
+      if (placement === 'inline') {
+        // Wrapper is already inline-block/float/width-controlled.
+        innerStyleParts.push('display:block');
+        innerStyleParts.push('width:100%');
       } else {
-        captionStyleParts.push('width:100%');
+        innerStyleParts.push('display:inline-block');
+        innerStyleParts.push('max-width:100%');
+        if (width) innerStyleParts.push(`width:${width}`);
+        if (align === 'center') innerStyleParts.push('margin-left:auto', 'margin-right:auto');
+        else if (align === 'right') innerStyleParts.push('margin-left:auto', 'margin-right:0');
+        else innerStyleParts.push('margin-left:0', 'margin-right:auto');
       }
-      const captionStyle = ` style="${captionStyleParts.join(';')}"`;
+      const innerStyle = ` style="${innerStyleParts.join(';')}"`;
 
       // For inline placement, float so surrounding text can wrap.
       // Default to float-left when placement="inline" (even if no align was specified),
@@ -156,7 +158,13 @@ export function renderMarkdownToHtml(content: string): string {
           : '';
 
       const idAttr = figureDomId ? ` id="${figureDomId}"` : '';
-      return `<span class="figure"${idAttr}${wrapperStyle}><img src="${safeUrl}" alt="${safeAlt}"${imgStyle} />${caption}</span>`;
+      // Put <img> + caption inside an inner wrapper so the caption aligns to the image width.
+      // Also, for block placement with explicit width, make the image fill the inner width.
+      const imgHtml =
+        placement !== 'inline' && width
+          ? `<img src="${safeUrl}" alt="${safeAlt}" style="display:block;width:100%;max-width:100%" />`
+          : `<img src="${safeUrl}" alt="${safeAlt}"${imgStyle} />`;
+      return `<span class="figure"${idAttr}${wrapperStyle}><span class="figure-inner"${innerStyle}>${imgHtml}${caption}</span></span>`;
     }
   );
 
