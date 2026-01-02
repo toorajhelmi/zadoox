@@ -128,9 +128,7 @@ export function renderMarkdownToHtml(content: string): string {
         innerStyleParts.push('display:inline-block');
         innerStyleParts.push('max-width:100%');
         if (width) innerStyleParts.push(`width:${width}`);
-        if (align === 'center') innerStyleParts.push('margin-left:auto', 'margin-right:auto');
-        else if (align === 'right') innerStyleParts.push('margin-left:auto', 'margin-right:0');
-        else innerStyleParts.push('margin-left:0', 'margin-right:auto');
+        // Alignment handled by wrapper's text-align in block mode.
       }
       const innerStyle = ` style="${innerStyleParts.join(';')}"`;
 
@@ -148,6 +146,11 @@ export function renderMarkdownToHtml(content: string): string {
       } else {
         wrapperStyleParts.push('display:block');
         wrapperStyleParts.push('width:100%');
+        // Align the inner wrapper within the full-width figure wrapper.
+        // This makes alignment visible even when no explicit width is set.
+        if (align === 'center') wrapperStyleParts.push('text-align:center');
+        else if (align === 'right') wrapperStyleParts.push('text-align:right');
+        else wrapperStyleParts.push('text-align:left');
       }
       const wrapperStyle =
         wrapperStyleParts.length > 0 ? ` style="${wrapperStyleParts.join(';')}"` : '';

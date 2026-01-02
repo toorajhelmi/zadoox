@@ -119,6 +119,9 @@ class FigureCardWidget extends WidgetType {
       // Block placement: the card should occupy the full editor width (prevents caret showing beside it).
       wrap.style.width = '100%';
       wrap.style.maxWidth = '100%';
+      // Align the figure content (inner wrapper) within the full-width card.
+      // This ensures align changes are visible even when width is not explicitly set.
+      wrap.style.textAlign = align === 'center' ? 'center' : align === 'right' ? 'right' : 'left';
     }
 
     const img = document.createElement('img');
@@ -232,19 +235,7 @@ class FigureCardWidget extends WidgetType {
       inner.style.display = 'inline-block';
       inner.style.maxWidth = '100%';
       if (width) inner.style.width = width;
-
-      // Align the inner block within the full-width card.
-      if (align === 'center') {
-        inner.style.marginLeft = 'auto';
-        inner.style.marginRight = 'auto';
-      } else if (align === 'right') {
-        inner.style.marginLeft = 'auto';
-        inner.style.marginRight = '0';
-      } else {
-        // Default/left
-        inner.style.marginLeft = '0';
-        inner.style.marginRight = 'auto';
-      }
+      // Alignment is handled by wrap.style.textAlign in block mode.
     }
 
     // If we explicitly sized the figure (block + width), make the image fill the inner width.
