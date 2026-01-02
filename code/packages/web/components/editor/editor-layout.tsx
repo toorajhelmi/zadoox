@@ -141,27 +141,10 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     }
     if (typeof latex === 'string') {
       // Avoid overwriting while the user is actively typing in LaTeX (prevents cursor/scroll reset).
+      // We intentionally do NOT regenerate LaTeX from IR here; the LaTeX draft is treated as the
+      // persisted editing surface when lastEditedFormat === 'latex'.
       const shouldAdopt = latexDraft.length === 0 || editFormat !== 'latex';
-
-      // IMPORTANT:
-      // If the document was last edited in LaTeX, the persisted metadata.latex may be stale
-      // relative to the current IR/XMD (e.g., after code upgrades that change LaTeX rendering).
-      // In that case, prefer regenerating from IR so the user sees the correct LaTeX immediately.
-      if (shouldAdopt) {
-        if (last === 'latex') {
-          try {
-            const ir = irState.ir ?? parseXmdToIr({ docId: actualDocumentId || documentId, xmd: content });
-            const regenerated = irToLatexDocument(ir);
-            setLatexDraft(regenerated);
-            // Update local metadata cache so subsequent saves persist the refreshed LaTeX.
-            setDocumentMetadata({ ...(documentMetadata as any), latex: regenerated });
-          } catch {
-            setLatexDraft(latex);
-          }
-        } else {
-          setLatexDraft(latex);
-        }
-      }
+      if (shouldAdopt) setLatexDraft(latex);
     } else if (last === 'latex' && !latexDraft) {
       // If last format is LaTeX but we have no cached latex yet, derive it from IR/XMD.
       try {
