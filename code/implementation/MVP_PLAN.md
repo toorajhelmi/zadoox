@@ -1144,28 +1144,45 @@ This phase adds external publishing integrations on top of Phase 12.1 (core PDF/
 
 ---
 
-### Phase 13: Shared Package - API Client ✅
+### Phase 13: Project Assets (Files & Folders) 📁
 **Status**: Not Started
 
-- [ ] API client setup
-- [ ] Authentication handling
-- [ ] Document API methods
-- [ ] Project API methods
-- [ ] Export API methods
-- [ ] AI API methods
-- [ ] Error handling
-- [ ] Type-safe API calls
+Goal: manage project-level files (images, datasets, PDFs, etc.) as a real file tree with import/export workflows.
+
+#### Frontend (UX)
+- [ ] Add a **Project Assets** panel (sidebar / project page): tree view with folders & files
+- [ ] Root node shows **Project name**
+- [ ] Support **create folder**, **rename**, **delete**, **move** (drag/drop)
+- [ ] Support **upload** (single/multi) into a folder
+- [ ] Show **preview on hover** for images (thumbnail), and basic file metadata (size, type, last updated)
+- [ ] Support **download file** and **download folder** (zip)
+- [ ] Support **import** (zip → folder tree) and **export** (folder tree → zip)
+- [ ] (Nice-to-have) Search/filter within assets
+
+#### Backend (API)
+- [ ] Storage model: map assets to a **project folder path** (not only doc-scoped keys)
+- [ ] Endpoints:
+  - [ ] `GET /api/v1/projects/:projectId/assets/tree` (folders/files)
+  - [ ] `POST /api/v1/projects/:projectId/assets/folders` (create)
+  - [ ] `PATCH /api/v1/projects/:projectId/assets/*` (rename/move)
+  - [ ] `DELETE /api/v1/projects/:projectId/assets/*` (delete)
+  - [ ] `POST /api/v1/projects/:projectId/assets/upload` (multipart upload)
+  - [ ] `GET /api/v1/projects/:projectId/assets/:assetId/download` (download)
+  - [ ] `POST /api/v1/projects/:projectId/assets/export` (zip)
+  - [ ] `POST /api/v1/projects/:projectId/assets/import` (zip)
+- [ ] Enforce auth/RLS: only project members can read/write assets
+- [ ] Validate file types/size limits (MVP), antivirus scanning (future)
+
+#### Editor Integration
+- [ ] Allow inserting project assets into documents (image picker, link picker)
+- [ ] Keep document figure refs stable when assets are moved/renamed (indirection via `assetId`)
 
 **Deliverables**:
-- API client in shared package
-- All API methods implemented
-- Type-safe API usage
-- Used in web app
+- ✅ Project has a real file tree (folders/files)
+- ✅ Upload/download/import/export works
+- ✅ Images can be previewed and inserted into docs
 
----
-
-
-### Phase 14: Integration & Testing ✅
+### Phase 14: Integration & Testing 
 **Status**: Not Started
 
 - [ ] **Fix and re-enable authentication**:
