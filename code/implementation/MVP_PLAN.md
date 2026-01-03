@@ -989,7 +989,7 @@ Goal: Introduce **IR (Intermediate Representation)** as Zadoox’s internal cano
 ---
 
 ### Phase 12.1: Publishing Features 📤
-**Status**: In Progress
+**Status**: ✅ COMPLETED (Core MVP)
 
 This phase implements publishing capabilities to export documents to various formats and platforms. The focus is on a minimal, clean UX from the project page, with support for both MD and LaTeX as input sources.
 
@@ -1041,7 +1041,9 @@ This phase implements publishing capabilities to export documents to various for
   - [x] Resolve `zadoox-asset://` figures in the preview by fetching assets with auth
   - [x] Generate PDF from **LaTeX** via backend API (compiler swappable via env var):
     - [x] `POST /api/v1/projects/:projectId/publish/pdf` returns `application/pdf`
-    - [ ] Ensure backend runtime has `tectonic` (local/dev via Docker; Railway via Docker image)
+    - [x] Ensure backend runtime has `tectonic` (local/dev via Docker; Railway via Docker image)
+    - [x] Provide an Overleaf-compatible **LaTeX package** (`main.tex` + `assets/`) for download:
+      - [x] `POST /api/v1/projects/:projectId/publish/latex-package` returns `application/zip`
   - [ ] Generate PDF from **MD/XMD** server-side (future):
     - [ ] HTML → PDF renderer (to avoid the browser print dialog)
     - [ ] Detect and warn on unsupported constructs (e.g., figure placement/alignment directives not yet represented in HTML/CSS print)
@@ -1080,12 +1082,17 @@ This phase implements publishing capabilities to export documents to various for
   - [ ] Track publishing status per target
 
 **Deliverables**:
-- ✅ PDF publishing (download from project page)
-- ✅ Web publishing (hosted on Zadoox, public URL)
-- ✅ Minimal publishing UI on project page
-- ✅ Support for both MD and LaTeX as input
-- ✅ Publishing status tracking
-- ✅ Published links management
+- ✅ Minimal publishing UI from project page (Publish → dedicated Publish page; no popup)
+- ✅ Web publishing preview (IR → HTML; inline iframe preview; asset resolution for figures)
+- ✅ MD/XMD → PDF (MVP) via print-optimized HTML + in-app preview page + browser print dialog
+- ✅ LaTeX → PDF backend compilation (Tectonic by default; swappable via env var)
+- ✅ Downloadable LaTeX package for Overleaf (`main.tex` + `assets/`)
+- ✅ Asset handling across publish flows (HTML preview + LaTeX compile)
+
+**Not in Phase 12.1 (moved to later)**:
+- ⏳ Public hosting + stable web URL/slug
+- ⏳ Published links management + republish tracking
+- ⏳ Async publish jobs/status in DB
 
 **Note**: This phase focuses on minimal UX for MVP. Future enhancements (Phase 12.3+) will include:
 - Advanced publishing settings (templates, styling)
