@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    # Use local backend env if present (these files are typically gitignored).
+    env_file:
+      - ./packages/backend/.env.local
+      - ./packages/backend/.env
+    environment:
+      # Default to Tectonic; can be overridden in .env.local
+      - PDF_COMPILER=${PDF_COMPILER:-tectonic}
+    restart: unless-stopped
+
+

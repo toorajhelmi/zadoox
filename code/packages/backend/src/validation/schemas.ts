@@ -79,3 +79,17 @@ export const projectIdParamSchema = z.object({
   projectId: z.string().uuid('Invalid project ID format'),
 });
 
+/**
+ * Publishing schemas (Phase 12.1)
+ */
+export const publishWebSchema = z.object({
+  documentId: z.string().uuid('Invalid document ID format'),
+  source: z.enum(['markdown', 'latex']),
+  purpose: z.enum(['web', 'pdf']).optional(),
+});
+
+export const publishPdfSchema = z.object({
+  documentId: z.string().uuid('Invalid document ID format'),
+  source: z.enum(['latex']),
+});
+
