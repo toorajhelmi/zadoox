@@ -31,6 +31,11 @@ vi.mock('@/lib/supabase/client', () => ({
         data: { user: { id: 'mock-user' } },
         error: null,
       }),
+      onAuthStateChange: vi.fn((cb: (event: unknown, session: { access_token?: string } | null) => void) => {
+        // Immediately report the current session once for convenience.
+        void Promise.resolve().then(() => cb('INITIAL_SESSION', { access_token: 'mock-token' }));
+        return { data: { subscription: { unsubscribe: vi.fn() } } };
+      }),
       getSession: vi.fn().mockResolvedValue({
         data: {
           session: {
