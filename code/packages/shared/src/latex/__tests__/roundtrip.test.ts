@@ -11,6 +11,8 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
       '',
       // Note: trailing text after the attr block (this was the regression we fixed).
       '![Cap](zadoox-asset://img){#fig:demo align="right" width="33%" placement="inline" desc="d"}Trailing text',
+      '',
+      'This paragraph should wrap around the inline figure.',
     ].join('\n');
 
     const ir = parseXmdToIr({ docId: 'doc-1', xmd });
@@ -22,6 +24,8 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     expect(latex).toContain('\\caption{Cap}');
     expect(latex).toContain('\\label{fig:demo}');
     expect(latex).toContain('\\end{wrapfigure}');
+    // Ensure we didn't separate wrapfigure from the paragraph with a blank line (wrapfig needs following text).
+    expect(latex).toContain('\\end{wrapfigure}\nThis paragraph should wrap around the inline figure.');
   });
 
   it('LaTeX -> IR -> XMD reconstructs inline placement from wrapfigure + includegraphics', () => {

@@ -130,7 +130,35 @@ function widthAttrToLatexDim(widthRaw: string | undefined): string | null {
 
 function renderNodes(nodes: IrNode[]): string {
   const out: string[] = [];
-  for (const n of nodes) {
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+
+    // Special-case: inline figure wrapping.
+    // `wrapfigure` only works when there is following text to wrap around.
+    // Also, our renderer joins blocks with blank lines; a blank line immediately after a wrapfigure
+    // can prevent text from wrapping in practice. So we join wrapfigure + next paragraph tightly.
+    if (n.type === 'figure') {
+      const next = nodes[i + 1];
+      const raw = (n as unknown as { source?: { raw?: string } }).source?.raw;
+      const attrs = parseFigureAttrsFromXmd(raw);
+      const placement = String(attrs.placement ?? '').trim().toLowerCase();
+      const align = String(attrs.align ?? '').trim().toLowerCase();
+      const canWrap =
+        placement === 'inline' &&
+        align !== 'center' &&
+        next?.type === 'paragraph' &&
+        String((next as any).text ?? '').trim().length > 0;
+
+      if (canWrap) {
+        const wrap = renderNode(n).trimEnd();
+        const para = renderNode(next).trimEnd();
+        // Join without a blank line so LaTeX sees the paragraph as immediately following.
+        out.push(`${wrap}\n${para}`.trimEnd());
+        i++; // consumed next paragraph
+        continue;
+      }
+    }
+
     const s = renderNode(n);
     if (s.trim().length === 0) continue;
     out.push(s.trimEnd());
