@@ -53,7 +53,7 @@ describe('Publish page', () => {
         projectId: 'proj-1',
         title: 'Doc One',
         content: 'Hello',
-        metadata: { type: 'standalone', lastEditedFormat: 'markdown' },
+        metadata: { type: 'standalone', lastEditedFormat: 'markdown', latex: '\\\\section{Hi}' },
         version: 1,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -97,6 +97,28 @@ describe('Publish page', () => {
 
     // Preview iframe should appear
     expect(await screen.findByTitle('Publish preview')).toBeInTheDocument();
+  });
+
+  it('uses LaTeX source when selected (even if publish is clicked immediately after toggle)', async () => {
+    hoisted.mockApi.publish.web.mockResolvedValueOnce({
+      title: 'Doc One',
+      html: '<!doctype html><html><body><div>Latex</div></body></html>',
+    });
+
+    render(<PublishPage />);
+    await screen.findByText('Publishing');
+
+    // Select LaTeX, then publish web immediately.
+    fireEvent.click(screen.getByDisplayValue('latex'));
+    fireEvent.click(screen.getByRole('button', { name: 'Web' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+    await waitFor(() => {
+      expect(hoisted.mockApi.publish.web).toHaveBeenCalledWith('proj-1', {
+        documentId: 'doc-1',
+        source: 'latex',
+      });
+    });
   });
 });
 

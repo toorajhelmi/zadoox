@@ -41,8 +41,12 @@ ARG TECTONIC_VERSION=0.15.0
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
+    fontconfig \
+    fonts-lmodern \
   && rm -rf /var/lib/apt/lists/* \
-  && curl -L "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic@${TECTONIC_VERSION}/tectonic-${TECTONIC_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+  && ARCH="$(dpkg --print-architecture)" \
+  && if [ "$ARCH" = "arm64" ]; then TECTONIC_ARCH="aarch64-unknown-linux-musl"; else TECTONIC_ARCH="x86_64-unknown-linux-gnu"; fi \
+  && curl -L "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%40${TECTONIC_VERSION}/tectonic-${TECTONIC_VERSION}-${TECTONIC_ARCH}.tar.gz" \
     -o /tmp/tectonic.tgz \
   && tar -xzf /tmp/tectonic.tgz -C /tmp \
   && mv /tmp/tectonic /usr/local/bin/tectonic \

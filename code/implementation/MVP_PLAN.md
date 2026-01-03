@@ -964,6 +964,7 @@ Goal: Introduce **IR (Intermediate Representation)** as Zadoox’s internal cano
   - [x] Track per-representation metadata (at minimum): `lastSyncedFrom` (MD|LaTeX), `lastSyncedAt`, and/or a stable `irHashAtLastSync`
   - [x] If the target representation is **already in sync** with current IR (`irHashAtLastSync` matches), **reuse** it (no regeneration)
   - [x] If only the current-mode representation is dirty and IR reflects it, **regenerate** the other side from IR
+  - [ ] (Fine-grained updates) On switch, update only the changed IR nodes (e.g., only the edited section/figure) instead of regenerating the entire target document
   - [ ] If both sides have diverged since last sync (conflict), **prompt** user before overwriting, with a safe fallback to prevent data loss
 - [ ] Add **LaTeX support validation** (subset only):
   - [ ] Detect unsupported LaTeX commands/environments as user types (or on switch)
@@ -988,7 +989,7 @@ Goal: Introduce **IR (Intermediate Representation)** as Zadoox’s internal cano
 ---
 
 ### Phase 12.1: Publishing Features 📤
-**Status**: Not Started
+**Status**: In Progress
 
 This phase implements publishing capabilities to export documents to various formats and platforms. The focus is on a minimal, clean UX from the project page, with support for both MD and LaTeX as input sources.
 
@@ -998,11 +999,11 @@ This phase implements publishing capabilities to export documents to various for
 - **No silent loss**: if the chosen source contains unsupported constructs for the target pipeline, the UI must warn and offer a clear choice (switch source, continue with degraded output, or cancel).
 
 #### Frontend Implementation:
-- [ ] **Project Page Publishing UI**:
-  - [ ] Publishing section/panel on project page
-  - [ ] Minimal, clean design (buttons or dropdown menu)
-  - [ ] Publishing options: PDF, Web
-  - [ ] Publishing status indicators (loading, success, error)
+- [x] **Project Page Publishing UI**:
+  - [x] Project page has a primary **Publish** button that navigates to a dedicated Publish page (no popup)
+  - [x] Minimal, clean design
+  - [x] Publishing options: PDF, Web
+  - [x] Publishing status indicators (loading, success, error)
   - [ ] Published links display (if already published)
   - [ ] Republish/update functionality
   - [ ] **Project publishing context** (minimal MVP rules):
@@ -1015,54 +1016,59 @@ This phase implements publishing capabilities to export documents to various for
       - [ ] Single chapter PDF (from active chapter/document) as a fallback if full-book pipeline isn’t ready
 
 - [ ] **Publishing Flow**:
-  - [ ] Select publishing target (PDF, Web)
-  - [ ] Publishing progress indicator
+  - [x] Select publishing target (PDF, Web)
+  - [x] Publishing progress indicator
   - [ ] Success message with link/download
-  - [ ] Error handling and retry
+  - [x] Error handling and retry
   - [ ] **Active document selection (Standalone / fallback path)**:
-    - [ ] Define and persist an “active document” per project (MVP: last opened/edited document)
-    - [ ] If the publish action requires a single-document source and none is active, prompt user to pick a document
+    - [x] Allow selecting a document on the Publish page (persist selection locally)
+    - [ ] Define and persist an “active document” per project (server-side; MVP: last opened/edited document)
+    - [x] If publish requires a single-document source, prompt user to pick a document (document picker)
 
 - [ ] **Input Format Selection**:
   - [ ] Default source selection per target:
     - [ ] PDF: default to the document’s current/selected source (MD/XMD or LaTeX); recommend LaTeX for full fidelity, MD/XMD for preview-matching output
     - [ ] Web: default to MD/XMD if available; otherwise LaTeX (best-effort)
-  - [ ] Allow user to choose input format (if both exist)
+  - [x] Allow user to choose input format (if both exist; LaTeX option disabled if missing)
   - [ ] Show a source indicator + compatibility status (e.g., “Best-effort / Lossy / Unsupported”) before confirming publish
   - [ ] If the chosen source is known-lossy for the target, require explicit confirmation (no silent loss)
 
 #### Publishing Targets:
 - [ ] **PDF Publishing**:
-  - [ ] Generate PDF from **LaTeX** (full fidelity; compile directly)
-  - [ ] Generate PDF from **MD/XMD** (best-effort):
-    - [ ] Convert MD/XMD to HTML for print (via IR → HTML)
-    - [ ] Render HTML → PDF (print CSS; match preview styling as closely as possible)
+  - [x] PDF preview page exists (in-app) with a Save icon (uses browser print dialog in MVP)
+  - [x] Generate “PDF preview HTML” from **MD/XMD** via IR → HTML (matches preview)
+  - [x] Print theme for PDF preview: white background + black text (including print CSS forcing black)
+  - [x] Resolve `zadoox-asset://` figures in the preview by fetching assets with auth
+  - [x] Generate PDF from **LaTeX** via backend API (compiler swappable via env var):
+    - [x] `POST /api/v1/projects/:projectId/publish/pdf` returns `application/pdf`
+    - [ ] Ensure backend runtime has `tectonic` (local/dev via Docker; Railway via Docker image)
+  - [ ] Generate PDF from **MD/XMD** server-side (future):
+    - [ ] HTML → PDF renderer (to avoid the browser print dialog)
     - [ ] Detect and warn on unsupported constructs (e.g., figure placement/alignment directives not yet represented in HTML/CSS print)
     - [ ] Allow user to continue with degraded output or switch to LaTeX source (if available)
-  - [ ] Download PDF file
-  - [ ] PDF preview before download (optional)
+  - [ ] Download PDF file (direct download without print dialog) (future)
   - [ ] PDF metadata (title, author, date from document)
 
 - [ ] **Web Publishing**:
-  - [ ] Generate static HTML from MD/XMD (via IR → HTML)
-  - [ ] Generate static HTML from LaTeX (best-effort; warn on unsupported constructs)
+  - [x] Generate static HTML from MD/XMD (via IR → HTML) and return to client for inline preview
+  - [x] Generate static HTML from LaTeX (best-effort; warn on unsupported constructs)
   - [ ] Host on Zadoox web hosting (public URL)
   - [ ] Custom URL/slug per project
-  - [ ] Web preview before publishing
+  - [x] Web preview before publishing (inline iframe preview)
   - [ ] Update/republish functionality
 
 #### Backend Implementation:
 - [ ] **Export Service Enhancements**:
   - [ ] PDF generation service:
-    - [ ] HTML → PDF renderer (primary for MD/XMD; print CSS)
-    - [ ] LaTeX → PDF compilation (full-fidelity path for LaTeX source)
-  - [ ] HTML generation service (IR → HTML)
+    - [ ] HTML → PDF renderer (primary for MD/XMD; print CSS) (future)
+    - [x] LaTeX → PDF compilation API (full-fidelity path for LaTeX source; compiler chosen by env var)
+  - [x] HTML generation service (IR → HTML) for preview/publish
   - [ ] Publishing job queue (for async operations)
   - [ ] Publishing status tracking
 
 - [ ] **API Endpoints**:
-  - [ ] `POST /api/v1/projects/:projectId/publish/pdf` - Generate and download PDF
-  - [ ] `POST /api/v1/projects/:projectId/publish/web` - Publish to web hosting
+  - [x] `POST /api/v1/projects/:projectId/publish/pdf` - Generate and download PDF (LaTeX only for now)
+  - [x] `POST /api/v1/projects/:projectId/publish/web` - Generate HTML for web publishing / preview
   - [ ] `GET /api/v1/projects/:projectId/publish/status` - Get publishing status
   - [ ] `GET /api/v1/projects/:projectId/publish/links` - Get published links
 

@@ -27,6 +27,8 @@ export default function PublishPreviewPage() {
   const [title, setTitle] = useState<string>('Preview');
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfFilename, setPdfFilename] = useState<string | null>(null);
 
   const canLoad = useMemo(() => !!projectId && !!documentId, [projectId, documentId]);
 
@@ -41,6 +43,44 @@ export default function PublishPreviewPage() {
     setLoading(true);
     setError(null);
     setHtml('');
+    setPdfUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setPdfFilename(null);
+
+    // Load title for header (best-effort).
+    void api.documents
+      .get(documentId)
+      .then((doc) => {
+        if (cancelled) return;
+        setTitle(String(doc.title || 'Preview'));
+      })
+      .catch(() => {});
+
+    // LaTeX -> PDF (server compiled)
+    if (source === 'latex') {
+      api.publish
+        .pdf(projectId, { documentId, source: 'latex' })
+        .then(({ blob, filename }) => {
+          if (cancelled) return;
+          const url = URL.createObjectURL(blob);
+          setPdfUrl(url);
+          setPdfFilename(filename ?? null);
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          setError(err instanceof Error ? err.message : 'Failed to generate PDF');
+        })
+        .finally(() => {
+          if (cancelled) return;
+          setLoading(false);
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }
 
     api.publish
       .web(projectId, { documentId, source, purpose: 'pdf' })
@@ -97,6 +137,8 @@ export default function PublishPreviewPage() {
   }, []);
 
   const resolveAssetImages = async () => {
+    // Only relevant for HTML preview (MD/XMD flow).
+    if (source === 'latex') return;
     const token = accessToken;
     const iframe = iframeRef.current;
     if (!token || !iframe) return;
@@ -138,6 +180,15 @@ export default function PublishPreviewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken, html]);
 
+  useEffect(() => {
+    return () => {
+      setPdfUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+    };
+  }, []);
+
   return (
     <DashboardLayout>
       <div className="h-full flex flex-col">
@@ -155,8 +206,43 @@ export default function PublishPreviewPage() {
               >
                 Back
               </button>
+              {source === 'latex' && (
+                <button
+                  onClick={() => {
+                    api.publish
+                      .latexPackage(projectId, { documentId, source: 'latex' })
+                      .then(({ blob, filename }) => {
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = filename ?? `${title || 'document'}.zip`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        URL.revokeObjectURL(url);
+                      })
+                      .catch(() => {});
+                  }}
+                  className="px-3 py-2 bg-[#3e3e42] hover:bg-[#464647] text-white rounded text-sm font-medium transition-colors"
+                  title="Download LaTeX package (.zip)"
+                >
+                  Package
+                </button>
+              )}
               <button
                 onClick={() => {
+                  // LaTeX: direct download. MD/XMD: browser print dialog.
+                  if (source === 'latex') {
+                    if (!pdfUrl) return;
+                    const a = document.createElement('a');
+                    a.href = pdfUrl;
+                    a.download = pdfFilename || `${title || 'document'}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    return;
+                  }
+
                   const w = iframeRef.current?.contentWindow;
                   if (!w) return;
                   try {
@@ -169,7 +255,7 @@ export default function PublishPreviewPage() {
                 className="p-2 bg-[#3e3e42] hover:bg-[#464647] text-white rounded transition-colors"
                 title="Save as PDF"
                 aria-label="Save as PDF"
-                disabled={loading || !html}
+                disabled={loading || (source === 'latex' ? !pdfUrl : !html)}
               >
                 <ArrowDownTrayIcon className="w-5 h-5" />
               </button>
@@ -185,12 +271,24 @@ export default function PublishPreviewPage() {
                   <div className="mb-4 flex justify-center">
                     <LoaderIcon className="w-8 h-8 text-[#969696] animate-spin" />
                   </div>
-                  <p className="text-[#969696]">Generating preview…</p>
+                  <p className="text-[#969696]">
+                    {source === 'latex' ? 'Compiling PDF…' : 'Generating preview…'}
+                  </p>
                 </div>
               </div>
             ) : error ? (
               <div className="p-6 bg-[#252526] border border-[#3e3e42] rounded">
                 <p className="text-[#cccccc]">{error}</p>
+              </div>
+            ) : source === 'latex' ? (
+              <div className="border border-[#3e3e42] rounded overflow-hidden bg-white">
+                <iframe
+                  ref={iframeRef}
+                  title="PDF preview"
+                  src={pdfUrl || undefined}
+                  className="w-full"
+                  style={{ height: 800 }}
+                />
               </div>
             ) : (
               <div className="border border-[#3e3e42] rounded overflow-hidden bg-white">

@@ -11,7 +11,7 @@
  * - If the binary is missing, we fail with a clear error (no silent fallbacks).
  */
 
-import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -25,7 +25,11 @@ export class PdfCompileService {
     return 'tectonic';
   }
 
-  async compileLatexToPdf(params: { latex: string; jobName?: string }): Promise<Buffer> {
+  async compileLatexToPdf(params: {
+    latex: string;
+    jobName?: string;
+    extraFiles?: Array<{ relPath: string; bytes: Buffer }>;
+  }): Promise<Buffer> {
     const latex = String(params.latex ?? '');
     const jobName = (params.jobName ?? 'main').replace(/[^a-zA-Z0-9_-]+/g, '_');
 
@@ -38,10 +42,27 @@ export class PdfCompileService {
     const pdfPath = path.join(workDir, `${jobName}.pdf`);
 
     try {
+      if (params.extraFiles?.length) {
+        for (const f of params.extraFiles) {
+          const rel = String(f.relPath ?? '').replace(/^\/+/, '');
+          if (!rel) continue;
+          const abs = path.join(workDir, rel);
+          await mkdir(path.dirname(abs), { recursive: true });
+          await writeFile(abs, f.bytes);
+        }
+      }
+
       await writeFile(texPath, latex, 'utf8');
 
       const kind = this.getCompilerKind();
       if (kind === 'tectonic') {
+        // IMPORTANT:
+        // Tectonic maintains a cache (bundles, fonts, etc.). In dev, the frontend can issue duplicate
+        // requests (e.g. React StrictMode), and concurrent tectonic runs can race on a shared cache,
+        // causing flaky errors like "failed to open input file texsys.cfg".
+        // To make compilation deterministic, isolate the cache per compilation.
+        const cacheDir = path.join(workDir, '.tectonic-cache');
+        await mkdir(cacheDir, { recursive: true });
         await this.runCmd({
           cmd: 'tectonic',
           args: [
@@ -52,6 +73,14 @@ export class PdfCompileService {
             `${jobName}.tex`,
           ],
           cwd: workDir,
+          env: {
+            ...process.env,
+            // Prefer explicit cache dir if supported; also set XDG cache home.
+            TECTONIC_CACHE_DIR: cacheDir,
+            XDG_CACHE_HOME: cacheDir,
+            // Some tools consult HOME; keep everything within the temp dir.
+            HOME: workDir,
+          },
         });
       } else {
         // TeX Live + latexmk
@@ -65,6 +94,7 @@ export class PdfCompileService {
             `${jobName}.tex`,
           ],
           cwd: workDir,
+          env: process.env,
         });
       }
 
@@ -79,10 +109,11 @@ export class PdfCompileService {
     }
   }
 
-  private runCmd(params: { cmd: string; args: string[]; cwd: string }): Promise<void> {
+  private runCmd(params: { cmd: string; args: string[]; cwd: string; env?: NodeJS.ProcessEnv }): Promise<void> {
     return new Promise((resolve, reject) => {
       const child = spawn(params.cmd, params.args, {
         cwd: params.cwd,
+        env: params.env,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 

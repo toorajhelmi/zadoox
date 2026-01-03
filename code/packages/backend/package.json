@@ -27,6 +27,7 @@
     "@supabase/supabase-js": "^2.39.0",
     "@types/diff-match-patch": "^1.0.36",
     "@zadoox/shared": "workspace:*",
+    "archiver": "^7",
     "diff-match-patch": "^1.0.5",
     "dotenv": "^16.3.1",
     "fastify": "^4.25.2",
@@ -35,6 +36,7 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@types/archiver": "^6",
     "@types/node": "^20.10.0",
     "@types/pg": "^8.10.9",
     "@vitest/coverage-v8": "^1.1.0",

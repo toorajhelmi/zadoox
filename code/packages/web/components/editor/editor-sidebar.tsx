@@ -12,6 +12,7 @@ interface EditorSidebarProps {
   onToggle: () => void;
   content: string;
   ir?: import('@zadoox/shared').DocumentNode | null;
+  projectName?: string;
   documentId?: string;
   onRollback?: (versionNumber: number) => Promise<void>;
   onVersionSelect?: (versionNumber: number) => Promise<void>;
@@ -20,7 +21,7 @@ interface EditorSidebarProps {
   onTabChange?: (tab: SidebarTab) => void;
 }
 
-export function EditorSidebar({ isOpen, onToggle, content, ir, documentId, onRollback, onVersionSelect, lastSaved, activeTab: externalActiveTab, onTabChange }: EditorSidebarProps) {
+export function EditorSidebar({ isOpen, onToggle, content, ir, projectName, documentId, onRollback, onVersionSelect, lastSaved, activeTab: externalActiveTab, onTabChange }: EditorSidebarProps) {
   const [internalActiveTab, setInternalActiveTab] = useState<SidebarTab>('outline');
   const activeTab = externalActiveTab ?? internalActiveTab;
   
@@ -67,7 +68,7 @@ export function EditorSidebar({ isOpen, onToggle, content, ir, documentId, onRol
 
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto">
-            {activeTab === 'outline' && <DocumentOutline content={content} ir={ir} />}
+            {activeTab === 'outline' && <DocumentOutline content={content} ir={ir} projectName={projectName} />}
             {activeTab === 'history' && documentId && onRollback && (
               <VersionHistoryPanel
                 documentId={documentId}
