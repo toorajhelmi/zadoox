@@ -313,9 +313,3 @@ function parseFigureAttrsFromXmd(raw: string | undefined): {
   };
 }
 
-function escapeLatexComment(text: string): string {
-  // Keep single-line comment payload; also escape common characters for consistency with other text.
-  return escapeLatexText(String(text ?? '').replace(/\r?\n/g, ' ').trim());
-}
-
-

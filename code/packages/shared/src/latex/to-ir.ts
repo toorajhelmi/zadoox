@@ -552,7 +552,7 @@ function parseBlocks(latex: string): Block[] {
       let j = i + 1;
       let src = '';
       let align: string | undefined = wrapBegin[1] === 'r' ? 'right' : 'left';
-      let placement: string | undefined = 'inline';
+      const placement: string | undefined = 'inline';
       let width: string | undefined = latexWidthToXmdWidth(String(wrapBegin[2] ?? '').trim());
       let desc: string | undefined;
       let caption = '';

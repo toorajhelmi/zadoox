@@ -5,6 +5,7 @@ import { extractOutlineItemsFromIr, parseXmdToIr, type DocumentNode } from '@zad
 import { ChevronRightIcon, DocumentTextIcon, PhotoIcon, FolderIcon } from '@heroicons/react/24/outline';
 import type { OutlineItem } from '@zadoox/shared';
 import { createClient } from '@/lib/supabase/client';
+import Image from 'next/image';
 
 interface DocumentOutlineProps {
   content: string;
@@ -390,12 +391,17 @@ export function DocumentOutline({ content, ir }: DocumentOutlineProps) {
                           style={{ width: 180 }}
                           role="tooltip"
                         >
-                          <img
-                            src={assetUrlByKey[a.key]}
-                            alt={a.key}
-                            className="block w-full h-auto rounded bg-white"
-                            style={{ maxHeight: 140, objectFit: 'contain' }}
-                          />
+                          <div className="bg-white rounded" style={{ width: '100%', height: 140 }}>
+                            <Image
+                              src={assetUrlByKey[a.key]}
+                              alt={a.key}
+                              width={176}
+                              height={140}
+                              className="block w-full h-full"
+                              style={{ objectFit: 'contain' }}
+                              unoptimized
+                            />
+                          </div>
                         </div>
                       )}
                     </div>
