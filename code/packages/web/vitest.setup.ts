@@ -26,6 +26,11 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/lib/supabase/client', () => ({
   createClient: vi.fn(() => ({
     auth: {
+      // Our API client may call getUser() to refresh/validate session before reading access_token.
+      getUser: vi.fn().mockResolvedValue({
+        data: { user: { id: 'mock-user' } },
+        error: null,
+      }),
       getSession: vi.fn().mockResolvedValue({
         data: {
           session: {

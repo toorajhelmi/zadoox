@@ -18,11 +18,16 @@ const mockGetSession = vi.fn().mockResolvedValue({
     },
   },
 });
+const mockGetUser = vi.fn().mockResolvedValue({
+  data: { user: { id: 'test-user' } },
+  error: null,
+});
 
 vi.mock('@/lib/supabase/client', () => {
   return {
     createClient: vi.fn(() => ({
       auth: {
+        getUser: mockGetUser,
         getSession: mockGetSession,
       },
     })),
@@ -34,6 +39,10 @@ describe('API Client - Projects', () => {
     vi.clearAllMocks();
     // Reset fetch mock
     (global.fetch as any).mockClear();
+    mockGetUser.mockResolvedValue({
+      data: { user: { id: 'test-user' } },
+      error: null,
+    });
     // Reset getSession mock to default
     mockGetSession.mockResolvedValue({
       data: {
