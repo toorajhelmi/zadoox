@@ -89,6 +89,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [openParagraphId, setOpenParagraphId] = useState<string | null>(null);
   const [inlineAIChatOpen, setInlineAIChatOpen] = useState(false);
   const [documentStyle, setDocumentStyle] = useState<DocumentStyle>('other');
+  const [projectName, setProjectName] = useState<string>('');
   const currentSelectionRef = useRef<{ from: number; to: number; text: string } | null>(null);
   const [pendingChangeContent, setPendingChangeContent] = useState<{ original: string; new: string } | null>(null);
   const [isGeneratingContent, setIsGeneratingContent] = useState(false);
@@ -521,6 +522,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       try {
         const project = await api.projects.get(projectId);
         if (cancelled) return;
+        setProjectName(String(project.name ?? ''));
         
         // FIX: If documentStyle is missing, update it based on project type
         // This handles the case where the database has it but the API doesn't return it properly
@@ -1147,6 +1149,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           onToggle={() => setSidebarOpen(!sidebarOpen)}
           content={content}
           ir={irState.ir}
+          projectName={projectName}
           documentId={actualDocumentId}
           lastSaved={lastSaved}
           activeTab={sidebarTab}

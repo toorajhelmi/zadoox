@@ -19,10 +19,9 @@ describe('DocumentOutline', () => {
       children: [{ id: 'p1', type: 'paragraph', text: 'Just text' }],
     };
 
-    render(<DocumentOutline content="Just text" ir={ir} />);
+    render(<DocumentOutline content="Just text" ir={ir} projectName="My Project" />);
 
     expect(screen.getByText('No outline available')).toBeInTheDocument();
-    expect(screen.getByText('Documents')).toBeInTheDocument();
   });
 
   it('should render headings when content has headings', () => {
@@ -50,7 +49,7 @@ describe('DocumentOutline', () => {
       ],
     };
 
-    render(<DocumentOutline content="# Introduction\n## Getting Started" ir={ir} />);
+    render(<DocumentOutline content="# Introduction\n## Getting Started" ir={ir} projectName="My Project" />);
 
     expect(screen.getByText('Introduction')).toBeInTheDocument();
     expect(screen.getByText('Getting Started')).toBeInTheDocument();
@@ -82,7 +81,7 @@ describe('DocumentOutline', () => {
       ],
     };
 
-    render(<DocumentOutline content="# Intro" ir={ir} />);
+    render(<DocumentOutline content="# Intro" ir={ir} projectName="My Project" />);
 
     expect(screen.getByText('Figure — A caption')).toBeInTheDocument();
     expect(screen.getByText('Figure 2')).toBeInTheDocument();
@@ -106,7 +105,9 @@ describe('DocumentOutline', () => {
       ],
     };
 
-    render(<DocumentOutline content="" ir={ir} />);
+    render(<DocumentOutline content="" ir={ir} projectName="My Project" />);
+
+    expect(screen.getByText('My Project')).toBeInTheDocument();
 
     expect(screen.getByText('assets')).toBeInTheDocument();
     expect(screen.getByText('doc-1__img-1.png')).toBeInTheDocument();

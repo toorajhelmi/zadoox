@@ -1,8 +1,16 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { extractOutlineItemsFromIr, parseXmdToIr, type DocumentNode } from '@zadoox/shared';
-import { ChevronRightIcon, DocumentTextIcon, PhotoIcon, FolderIcon } from '@heroicons/react/24/outline';
+import {
+  ChevronRightIcon,
+  DocumentTextIcon,
+  PhotoIcon,
+  FolderIcon,
+  ArrowsPointingInIcon,
+  ArrowsPointingOutIcon,
+} from '@heroicons/react/24/outline';
 import type { OutlineItem } from '@zadoox/shared';
 import { createClient } from '@/lib/supabase/client';
 import Image from 'next/image';
@@ -10,6 +18,7 @@ import Image from 'next/image';
 interface DocumentOutlineProps {
   content: string;
   ir?: DocumentNode | null;
+  projectName?: string;
 }
 
 type HeadingItem = Extract<OutlineItem, { kind: 'heading' }>;
@@ -19,6 +28,12 @@ type OutlineNode =
   | { kind: 'figure_node'; item: FigureItem };
 
 type AssetFile = { key: string; relPath: string };
+
+type HoveredAsset = {
+  key: string;
+  relPath: string;
+  anchorRect: DOMRect;
+};
 
 function toFileNameFromTitle(title: string): string {
   const t = String(title ?? '').trim() || 'Untitled Document';
@@ -96,7 +111,7 @@ function collectCollapsibleHeadingIds(nodes: OutlineNode[]): string[] {
   return ids;
 }
 
-export function DocumentOutline({ content, ir }: DocumentOutlineProps) {
+export function DocumentOutline({ content, ir, projectName }: DocumentOutlineProps) {
   const derivedIr = useMemo(() => ir ?? parseXmdToIr({ docId: 'outline-doc', xmd: content }), [content, ir]);
 
   const items = useMemo(() => {
@@ -117,11 +132,13 @@ export function DocumentOutline({ content, ir }: DocumentOutlineProps) {
   const assets = useMemo(() => collectAssetFilesFromIr(derivedIr), [derivedIr]);
 
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
+  const [projectCollapsed, setProjectCollapsed] = useState(false);
   const [fileCollapsed, setFileCollapsed] = useState(false);
   const [assetsCollapsed, setAssetsCollapsed] = useState(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [hoveredAssetKey, setHoveredAssetKey] = useState<string | null>(null);
+  const [hoveredAsset, setHoveredAsset] = useState<HoveredAsset | null>(null);
   const [assetUrlByKey, setAssetUrlByKey] = useState<Record<string, string>>({});
+  const [assetLoadingByKey, setAssetLoadingByKey] = useState<Record<string, boolean>>({});
 
   // Load persisted collapsed state (best-effort).
   useEffect(() => {
@@ -192,10 +209,12 @@ export function DocumentOutline({ content, ir }: DocumentOutlineProps) {
   const ensureAssetUrl = async (key: string) => {
     if (!key) return;
     if (assetUrlByKey[key]) return;
+    if (assetLoadingByKey[key]) return;
     const token = accessToken;
     if (!token) return;
     const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
     try {
+      setAssetLoadingByKey((prev) => ({ ...prev, [key]: true }));
       const res = await fetch(`${API_BASE}/assets/${encodeURIComponent(key)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -205,7 +224,51 @@ export function DocumentOutline({ content, ir }: DocumentOutlineProps) {
       setAssetUrlByKey((prev) => ({ ...prev, [key]: url }));
     } catch {
       // ignore
+    } finally {
+      setAssetLoadingByKey((prev) => ({ ...prev, [key]: false }));
     }
+  };
+
+  const renderAssetPreview = () => {
+    if (!hoveredAsset) return null;
+    const { key, relPath, anchorRect } = hoveredAsset;
+    const url = assetUrlByKey[key];
+    const isLoading = !!assetLoadingByKey[key] && !url;
+
+    // Position to the right of the row; clamp vertically a bit.
+    const left = Math.min(window.innerWidth - 220, anchorRect.right + 8);
+    const top = Math.max(8, Math.min(window.innerHeight - 180, anchorRect.top + anchorRect.height / 2 - 80));
+
+    const node = (
+      <div
+        className="fixed z-[9999] bg-[#252526] border border-[#3e3e42] rounded p-2 shadow-lg"
+        style={{ left, top, width: 200 }}
+        role="tooltip"
+      >
+        <div className="text-xs text-[#cccccc] truncate mb-2" title={relPath}>
+          {key}
+        </div>
+        <div className="bg-white rounded" style={{ width: '100%', height: 140 }}>
+          {url ? (
+            <Image
+              src={url}
+              alt={key}
+              width={196}
+              height={140}
+              className="block w-full h-full"
+              style={{ objectFit: 'contain' }}
+              unoptimized
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-xs text-[#666]">
+              {isLoading ? 'Loading…' : 'No preview'}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+
+    return createPortal(node, document.body);
   };
 
   const handleHeadingClick = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
@@ -226,13 +289,27 @@ export function DocumentOutline({ content, ir }: DocumentOutlineProps) {
     });
   };
 
-  const collapseAll = () => setCollapsedIds(new Set(collapsibleIds));
-  const expandAll = () => setCollapsedIds(new Set());
+  const collapseAll = () => {
+    // Collapse everything: file node, assets folder, and all collapsible headings.
+    setProjectCollapsed(true);
+    setFileCollapsed(true);
+    setAssetsCollapsed(true);
+    setCollapsedIds(new Set(collapsibleIds));
+  };
+  const expandAll = () => {
+    setProjectCollapsed(false);
+    setFileCollapsed(false);
+    setAssetsCollapsed(false);
+    setCollapsedIds(new Set());
+  };
 
-  const renderNodes = (nodes: OutlineNode[], parentHeadingLevel: number | null = null) => {
+  const isFullyCollapsed =
+    projectCollapsed && fileCollapsed && assetsCollapsed && collapsedIds.size === collapsibleIds.length;
+
+  const renderNodes = (nodes: OutlineNode[], parentHeadingLevel: number | null = null, basePadRem = 0) => {
     return nodes.map((node, index) => {
       if (node.kind === 'figure_node') {
-        const pad = parentHeadingLevel == null ? 0.5 : parentHeadingLevel * 0.75 + 0.5;
+        const pad = (parentHeadingLevel == null ? 0.5 : parentHeadingLevel * 0.75 + 0.5) + basePadRem;
         const item = node.item;
         return (
           <a
@@ -254,7 +331,7 @@ export function DocumentOutline({ content, ir }: DocumentOutlineProps) {
       const item = node.item;
       const hasChildren = node.children.length > 0;
       const isCollapsed = collapsedIds.has(item.id);
-      const pad = (item.level - 1) * 0.75 + 0.5;
+      const pad = (item.level - 1) * 0.75 + 0.5 + basePadRem;
 
       return (
         <div key={`heading-${item.id}-${index}`}>
@@ -290,7 +367,7 @@ export function DocumentOutline({ content, ir }: DocumentOutlineProps) {
           </div>
 
           {hasChildren && !isCollapsed && (
-            <div className="space-y-1">{renderNodes(node.children, item.level)}</div>
+            <div className="space-y-1">{renderNodes(node.children, item.level, basePadRem)}</div>
           )}
         </div>
       );
@@ -299,119 +376,125 @@ export function DocumentOutline({ content, ir }: DocumentOutlineProps) {
 
   return (
     <div className="p-4">
-      {/* Root folder + file wrapper (VSCode-like). */}
+      {/* Project root node */}
       <div className="mb-2">
-        <div className="flex items-center gap-2 px-2 py-1 text-sm text-vscode-text-secondary">
-          <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
-          <span className="truncate">Documents</span>
-        </div>
-
-        <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
+        <div className="flex items-center justify-between gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
           <button
             type="button"
-            aria-label={fileCollapsed ? 'Expand file' : 'Collapse file'}
-            onClick={() => setFileCollapsed((v) => !v)}
-            className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
+            aria-label={projectCollapsed ? 'Expand project' : 'Collapse project'}
+            onClick={() => setProjectCollapsed((v) => !v)}
+            className="flex items-center gap-2 min-w-0"
           >
-            <ChevronRightIcon className={`w-4 h-4 transition-transform ${fileCollapsed ? '' : 'rotate-90'}`} />
+            <span className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100" aria-hidden="true">
+              <ChevronRightIcon className={`w-4 h-4 transition-transform ${projectCollapsed ? '' : 'rotate-90'}`} />
+            </span>
+            <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
+            <span className="text-sm text-vscode-text truncate">
+              {String(projectName ?? '').trim() || 'Project'}
+            </span>
           </button>
-          <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
-          <div className="min-w-0">
-            <div className="text-sm text-vscode-text truncate">{fileLabel}</div>
-            <div className="text-xs text-vscode-text-secondary truncate">{fileName}</div>
-          </div>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              isFullyCollapsed ? expandAll() : collapseAll();
+            }}
+            className="p-1 rounded hover:bg-vscode-active transition-colors text-vscode-text-secondary hover:text-vscode-text flex-shrink-0"
+            title={isFullyCollapsed ? 'Expand all' : 'Collapse all'}
+            aria-label={isFullyCollapsed ? 'Expand all' : 'Collapse all'}
+          >
+            {isFullyCollapsed ? (
+              <ArrowsPointingOutIcon className="w-4 h-4" />
+            ) : (
+              <ArrowsPointingInIcon className="w-4 h-4" />
+            )}
+          </button>
         </div>
+
+        {!projectCollapsed && (
+          <div className="mt-1">
+            {/* File wrapper (VSCode-like). */}
+            <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors" style={{ paddingLeft: '1.25rem' }}>
+              <button
+                type="button"
+                aria-label={fileCollapsed ? 'Expand file' : 'Collapse file'}
+                onClick={() => setFileCollapsed((v) => !v)}
+                className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
+              >
+                <ChevronRightIcon className={`w-4 h-4 transition-transform ${fileCollapsed ? '' : 'rotate-90'}`} />
+              </button>
+              <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
+              <div className="min-w-0">
+                <div className="text-sm text-vscode-text truncate">{fileLabel}</div>
+                <div className="text-xs text-vscode-text-secondary truncate">{fileName}</div>
+              </div>
+            </div>
+
+            {!fileCollapsed && (
+              <div>
+                {tree.length > 0 ? (
+                  <nav className="space-y-1">{renderNodes(tree, null, 1.0)}</nav>
+                ) : (
+                  <div className="px-2 py-2 text-sm text-vscode-text-secondary">No outline available</div>
+                )}
+
+                {/* Assets folder (only when the doc references zadoox-asset:// files) */}
+                {assets.length > 0 && (
+                  <div className="mt-3">
+                    <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
+                      <button
+                        type="button"
+                        aria-label={assetsCollapsed ? 'Expand assets' : 'Collapse assets'}
+                        onClick={() => setAssetsCollapsed((v) => !v)}
+                        className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
+                      >
+                        <ChevronRightIcon
+                          className={`w-4 h-4 transition-transform ${assetsCollapsed ? '' : 'rotate-90'}`}
+                        />
+                      </button>
+                      <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
+                      <span className="text-sm text-vscode-text-secondary truncate">assets</span>
+                    </div>
+
+                    {!assetsCollapsed && (
+                      <div className="mt-1 space-y-1">
+                        {assets.map((a) => (
+                          <div
+                            key={a.key}
+                            className="relative flex items-center gap-2 py-1 px-2 text-sm rounded hover:bg-vscode-active transition-colors text-vscode-text-secondary"
+                            style={{ paddingLeft: '2.25rem' }}
+                            onMouseEnter={() => {
+                              const el = document.querySelector(`[data-asset-row="${a.key}"]`);
+                              if (el && el instanceof HTMLElement) {
+                                setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: el.getBoundingClientRect() });
+                              } else {
+                                setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: new DOMRect(0, 0, 0, 0) });
+                              }
+                              void ensureAssetUrl(a.key);
+                            }}
+                            onMouseLeave={() => {
+                              setHoveredAsset((cur) => (cur?.key === a.key ? null : cur));
+                            }}
+                            data-asset-row={a.key}
+                          >
+                            <PhotoIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
+                            <span className="truncate">{a.key}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {collapsibleIds.length > 0 && (
-        <div className="flex items-center justify-end gap-2 mb-2">
-          <button
-            type="button"
-            onClick={collapseAll}
-            className="px-2 py-1 text-xs bg-vscode-buttonBg hover:bg-vscode-buttonHoverBg text-vscode-buttonText rounded border border-vscode-border transition-colors"
-          >
-            Collapse all
-          </button>
-          <button
-            type="button"
-            onClick={expandAll}
-            className="px-2 py-1 text-xs bg-vscode-buttonBg hover:bg-vscode-buttonHoverBg text-vscode-buttonText rounded border border-vscode-border transition-colors"
-          >
-            Expand all
-          </button>
-        </div>
-      )}
-
-      {!fileCollapsed && (
-        <>
-          {tree.length > 0 ? (
-            <nav className="space-y-1">{renderNodes(tree)}</nav>
-          ) : (
-            <div className="px-2 py-2 text-sm text-vscode-text-secondary">No outline available</div>
-          )}
-
-          {/* Assets folder (only when the doc references zadoox-asset:// files) */}
-          {assets.length > 0 && (
-            <div className="mt-3">
-              <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
-                <button
-                  type="button"
-                  aria-label={assetsCollapsed ? 'Expand assets' : 'Collapse assets'}
-                  onClick={() => setAssetsCollapsed((v) => !v)}
-                  className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
-                >
-                  <ChevronRightIcon className={`w-4 h-4 transition-transform ${assetsCollapsed ? '' : 'rotate-90'}`} />
-                </button>
-                <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
-                <span className="text-sm text-vscode-text-secondary truncate">assets</span>
-              </div>
-
-              {!assetsCollapsed && (
-                <div className="mt-1 space-y-1">
-                  {assets.map((a) => (
-                    <div
-                      key={a.key}
-                      className="relative flex items-center gap-2 py-1 px-2 text-sm rounded hover:bg-vscode-active transition-colors text-vscode-text-secondary"
-                      style={{ paddingLeft: '2.25rem' }}
-                      title={a.relPath}
-                      onMouseEnter={() => {
-                        setHoveredAssetKey(a.key);
-                        void ensureAssetUrl(a.key);
-                      }}
-                      onMouseLeave={() => {
-                        setHoveredAssetKey((cur) => (cur === a.key ? null : cur));
-                      }}
-                    >
-                      <PhotoIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
-                      <span className="truncate">{a.key}</span>
-
-                      {hoveredAssetKey === a.key && assetUrlByKey[a.key] && (
-                        <div
-                          className="absolute z-50 left-full top-1/2 -translate-y-1/2 ml-2 bg-[#252526] border border-[#3e3e42] rounded p-2 shadow-lg"
-                          style={{ width: 180 }}
-                          role="tooltip"
-                        >
-                          <div className="bg-white rounded" style={{ width: '100%', height: 140 }}>
-                            <Image
-                              src={assetUrlByKey[a.key]}
-                              alt={a.key}
-                              width={176}
-                              height={140}
-                              className="block w-full h-full"
-                              style={{ objectFit: 'contain' }}
-                              unoptimized
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </>
-      )}
+      {/* Render hover preview outside the sidebar scroll container so it isn't clipped */}
+      {typeof document !== 'undefined' && typeof window !== 'undefined' ? renderAssetPreview() : null}
     </div>
   );
 }
