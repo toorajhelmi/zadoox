@@ -296,32 +296,6 @@ See `POST_MVP_FEATURES.md` for detailed post-MVP feature list, including:
 
 ---
 
-### Phase 6: Shared Package - Editor Logic ✅
-**Status**: Not Started
-
-- [ ] Markdown utilities:
-  - [ ] Extended Markdown parser
-  - [ ] Markdown renderer (HTML)
-- [ ] LaTeX utilities:
-  - [ ] LaTeX to Extended Markdown converter
-  - [ ] Extended Markdown to LaTeX converter
-- [ ] Placeholder system:
-  - [ ] Placeholder resolver
-  - [ ] Placeholder replacer
-  - [ ] Placeholder validator
-- [ ] Unit tests for editor logic:
-  - [ ] Markdown parser tests
-  - [ ] LaTeX converter tests
-  - [ ] Placeholder system tests
-
-**Deliverables**:
-- Editor logic in shared package
-- Markdown/LaTeX conversion working
-- Placeholder system functional
-- Unit tests for all editor logic functions
-
----
-
 ### Phase 7: Web App - Document Editor (Basic) ✅
 **Status**: ✅ COMPLETED
 
@@ -475,8 +449,6 @@ This phase focuses on the core AI-driven features that make Zadoox feel like a f
 - Add inline suggestion underlines (CodeMirror decorations)
 - Implement smart completion with context-aware autocomplete
 - Add citation research service (Phase 9 backend + Phase 7.5 frontend)
-
----
 
 ---
 
@@ -772,30 +744,6 @@ This phase implements undo/redo functionality for document editing, allowing use
 
 ---
 
-### Phase 8: Backend API - Export Service ✅
-**Status**: Not Started
-
-- [ ] Extended Markdown parser
-- [ ] LaTeX converter:
-  - [ ] Markdown → LaTeX conversion
-  - [ ] Placeholder replacement ({REF}, {CH})
-  - [ ] Math support
-  - [ ] Image handling
-- [ ] PDF generation:
-  - [ ] LaTeX compilation integration
-  - [ ] Template support (basic)
-  - [ ] Error handling
-- [ ] Export API endpoint
-- [ ] File storage integration (Supabase Storage)
-
-**Deliverables**:
-- Export API working
-- Can convert Extended Markdown to LaTeX
-- Can generate PDF from LaTeX
-- Downloads working
-
----
-
 ### Phase 9: Backend API - AI Service ✅
 **Status**: Not Started
 
@@ -933,16 +881,7 @@ Goal: Introduce **IR (Intermediate Representation)** as Zadoox’s internal cano
 - [ ] Update AI metrics service to accept changed node IDs + node payloads, returning metrics per node
 - [ ] Ensure only changed nodes are re-analyzed (debounced/incremental)
 
-**Deliverables**:
-- ✅ XMD → IR parsing working (block-first, no-throw)
-- ✅ IR store with stable node IDs + node hashes
-- ✅ Node-level delta computation + event emission
-- ⚠️ Preview and outline driven from IR (partially: IR Preview + optional outline flag; not default yet)
-- ⏳ AI metrics computed per changed node (not implemented yet)
-
----
-
-### Phase 12: Web App - Editor MD ↔ LaTeX Switch (IR-backed) ✅
+#### Web App - Editor MD ↔ LaTeX Switch (IR-backed) ✅
 **Status**: ✅ COMPLETED
 
 - [x] Add an **Edit view switch** (toggle) to swap between **MD** and **LaTeX** editing modes
@@ -976,6 +915,11 @@ Goal: Introduce **IR (Intermediate Representation)** as Zadoox’s internal cano
   - [x] Error handling + safe fallback (never lose user text)
 
 **Deliverables**:
+- ✅ XMD → IR parsing working (block-first, no-throw)
+- ✅ IR store with stable node IDs + node hashes
+- ✅ Node-level delta computation + event emission
+- ⚠️ Preview and outline driven from IR (partially: IR Preview + optional outline flag; not default yet)
+- ⏳ AI metrics computed per changed node (not implemented yet)
 - ✅ Editor can switch between MD and LaTeX modes using IR as the canonical model
 - ✅ Switching updates/saves **both** representations (MD and LaTeX)
 - ✅ IR↔LaTeX conversion with support for document title, author, date, figures with attributes
@@ -988,7 +932,7 @@ Goal: Introduce **IR (Intermediate Representation)** as Zadoox’s internal cano
 
 ---
 
-### Phase 12.1: Publishing Features 📤
+### Phase 12: Publishing Features 📤
 **Status**: ✅ COMPLETED (Core MVP)
 
 This phase implements publishing capabilities to export documents to various formats and platforms. The focus is on a minimal, clean UX from the project page, with support for both MD and LaTeX as input sources.
@@ -1089,7 +1033,7 @@ This phase implements publishing capabilities to export documents to various for
 - ✅ Downloadable LaTeX package for Overleaf (`main.tex` + `assets/`)
 - ✅ Asset handling across publish flows (HTML preview + LaTeX compile)
 
-**Not in Phase 12.1 (moved to later)**:
+**Not in Phase 12 (moved to later)**:
 - ⏳ Public hosting + stable web URL/slug
 - ⏳ Published links management + republish tracking
 - ⏳ Async publish jobs/status in DB
@@ -1108,7 +1052,7 @@ This phase implements publishing capabilities to export documents to various for
 ### Phase 12.2: Publishing Integrations (Google Docs + GitHub) 🔌
 **Status**: Not Started
 
-This phase adds external publishing integrations on top of Phase 12.1 (core PDF/Web). These are intentionally separated because they require OAuth + third‑party APIs and are higher-variance to ship.
+This phase adds external publishing integrations on top of Phase 12 (core PDF/Web). These are intentionally separated because they require OAuth + third‑party APIs and are higher-variance to ship.
 
 #### Integration Targets:
 - [ ] **Google Docs Publishing**:
@@ -1268,29 +1212,6 @@ code/
 ├── pnpm-workspace.yaml       # Phase 0
 └── tsconfig.json             # Phase 0
 ```
-
----
-
-## Development Order
-
-1. **Phase 0**: Foundation (monorepo setup, CI/CD infrastructure)
-2. **Phase 1**: Shared types + testing framework setup
-3. **Phase 2**: Database schema
-4. **Phase 3**: Backend core API (+ unit tests, deployment setup)
-5. **Phase 6**: Shared editor logic (needed for Phase 4) (+ unit tests)
-6. **Phase 4**: Export service (+ unit tests)
-7. **Phase 5**: AI service (+ unit tests)
-8. **Phase 13**: API client (needed for Phase 7+)
-9. **Phase 7**: Web app setup & auth (+ deployment setup)
-10. **Phase 8**: Dashboard
-11. **Phase 9**: Basic editor
-12. **Phase 10**: Editor features
-13. **Phase 11**: AI integration
-14. **Phase 12**: Editor MD ↔ LaTeX Switch (IR-backed)
-15. **Phase 12.1**: Publishing Features (PDF, Web)
-16. **Phase 12.2**: Publishing Integrations (Google Docs, GitHub)
-17. **Phase 14**: Integration & testing (integration tests, E2E)
-
 ---
 
 ## Dependencies Between Phases
@@ -1303,32 +1224,26 @@ Phase 1 (Shared Types)
 Phase 2 (Database) ──┐
     ↓                │
 Phase 3 (Backend Core) ──┐
-    ↓                    │
-Phase 13 (API Client) ───┤
-    ↓                    │
-Phase 4 (Web Setup) ─────┤
-    ↓                    │
-Phase 5 (Dashboard) ─────┤
-    ↓                    │
-Phase 7 (AI)             │
-    ↓                    │
-Phase 8 (Editor Logic)    │
-    ↓                    │
-Phase 9 (Basic Editor) ──┤
-    ↓                    │
-Phase 10 (Editor Features)┤
-    ↓                     │
-Phase 11 (AI UI) ─────────┤
-    ↓                     │
-Phase 6 (Export) ─────────┤
-    ↓                     │
-Phase 12 (MD ↔ LaTeX Switch) ─────┤
-    ↓                     │
-Phase 12.1 (Publishing) ──┤
-    ↓                     │
-Phase 12.2 (Publishing Integrations) ──┤
-    ↓                     │
-Phase 14 (Integration) ←──┘
+    ↓                      │
+Phase 4 (Web Setup & Auth) ─┤
+    ↓                      │
+Phase 5 (Project Dashboard) ┤
+    ↓                      │
+Phase 7 (Basic Editor) ─────┤
+    ↓                      │
+Phase 9 (Backend AI Service) ─┐
+    ↓                         │
+Phase 7.5 (AI UI / WOW) ──────┤
+    ↓                         │
+Phase 11 (IR-first + MD ↔ LaTeX Switch) ──┤
+    ↓                         │
+Phase 12 (Publishing: PDF/Web) ───────────┤
+    ↓                         │
+Phase 12.2 (Publishing Integrations) ─────┤
+    ↓                         │
+Phase 13 (Project Assets) ────────────────┤
+    ↓                         │
+Phase 14 (Integration) ←──────────────────┘
 ```
 
 ---
@@ -1371,13 +1286,12 @@ Phase 14 (Integration) ←──┘
 
 **Last Updated**: January 2, 2026
 
-**Current Phase**: Phase 12 - Editor MD ↔ LaTeX Switch ✅ COMPLETED
+**Current Phase**: Phase 13 - Project Assets (Files & Folders) 📁
 
 **Next Steps**: 
-1. Phase 12.1 - Publishing Features (PDF, Web)
-2. Phase 12.2 - Publishing Integrations (Google Docs, GitHub)
-3. Phase 13 - Shared Package API Client (if needed)
-4. Phase 14 - Integration & Testing (fix authentication, integration tests, polish)
+1. Phase 12.2 - Publishing Integrations (Google Docs, GitHub)
+2. Phase 13 - Project Assets (Files & Folders)
+3. Phase 14 - Integration & Testing (fix authentication, integration tests, polish)
 
 ---
 
