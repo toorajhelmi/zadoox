@@ -147,7 +147,7 @@ function renderNodes(nodes: IrNode[]): string {
         placement === 'inline' &&
         align !== 'center' &&
         next?.type === 'paragraph' &&
-        String((next as any).text ?? '').trim().length > 0;
+        String((next as { text?: unknown }).text ?? '').trim().length > 0;
 
       if (canWrap) {
         const wrap = renderNode(n).trimEnd();
