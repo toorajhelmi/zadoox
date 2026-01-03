@@ -4,7 +4,7 @@
   "private": true,
   "description": "Zadoox - AI-powered documentation platform",
   "scripts": {
-    "dev": "pnpm --parallel --filter './packages/backend' --filter './packages/web' dev",
+    "dev": "bash scripts/dev.sh",
     "dev:backend": "pnpm --filter './packages/backend' dev",
     "dev:web": "pnpm --filter './packages/web' dev",
     "build": "pnpm --recursive build",

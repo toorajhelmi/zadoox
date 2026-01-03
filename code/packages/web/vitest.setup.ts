@@ -26,6 +26,16 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/lib/supabase/client', () => ({
   createClient: vi.fn(() => ({
     auth: {
+      // Our API client may call getUser() to refresh/validate session before reading access_token.
+      getUser: vi.fn().mockResolvedValue({
+        data: { user: { id: 'mock-user' } },
+        error: null,
+      }),
+      onAuthStateChange: vi.fn((cb: (event: unknown, session: { access_token?: string } | null) => void) => {
+        // Immediately report the current session once for convenience.
+        void Promise.resolve().then(() => cb('INITIAL_SESSION', { access_token: 'mock-token' }));
+        return { data: { subscription: { unsubscribe: vi.fn() } } };
+      }),
       getSession: vi.fn().mockResolvedValue({
         data: {
           session: {

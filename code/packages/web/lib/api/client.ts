@@ -56,6 +56,8 @@ async function getAuthToken(): Promise<string | null> {
   try {
     const { createClient } = await import('@/lib/supabase/client');
     const supabase = createClient();
+    // Ensure session is refreshed if needed (mirrors middleware behavior).
+    await supabase.auth.getUser();
     const { data: { session } } = await supabase.auth.getSession();
     return session?.access_token || null;
   } catch {
@@ -160,6 +162,25 @@ export const api = {
       await fetchApi<void>(`/projects/${id}`, {
         method: 'DELETE',
       });
+    },
+  },
+
+  publish: {
+    web: async (
+      projectId: string,
+      request: { documentId: string; source: 'markdown' | 'latex'; purpose?: 'web' | 'pdf' }
+    ): Promise<{ html: string; title: string }> => {
+      const response = await fetchApi<{ html: string; title: string }>(
+        `/projects/${projectId}/publish/web`,
+        {
+          method: 'POST',
+          body: JSON.stringify(request),
+        }
+      );
+      if (!response.data) {
+        throw new ApiError('Failed to generate publish HTML', 'PUBLISH_WEB_FAILED', 500);
+      }
+      return response.data;
     },
   },
 

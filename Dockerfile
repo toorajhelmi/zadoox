@@ -1,5 +1,12 @@
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:20-bookworm-slim AS builder
+
+# Install OS deps (needed for downloading tools)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    xz-utils \
+  && rm -rf /var/lib/apt/lists/*
 
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@8.12.0 --activate
@@ -20,13 +27,28 @@ COPY code/packages/backend ./packages/backend
 
 # Build shared and backend
 RUN pnpm --filter @zadoox/shared build
-RUN pnpm --filter backend build
+RUN pnpm --filter @zadoox/backend build
 
 # Verify build output
 RUN ls -la /app/packages/backend/dist/ || (echo "ERROR: Backend dist not found" && exit 1)
 
 # Production stage
-FROM node:20-alpine
+FROM node:20-bookworm-slim
+
+# Install Tectonic (LaTeX -> PDF compiler)
+# This keeps our PDF pipeline deterministic and deployable on Railway.
+ARG TECTONIC_VERSION=0.15.0
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+  && rm -rf /var/lib/apt/lists/* \
+  && curl -L "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic@${TECTONIC_VERSION}/tectonic-${TECTONIC_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+    -o /tmp/tectonic.tgz \
+  && tar -xzf /tmp/tectonic.tgz -C /tmp \
+  && mv /tmp/tectonic /usr/local/bin/tectonic \
+  && chmod +x /usr/local/bin/tectonic \
+  && rm -f /tmp/tectonic.tgz \
+  && tectonic --version
 
 WORKDIR /app
 
@@ -45,7 +67,7 @@ COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder /app/packages/backend/package.json ./packages/backend/package.json
 
 # Install production dependencies (this will resolve workspace:*)
-RUN pnpm install --prod --frozen-lockfile --filter backend
+RUN pnpm install --prod --frozen-lockfile --filter @zadoox/backend
 
 # Copy built backend dist
 COPY --from=builder /app/packages/backend/dist ./packages/backend/dist

@@ -943,41 +943,198 @@ Goal: Introduce **IR (Intermediate Representation)** as Zadoox’s internal cano
 ---
 
 ### Phase 12: Web App - Editor MD ↔ LaTeX Switch (IR-backed) ✅
-**Status**: Not Started
+**Status**: ✅ COMPLETED
 
-- [ ] Add an **Edit view switch** (toggle) to swap between **MD** and **LaTeX** editing modes
-- [ ] Make **IR the in-memory source of truth** while editing:
-  - [ ] On MD edits: update IR (existing XMD/MD → IR path)
-  - [ ] On LaTeX edits: update IR via **supported-subset LaTeX → IR** parser
-- [ ] On mode switch, **derive the other format from IR** (no direct MD↔LaTeX conversion):
-  - [ ] Switching to LaTeX: render LaTeX from IR and populate editor
-  - [ ] Switching to MD: render MD/XMD from IR and populate editor
-- [ ] Persist both representations on switch:
-  - [ ] When user switches **MD → LaTeX**, save **both** MD and generated LaTeX
-  - [ ] When user switches **LaTeX → MD**, save **both** LaTeX and generated MD
-- [ ] When **both MD/XMD and LaTeX already exist**, decide whether to **reuse/update** vs **regenerate/overwrite** on switch:
-  - [ ] **Approach (prevent divergence by design)**:
-    - [ ] On document open, load in the **last edited format** (MD or LaTeX) and build/update IR from that source
-    - [ ] Treat the other format as a **derived cache** (may be stale) and only regenerate it from IR at switch time
-    - [ ] Store `lastEditedFormat` + `irHashAtLastSync` so switch can quickly decide “already in sync” vs “regenerate”
+- [x] Add an **Edit view switch** (toggle) to swap between **MD** and **LaTeX** editing modes
+- [x] Make **IR the in-memory source of truth** while editing:
+  - [x] On MD edits: update IR (existing XMD/MD → IR path)
+  - [x] On LaTeX edits: update IR via **supported-subset LaTeX → IR** parser
+- [x] On mode switch, **derive the other format from IR** (no direct MD↔LaTeX conversion):
+  - [x] Switching to LaTeX: render LaTeX from IR and populate editor
+  - [x] Switching to MD: render MD/XMD from IR and populate editor
+- [x] Persist both representations on switch:
+  - [x] When user switches **MD → LaTeX**, save **both** MD and generated LaTeX
+  - [x] When user switches **LaTeX → MD**, save **both** LaTeX and generated MD
+- [x] When **both MD/XMD and LaTeX already exist**, decide whether to **reuse/update** vs **regenerate/overwrite** on switch:
+  - [x] **Approach (prevent divergence by design)**:
+    - [x] On document open, load in the **last edited format** (MD or LaTeX) and build/update IR from that source
+    - [x] Treat the other format as a **derived cache** (may be stale) and only regenerate it from IR at switch time
+    - [x] Store `lastEditedFormat` + `irHashAtLastSync` so switch can quickly decide "already in sync" vs "regenerate"
     - [ ] (Optional hardening) If multiple sessions can edit, detect stale writes via version/etag and prompt instead of overwriting
-  - [ ] Track per-representation metadata (at minimum): `lastSyncedFrom` (MD|LaTeX), `lastSyncedAt`, and/or a stable `irHashAtLastSync`
-  - [ ] If the target representation is **already in sync** with current IR (`irHashAtLastSync` matches), **reuse** it (no regeneration)
-  - [ ] If only the current-mode representation is dirty and IR reflects it, **regenerate** the other side from IR
+  - [x] Track per-representation metadata (at minimum): `lastSyncedFrom` (MD|LaTeX), `lastSyncedAt`, and/or a stable `irHashAtLastSync`
+  - [x] If the target representation is **already in sync** with current IR (`irHashAtLastSync` matches), **reuse** it (no regeneration)
+  - [x] If only the current-mode representation is dirty and IR reflects it, **regenerate** the other side from IR
   - [ ] If both sides have diverged since last sync (conflict), **prompt** user before overwriting, with a safe fallback to prevent data loss
 - [ ] Add **LaTeX support validation** (subset only):
   - [ ] Detect unsupported LaTeX commands/environments as user types (or on switch)
   - [ ] Show a clear warning listing unsupported constructs
   - [ ] If unsupported constructs exist, user **cannot switch back to MD** (round-trip blocked) until removed
-- [ ] UX polish:
+- [x] UX polish:
   - [ ] Confirm dialog on switch if it will overwrite the non-active representation
-  - [ ] Preserve cursor/scroll as much as possible across switches
-  - [ ] Error handling + safe fallback (never lose user text)
+  - [x] Preserve cursor/scroll as much as possible across switches
+  - [x] Error handling + safe fallback (never lose user text)
 
 **Deliverables**:
-- Editor can switch between MD and LaTeX modes using IR as the canonical model
-- Switching updates/saves **both** representations (MD and LaTeX)
-- Unsupported LaTeX constructs produce warnings and correctly **block MD round-trip**
+- ✅ Editor can switch between MD and LaTeX modes using IR as the canonical model
+- ✅ Switching updates/saves **both** representations (MD and LaTeX)
+- ✅ IR↔LaTeX conversion with support for document title, author, date, figures with attributes
+- ✅ XMD syntax extensions: `@ Title`, `@^ Author`, `@= Date`, figure attributes via HTML comments
+- ✅ Round-trip preservation of figure attributes (align, width, placement) between MD and LaTeX
+- ✅ `lastEditedFormat` tracking to preserve editor mode across browser refreshes
+- ⏳ Unsupported LaTeX construct validation (not yet implemented - future enhancement)
+
+**Completed**: Implemented full MD↔LaTeX switching with IR as the source of truth. The editor can seamlessly switch between Markdown and LaTeX editing modes, with both representations saved to the database. The system uses IR to convert between formats, ensuring round-trip safety. Extended XMD syntax supports document metadata (title, author, date) and figure attributes. The editor preserves the last active format across browser refreshes.
+
+---
+
+### Phase 12.1: Publishing Features 📤
+**Status**: Not Started
+
+This phase implements publishing capabilities to export documents to various formats and platforms. The focus is on a minimal, clean UX from the project page, with support for both MD and LaTeX as input sources.
+
+#### Parity & Compatibility (MVP Reality):
+- **No parity guarantee**: MD/XMD and LaTeX will not have full feature parity in MVP (either side may contain constructs the other side can’t represent yet).
+- **Publishing must be source-explicit**: each publish action must clearly choose a **source representation** (MD/XMD or LaTeX) and report any **unsupported/ignored** constructs for the selected pipeline.
+- **No silent loss**: if the chosen source contains unsupported constructs for the target pipeline, the UI must warn and offer a clear choice (switch source, continue with degraded output, or cancel).
+
+#### Frontend Implementation:
+- [ ] **Project Page Publishing UI**:
+  - [ ] Publishing section/panel on project page
+  - [ ] Minimal, clean design (buttons or dropdown menu)
+  - [ ] Publishing options: PDF, Web
+  - [ ] Publishing status indicators (loading, success, error)
+  - [ ] Published links display (if already published)
+  - [ ] Republish/update functionality
+  - [ ] **Project publishing context** (minimal MVP rules):
+    - [ ] Support two project kinds:
+      - [ ] **Standalone** (academic/whitepaper): project has one “primary/active” document
+      - [ ] **Book**: project consists of multiple chapter documents/files
+    - [ ] Standalone: Publish button defaults to the **active document** (with a small “Active doc” indicator)
+    - [ ] Book: Publish button defaults to **publish the whole project** (all chapters) where applicable (Web), and provides a simple “PDF target” choice:
+      - [ ] Whole book PDF (preferred for book-style projects)
+      - [ ] Single chapter PDF (from active chapter/document) as a fallback if full-book pipeline isn’t ready
+
+- [ ] **Publishing Flow**:
+  - [ ] Select publishing target (PDF, Web)
+  - [ ] Publishing progress indicator
+  - [ ] Success message with link/download
+  - [ ] Error handling and retry
+  - [ ] **Active document selection (Standalone / fallback path)**:
+    - [ ] Define and persist an “active document” per project (MVP: last opened/edited document)
+    - [ ] If the publish action requires a single-document source and none is active, prompt user to pick a document
+
+- [ ] **Input Format Selection**:
+  - [ ] Default source selection per target:
+    - [ ] PDF: default to the document’s current/selected source (MD/XMD or LaTeX); recommend LaTeX for full fidelity, MD/XMD for preview-matching output
+    - [ ] Web: default to MD/XMD if available; otherwise LaTeX (best-effort)
+  - [ ] Allow user to choose input format (if both exist)
+  - [ ] Show a source indicator + compatibility status (e.g., “Best-effort / Lossy / Unsupported”) before confirming publish
+  - [ ] If the chosen source is known-lossy for the target, require explicit confirmation (no silent loss)
+
+#### Publishing Targets:
+- [ ] **PDF Publishing**:
+  - [ ] Generate PDF from **LaTeX** (full fidelity; compile directly)
+  - [ ] Generate PDF from **MD/XMD** (best-effort):
+    - [ ] Convert MD/XMD to HTML for print (via IR → HTML)
+    - [ ] Render HTML → PDF (print CSS; match preview styling as closely as possible)
+    - [ ] Detect and warn on unsupported constructs (e.g., figure placement/alignment directives not yet represented in HTML/CSS print)
+    - [ ] Allow user to continue with degraded output or switch to LaTeX source (if available)
+  - [ ] Download PDF file
+  - [ ] PDF preview before download (optional)
+  - [ ] PDF metadata (title, author, date from document)
+
+- [ ] **Web Publishing**:
+  - [ ] Generate static HTML from MD/XMD (via IR → HTML)
+  - [ ] Generate static HTML from LaTeX (best-effort; warn on unsupported constructs)
+  - [ ] Host on Zadoox web hosting (public URL)
+  - [ ] Custom URL/slug per project
+  - [ ] Web preview before publishing
+  - [ ] Update/republish functionality
+
+#### Backend Implementation:
+- [ ] **Export Service Enhancements**:
+  - [ ] PDF generation service:
+    - [ ] HTML → PDF renderer (primary for MD/XMD; print CSS)
+    - [ ] LaTeX → PDF compilation (full-fidelity path for LaTeX source)
+  - [ ] HTML generation service (IR → HTML)
+  - [ ] Publishing job queue (for async operations)
+  - [ ] Publishing status tracking
+
+- [ ] **API Endpoints**:
+  - [ ] `POST /api/v1/projects/:projectId/publish/pdf` - Generate and download PDF
+  - [ ] `POST /api/v1/projects/:projectId/publish/web` - Publish to web hosting
+  - [ ] `GET /api/v1/projects/:projectId/publish/status` - Get publishing status
+  - [ ] `GET /api/v1/projects/:projectId/publish/links` - Get published links
+
+#### Database Schema:
+- [ ] **Publishing Metadata**:
+  - [ ] `project_publishing` table (or extend projects table)
+  - [ ] Track published links (web URL, last PDF export metadata if needed)
+  - [ ] Track publishing timestamps
+  - [ ] Track publishing status per target
+
+**Deliverables**:
+- ✅ PDF publishing (download from project page)
+- ✅ Web publishing (hosted on Zadoox, public URL)
+- ✅ Minimal publishing UI on project page
+- ✅ Support for both MD and LaTeX as input
+- ✅ Publishing status tracking
+- ✅ Published links management
+
+**Note**: This phase focuses on minimal UX for MVP. Future enhancements (Phase 12.3+) will include:
+- Advanced publishing settings (templates, styling)
+- Billing/subscription integration
+- Publishing analytics
+- Scheduled publishing
+- Multi-document publishing
+- Publishing history/versioning
+- Custom domains for web publishing
+
+---
+
+### Phase 12.2: Publishing Integrations (Google Docs + GitHub) 🔌
+**Status**: Not Started
+
+This phase adds external publishing integrations on top of Phase 12.1 (core PDF/Web). These are intentionally separated because they require OAuth + third‑party APIs and are higher-variance to ship.
+
+#### Integration Targets:
+- [ ] **Google Docs Publishing**:
+  - [ ] Google Docs API integration
+  - [ ] OAuth authentication for Google account
+  - [ ] Convert MD/XMD to Google Docs format (via IR)
+  - [ ] Convert LaTeX to Google Docs format (via IR; best-effort)
+  - [ ] Create new Google Doc or update existing
+  - [ ] Link to published Google Doc
+
+- [ ] **GitHub Publishing**:
+  - [ ] GitHub OAuth integration (or PAT for MVP)
+  - [ ] Select or create target repository (per project)
+  - [ ] Standalone publish: push a single document (e.g., `document.md`) + `assets/`
+  - [ ] Book publish: push one file per chapter (e.g., `chapters/*.md`) + `assets/`
+  - [ ] Commit message + branch strategy (MVP: commit to a chosen branch)
+  - [ ] Link to repo/commit/branch
+  - [ ] (User workflow) GitBook can be configured to use the GitHub repo as its source
+
+#### Backend Implementation:
+- [ ] Google Docs API client
+- [ ] GitHub API client (repo/file commit/push)
+- [ ] OAuth token management (Google, GitHub)
+- [ ] API Endpoints:
+  - [ ] `POST /api/v1/projects/:projectId/publish/google-docs` - Publish to Google Docs
+  - [ ] `POST /api/v1/projects/:projectId/publish/github` - Publish to GitHub (commit files)
+
+#### Frontend Implementation:
+- [ ] Add publishing options: Google Docs, GitHub (in the same Project Page Publish panel)
+- [ ] OAuth flow for Google Docs/GitHub (if not authenticated)
+- [ ] Show published links (Google Doc URL, GitHub repo/branch/commit)
+
+#### Database Schema:
+- [ ] Track published links (Google Doc URL, GitHub repo/branch/commit)
+- [ ] Track OAuth tokens (encrypted) for Google/GitHub
+
+**Deliverables**:
+- ✅ Google Docs publishing (OAuth + create/update)
+- ✅ GitHub publishing (OAuth + commit files)
 
 ---
 
@@ -1100,7 +1257,9 @@ code/
 12. **Phase 10**: Editor features
 13. **Phase 11**: AI integration
 14. **Phase 12**: Editor MD ↔ LaTeX Switch (IR-backed)
-15. **Phase 14**: Integration & testing (integration tests, E2E)
+15. **Phase 12.1**: Publishing Features (PDF, Web)
+16. **Phase 12.2**: Publishing Integrations (Google Docs, GitHub)
+17. **Phase 14**: Integration & testing (integration tests, E2E)
 
 ---
 
@@ -1134,6 +1293,10 @@ Phase 11 (AI UI) ─────────┤
 Phase 6 (Export) ─────────┤
     ↓                     │
 Phase 12 (MD ↔ LaTeX Switch) ─────┤
+    ↓                     │
+Phase 12.1 (Publishing) ──┤
+    ↓                     │
+Phase 12.2 (Publishing Integrations) ──┤
     ↓                     │
 Phase 14 (Integration) ←──┘
 ```
@@ -1176,15 +1339,15 @@ Phase 14 (Integration) ←──┘
 
 ## Progress Tracking
 
-**Last Updated**: December 20, 2024
+**Last Updated**: January 2, 2026
 
-**Current Phase**: Phase 4 - Web App Setup (Auth Temporarily Disabled)
+**Current Phase**: Phase 12 - Editor MD ↔ LaTeX Switch ✅ COMPLETED
 
 **Next Steps**: 
-1. Continue with Phase 5 - Project Dashboard (auth disabled for now)
-2. Build out remaining web app features (Phases 5-12)
-3. Fix authentication in Phase 14 - Integration & Testing
-4. Complete integration testing and polish
+1. Phase 12.1 - Publishing Features (PDF, Web)
+2. Phase 12.2 - Publishing Integrations (Google Docs, GitHub)
+3. Phase 13 - Shared Package API Client (if needed)
+4. Phase 14 - Integration & Testing (fix authentication, integration tests, polish)
 
 ---
 
