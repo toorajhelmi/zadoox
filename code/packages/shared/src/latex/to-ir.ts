@@ -240,6 +240,46 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
   return doc;
 }
 
+function latexGraphicPathToSrc(pathArg: string): string {
+  const p = String(pathArg ?? '').trim();
+  if (p.startsWith('assets/')) return `zadoox-asset://${p.slice('assets/'.length)}`;
+  return p;
+}
+
+function latexWidthToXmdWidth(widthRaw: string): string | undefined {
+  const w = String(widthRaw ?? '').trim();
+  // Convert <n>\textwidth to a % string (best-effort).
+  const m = /^(\d+(?:\.\d+)?)\\textwidth$/.exec(w);
+  if (m) {
+    const n = Number(m[1]);
+    if (!Number.isFinite(n) || n <= 0) return undefined;
+    const pct = n * 100;
+    const pretty = pct % 1 === 0 ? String(pct.toFixed(0)) : String(pct.toFixed(1));
+    return `${pretty}%`;
+  }
+  // Keep absolute dims as-is.
+  if (/^\d+(\.\d+)?(cm|mm|in|pt)$/.test(w)) return w;
+  return undefined;
+}
+
+function parseIncludegraphicsLine(line: string): { src?: string; width?: string } {
+  const t = String(line ?? '').trim();
+  // \includegraphics[width=...]{\detokenize{assets/...}}
+  const detok = /^\\includegraphics\s*(?:\[([^\]]*)\])?\s*\{\s*\\detokenize\{([\s\S]*?)\}\s*\}\s*$/.exec(t);
+  const plain = /^\\includegraphics\s*(?:\[([^\]]*)\])?\s*\{\s*([^{}]+?)\s*\}\s*$/.exec(t);
+  const m = detok ?? plain;
+  if (!m) return {};
+  const opt = String(m[1] ?? '').trim();
+  const pathArg = String(m[2] ?? '').trim();
+
+  let width: string | undefined;
+  if (opt) {
+    const wm = /(^|,)\s*width\s*=\s*([^,]+)\s*(,|$)/.exec(opt);
+    if (wm) width = String(wm[2] ?? '').trim();
+  }
+  return { src: latexGraphicPathToSrc(pathArg), width };
+}
+
 type Block =
   | {
       kind: 'title';
@@ -505,6 +545,70 @@ function parseBlocks(latex: string): Block[] {
       break;
     }
 
+    // wrapfigure environment (inline placement)
+    const wrapBegin = /^\\begin\{wrapfigure\}\{([lr])\}\{([^}]+)\}\s*$/.exec(line.trim());
+    if (wrapBegin) {
+      const startOffset = start;
+      let j = i + 1;
+      let src = '';
+      let align: string | undefined = wrapBegin[1] === 'r' ? 'right' : 'left';
+      let placement: string | undefined = 'inline';
+      let width: string | undefined = latexWidthToXmdWidth(String(wrapBegin[2] ?? '').trim());
+      let desc: string | undefined;
+      let caption = '';
+      let label: string | undefined;
+
+      while (j < lines.length && lines[j].line.trim() !== '\\end{wrapfigure}') {
+        const t = lines[j].line.trim();
+        if (t === '\\raggedleft') align = 'right';
+        if (t === '\\raggedright') align = 'left';
+        if (t === '\\centering') align = 'center';
+
+        const ig = parseIncludegraphicsLine(t);
+        if (!src && ig.src) src = ig.src;
+        // If width not specified by wrapfigure, fall back to includegraphics width if it maps well.
+        if (!width && ig.width) width = latexWidthToXmdWidth(ig.width);
+
+        const cap = /^\\caption\{([^}]*)\}(?:\s*%.*)?$/.exec(t);
+        if (cap) {
+          caption = latexInlineToMarkdown((cap[1] ?? '').trim());
+          j++;
+          continue;
+        }
+        const lab = /^\\label\{([^}]*)\}(?:\s*%.*)?$/.exec(t);
+        if (lab) {
+          label = latexInlineToMarkdown((lab[1] ?? '').trim());
+          j++;
+          continue;
+        }
+        j++;
+      }
+      if (j < lines.length && lines[j].line.trim() === '\\end{wrapfigure}') {
+        const endOffset = lines[j].end;
+        const raw = lines.slice(i, j + 1).map((l) => l.line).join('\n');
+        blocks.push({
+          kind: 'figure',
+          src,
+          caption,
+          label,
+          align,
+          placement,
+          width,
+          desc,
+          raw,
+          blockIndex,
+          startOffset,
+          endOffset,
+        });
+        i = j + 1;
+        blockIndex++;
+        continue;
+      }
+      const raw = lines.slice(i).map((l) => l.line).join('\n');
+      blocks.push({ kind: 'raw', latex: raw, raw, blockIndex, startOffset, endOffset: lines[lines.length - 1]?.end ?? end });
+      break;
+    }
+
     // figure environment (Zadoox subset)
     if (line.trim() === '\\begin{figure}') {
       const startOffset = start;
@@ -531,6 +635,14 @@ function parseBlocks(latex: string): Block[] {
           j++;
           continue;
         }
+        if (t === '\\raggedleft') align = 'right';
+        if (t === '\\raggedright') align = 'left';
+        if (t === '\\centering') align = 'center';
+
+        const ig = parseIncludegraphicsLine(t);
+        if (!src && ig.src) src = ig.src;
+        if (!width && ig.width) width = latexWidthToXmdWidth(ig.width);
+
         const cap = /^\\caption\{([^}]*)\}(?:\s*%.*)?$/.exec(t);
         if (cap) {
           caption = latexInlineToMarkdown((cap[1] ?? '').trim());

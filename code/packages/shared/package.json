@@ -6,7 +6,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/fix-esm-specifiers.cjs",
     "dev": "tsc --watch",
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext .ts",

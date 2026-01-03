@@ -11,7 +11,7 @@
  * - If the binary is missing, we fail with a clear error (no silent fallbacks).
  */
 
-import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -25,7 +25,11 @@ export class PdfCompileService {
     return 'tectonic';
   }
 
-  async compileLatexToPdf(params: { latex: string; jobName?: string }): Promise<Buffer> {
+  async compileLatexToPdf(params: {
+    latex: string;
+    jobName?: string;
+    extraFiles?: Array<{ relPath: string; bytes: Buffer }>;
+  }): Promise<Buffer> {
     const latex = String(params.latex ?? '');
     const jobName = (params.jobName ?? 'main').replace(/[^a-zA-Z0-9_-]+/g, '_');
 
@@ -38,6 +42,16 @@ export class PdfCompileService {
     const pdfPath = path.join(workDir, `${jobName}.pdf`);
 
     try {
+      if (params.extraFiles?.length) {
+        for (const f of params.extraFiles) {
+          const rel = String(f.relPath ?? '').replace(/^\/+/, '');
+          if (!rel) continue;
+          const abs = path.join(workDir, rel);
+          await mkdir(path.dirname(abs), { recursive: true });
+          await writeFile(abs, f.bytes);
+        }
+      }
+
       await writeFile(texPath, latex, 'utf8');
 
       const kind = this.getCompilerKind();

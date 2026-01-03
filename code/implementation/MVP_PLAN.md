@@ -964,6 +964,7 @@ Goal: Introduce **IR (Intermediate Representation)** as Zadoox’s internal cano
   - [x] Track per-representation metadata (at minimum): `lastSyncedFrom` (MD|LaTeX), `lastSyncedAt`, and/or a stable `irHashAtLastSync`
   - [x] If the target representation is **already in sync** with current IR (`irHashAtLastSync` matches), **reuse** it (no regeneration)
   - [x] If only the current-mode representation is dirty and IR reflects it, **regenerate** the other side from IR
+  - [ ] (Fine-grained updates) On switch, update only the changed IR nodes (e.g., only the edited section/figure) instead of regenerating the entire target document
   - [ ] If both sides have diverged since last sync (conflict), **prompt** user before overwriting, with a safe fallback to prevent data loss
 - [ ] Add **LaTeX support validation** (subset only):
   - [ ] Detect unsupported LaTeX commands/environments as user types (or on switch)

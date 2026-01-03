@@ -38,11 +38,16 @@ export function irToLatexDocument(doc: DocumentNode): string {
   );
   const body = renderNodes(bodyNodes).trimEnd();
 
+  const needsGraphicx = containsFigure(bodyNodes);
+  const needsWrapfig = containsInlineFigure(bodyNodes);
+
   // Minimal, broadly compatible, and IR-compatible:
   // avoid \\usepackage and other preamble directives that are not represented in IR.
   const preambleParts = [
     '\\documentclass{article}',
   ];
+  if (needsGraphicx) preambleParts.push('\\usepackage{graphicx}');
+  if (needsWrapfig) preambleParts.push('\\usepackage{wrapfig}');
   if (titleLine) preambleParts.push(titleLine);
   // Only emit author/date if IR actually has them (i.e. present in XMD or added in LaTeX then parsed).
   if (authorLine) preambleParts.push(authorLine);
@@ -57,6 +62,70 @@ export function irToLatexDocument(doc: DocumentNode): string {
   const end = '\n\\end{document}\n';
 
   return `${preamble}${begin}${maketitle}${body}${end}`;
+}
+
+function containsFigure(nodes: IrNode[]): boolean {
+  for (const n of nodes) {
+    if (n.type === 'figure') return true;
+    if (n.type === 'section' && n.children?.length) {
+      if (containsFigure(n.children)) return true;
+    }
+  }
+  return false;
+}
+
+function containsInlineFigure(nodes: IrNode[]): boolean {
+  for (const n of nodes) {
+    if (n.type === 'figure') {
+      const raw = (n as unknown as { source?: { raw?: string } }).source?.raw;
+      const attrs = parseFigureAttrsFromXmd(raw);
+      const placement = String(attrs.placement ?? '').trim().toLowerCase();
+      const align = String(attrs.align ?? '').trim().toLowerCase();
+      if (placement === 'inline' && align !== 'center') return true;
+    }
+    if (n.type === 'section' && n.children?.length) {
+      if (containsInlineFigure(n.children)) return true;
+    }
+  }
+  return false;
+}
+
+function zadooxAssetSrcToLatexPath(src: string): string {
+  const s = String(src ?? '').trim();
+  const prefix = 'zadoox-asset://';
+  if (s.startsWith(prefix)) {
+    const key = s.slice(prefix.length);
+    return `assets/${key}`;
+  }
+  return s;
+}
+
+function widthAttrToIncludegraphicsOption(widthRaw: string | undefined): string | null {
+  const w = String(widthRaw ?? '').trim();
+  if (!w) return null;
+  const pct = /^(\d+(?:\.\d+)?)%$/.exec(w);
+  if (pct) {
+    const n = Number(pct[1]);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return `width=${(n / 100).toFixed(3)}\\textwidth`;
+  }
+  if (/\\(textwidth|linewidth|columnwidth)\b/.test(w)) return `width=${w}`;
+  if (/^\d+(\.\d+)?(cm|mm|in|pt)$/.test(w)) return `width=${w}`;
+  return null;
+}
+
+function alignToLatex(n: { align?: string }): string {
+  const a = String(n.align ?? '').trim().toLowerCase();
+  if (a === 'left') return '\\raggedright';
+  if (a === 'right') return '\\raggedleft';
+  return '\\centering';
+}
+
+function widthAttrToLatexDim(widthRaw: string | undefined): string | null {
+  const opt = widthAttrToIncludegraphicsOption(widthRaw);
+  if (!opt) return null;
+  const m = /^width=(.+)$/.exec(opt.trim());
+  return m ? String(m[1]).trim() : null;
 }
 
 function renderNodes(nodes: IrNode[]): string {
@@ -106,21 +175,39 @@ function renderNode(node: IrNode): string {
       return `\\begin{equation}\n${node.latex}\n\\end{equation}`;
     }
     case 'figure': {
-      // Use a real LaTeX figure environment so the LaTeX->IR parser can round-trip this back to XMD.
-      // Keep it compilable without \\usepackage by *not* emitting \\includegraphics (graphicx).
-      // Instead, embed the source as a structured comment.
-      const src = escapeLatexText(node.src);
+      // Emit a real LaTeX figure so what the user sees in LaTeX mode is exactly what will compile.
+      // - XMD figure src `zadoox-asset://<key>` becomes `assets/<key>` (file provided at compile time)
+      // - We keep caption/label and apply optional width/align hints when present.
+      const src = zadooxAssetSrcToLatexPath(node.src);
       const caption = escapeLatexText(node.caption ?? '');
       const label = node.label ? escapeLatexText(node.label) : '';
       const attrs = parseFigureAttrsFromXmd(node.source?.raw);
+      const placement = String(attrs.placement ?? '').trim().toLowerCase();
+      const align = String(attrs.align ?? '').trim().toLowerCase();
 
       const lines: string[] = [];
+      if (placement === 'inline' && align !== 'center') {
+        // Inline placement: wrap the figure so surrounding text can flow around it (like the web preview).
+        // Map align -> side. Default inline side is left.
+        const side = align === 'right' ? 'r' : 'l';
+        const wrapWidth = widthAttrToLatexDim(attrs.width) ?? '0.450\\textwidth';
+        lines.push(`\\begin{wrapfigure}{${side}}{${wrapWidth}}`);
+        lines.push(alignToLatex(attrs));
+        // In wrapfigure, \linewidth equals the wrap width; keep image constrained.
+        lines.push(`\\includegraphics[width=\\linewidth]{\\detokenize{${src}}}`);
+        if (caption.trim().length > 0) lines.push(`\\caption{${caption}}`);
+        if (label.trim().length > 0) lines.push(`\\label{${label}}`);
+        lines.push('\\end{wrapfigure}');
+        return lines.join('\n');
+      }
+
+      // Block placement (default): standard figure environment.
       lines.push('\\begin{figure}');
-      lines.push(`% zadoox-src: ${src}`);
-      if (attrs.align) lines.push(`% zadoox-align: ${escapeLatexComment(attrs.align)}`);
-      if (attrs.placement) lines.push(`% zadoox-placement: ${escapeLatexComment(attrs.placement)}`);
-      if (attrs.width) lines.push(`% zadoox-width: ${escapeLatexComment(attrs.width)}`);
-      if (attrs.desc) lines.push(`% zadoox-desc: ${escapeLatexComment(attrs.desc)}`);
+      lines.push(alignToLatex(attrs));
+      const widthOpt = widthAttrToIncludegraphicsOption(attrs.width);
+      const optStr = widthOpt ? `[${widthOpt}]` : '';
+      // Use \detokenize so asset keys (with underscores) work without manual escaping.
+      lines.push(`\\includegraphics${optStr}{\\detokenize{${src}}}`);
       if (caption.trim().length > 0) lines.push(`\\caption{${caption}}`);
       if (label.trim().length > 0) lines.push(`\\label{${label}}`);
       lines.push('\\end{figure}');

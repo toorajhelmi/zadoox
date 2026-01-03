@@ -121,6 +121,59 @@ async function fetchApi<T>(
   return data;
 }
 
+async function fetchBinary(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<{ blob: Blob; contentType: string; filename?: string }> {
+  const token = await getAuthToken();
+  const headers: Record<string, string> = {
+    ...(options.headers as Record<string, string> | undefined),
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers: headers as HeadersInit,
+    });
+  } catch (error: unknown) {
+    throw new ApiError(
+      `Failed to connect to API at ${API_BASE_URL}. Make sure the backend server is running.`,
+      'NETWORK_ERROR',
+      undefined,
+      { originalError: error instanceof Error ? error.message : String(error) }
+    );
+  }
+
+  if (!response.ok) {
+    // Try JSON error first, but don't assume it.
+    try {
+      const data = (await response.json()) as ApiResponse<unknown>;
+      throw new ApiError(
+        data.error?.message || 'API request failed',
+        data.error?.code || 'UNKNOWN_ERROR',
+        response.status,
+        data.error?.details
+      );
+    } catch {
+      throw new ApiError(
+        `Request failed (${response.status} ${response.statusText})`,
+        'BINARY_REQUEST_FAILED',
+        response.status
+      );
+    }
+  }
+
+  const contentType = response.headers.get('content-type') || 'application/octet-stream';
+  const disposition = response.headers.get('content-disposition') || '';
+  const filenameMatch = /filename="([^"]+)"/i.exec(disposition);
+  const filename = filenameMatch?.[1];
+
+  const blob = await response.blob();
+  return { blob, contentType, filename };
+}
+
 export const api = {
   projects: {
     list: async (): Promise<Project[]> => {
@@ -181,6 +234,46 @@ export const api = {
         throw new ApiError('Failed to generate publish HTML', 'PUBLISH_WEB_FAILED', 500);
       }
       return response.data;
+    },
+
+    pdf: async (
+      projectId: string,
+      request: { documentId: string; source: 'latex' }
+    ): Promise<{ blob: Blob; filename?: string }> => {
+      const { blob, contentType, filename } = await fetchBinary(
+        `/projects/${projectId}/publish/pdf`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(request),
+        }
+      );
+      if (!contentType.includes('pdf')) {
+        throw new ApiError('Unexpected content type for PDF response', 'INVALID_PDF_RESPONSE', 500, {
+          contentType,
+        });
+      }
+      return { blob, filename };
+    },
+
+    latexPackage: async (
+      projectId: string,
+      request: { documentId: string; source: 'latex' }
+    ): Promise<{ blob: Blob; filename?: string }> => {
+      const { blob, contentType, filename } = await fetchBinary(
+        `/projects/${projectId}/publish/latex-package`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(request),
+        }
+      );
+      if (!contentType.includes('zip')) {
+        throw new ApiError('Unexpected content type for LaTeX package response', 'INVALID_LATEX_PACKAGE', 500, {
+          contentType,
+        });
+      }
+      return { blob, filename };
     },
   },
 

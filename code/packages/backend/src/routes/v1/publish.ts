@@ -12,10 +12,12 @@ import { FastifyInstance } from 'fastify';
 import { authenticateUser, AuthenticatedRequest } from '../../middleware/auth.js';
 import { DocumentService } from '../../services/document-service.js';
 import { PdfCompileService } from '../../services/pdf-compile-service.js';
+import { supabaseAdmin } from '../../db/client.js';
 import { ApiResponse } from '@zadoox/shared';
 import { projectIdParamSchema, publishPdfSchema, publishWebSchema } from '../../validation/schemas.js';
 import { schemas, security } from '../../config/schemas.js';
 import { parseXmdToIr, parseLatexToIr, renderIrToHtml } from '@zadoox/shared';
+import archiver from 'archiver';
 
 type PublishWebBody = {
   documentId: string;
@@ -27,6 +29,180 @@ type PublishPdfBody = {
   documentId: string;
   source: 'latex';
 };
+
+async function buildLatexPackage(params: {
+  doc: { id: string; title?: string | null; metadata?: { latex?: unknown } | null };
+}): Promise<
+  | { ok: true; latex: string; extraFiles: Array<{ relPath: string; bytes: Buffer }> }
+  | { ok: false; status: number; response: ApiResponse<null> }
+> {
+  const latex = String(params.doc.metadata?.latex ?? '').trim();
+  if (latex.length === 0) {
+    return {
+      ok: false,
+      status: 400,
+      response: {
+        success: false,
+        error: { code: 'MISSING_LATEX', message: 'No LaTeX is available for this document' },
+      },
+    };
+  }
+
+  // Overleaf-like behavior: do not rewrite user LaTeX at compile time.
+  // Only ensure referenced files exist in the compile directory / package.
+  const bucket = process.env.SUPABASE_ASSETS_BUCKET || 'assets';
+  const keys = extractAssetKeysFromIncludegraphics(latex);
+  const extraFiles: Array<{ relPath: string; bytes: Buffer }> = [];
+  const missingAssets: Array<{ key: string; reason: string }> = [];
+  if (keys.length) {
+    const admin = supabaseAdmin();
+    for (const key of keys) {
+      // Asset keys are scoped by docId: <docId>__<random>.<ext>
+      if (!key.startsWith(`${params.doc.id}__`)) {
+        missingAssets.push({
+          key,
+          reason: `Asset key does not belong to this document (expected prefix "${params.doc.id}__")`,
+        });
+        continue;
+      }
+      const { data, error } = await admin.storage.from(bucket).download(key);
+      if (error || !data) {
+        missingAssets.push({
+          key,
+          reason: error?.message ? String(error.message) : 'Asset download returned empty data',
+        });
+        continue;
+      }
+      const ab = await data.arrayBuffer();
+      const buf = Buffer.from(ab);
+      if (!buf.length) {
+        missingAssets.push({ key, reason: 'Asset download returned empty bytes' });
+        continue;
+      }
+      extraFiles.push({ relPath: `assets/${key}`, bytes: buf });
+    }
+  }
+
+  if (missingAssets.length) {
+    return {
+      ok: false,
+      status: 400,
+      response: {
+        success: false,
+        error: {
+          code: 'MISSING_ASSETS',
+          message:
+            'LaTeX references image files under "assets/" that are missing or could not be fetched. Upload the images or re-sync figures from Markdown so the assets exist.',
+          details: { bucket, missing: missingAssets },
+        },
+      },
+    };
+  }
+
+  return { ok: true, latex, extraFiles };
+}
+
+function extractZadooxAssetKeysFromLatex(latex: string): string[] {
+  const out = new Set<string>();
+  const re = /zadoox-asset:\/\/([A-Za-z0-9._-]+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(String(latex ?? '')))) {
+    const key = String(m[1] ?? '').trim();
+    if (key) out.add(key);
+  }
+  return Array.from(out);
+}
+
+function ensureGraphicx(latex: string): string {
+  const s = String(latex ?? '');
+  if (/\\usepackage\{graphicx\}/.test(s)) return s;
+  const idx = s.search(/\\documentclass(\[[^\]]*\])?\{[^}]+\}/);
+  if (idx === -1) return `\\usepackage{graphicx}\n${s}`;
+  const end = s.indexOf('\n', idx);
+  if (end === -1) return `${s}\n\\usepackage{graphicx}\n`;
+  return `${s.slice(0, end + 1)}\\usepackage{graphicx}\n${s.slice(end + 1)}`;
+}
+
+function widthToLatex(widthRaw: string | null): string | null {
+  const w = String(widthRaw ?? '').trim();
+  if (!w) return null;
+  const pct = /^(\d+(?:\.\d+)?)%$/.exec(w);
+  if (pct) {
+    const n = Number(pct[1]);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return `${(n / 100).toFixed(3)}\\textwidth`;
+  }
+  if (/\\(textwidth|linewidth|columnwidth)\b/.test(w)) return w;
+  if (/^\d+(\.\d+)?(cm|mm|in|pt)$/.test(w)) return w;
+  return null;
+}
+
+function rewriteLatexFiguresAndAssetRefs(params: {
+  latex: string;
+  assetPathByKey: Map<string, string>;
+}): string {
+  let s = String(params.latex ?? '');
+
+  // Replace direct refs anywhere.
+  for (const [key, relPath] of params.assetPathByKey.entries()) {
+    s = s.replaceAll(`zadoox-asset://${key}`, relPath);
+  }
+
+  // Transform figure blocks that use zadoox-src comments into includegraphics.
+  s = s.replace(/\\begin\{figure\}([\s\S]*?)\\end\{figure\}/g, (block) => {
+    const srcLine = /%[ \t]*zadoox-src:[ \t]*([^\r\n]+)/i.exec(block);
+    if (!srcLine) return block;
+    const src = String(srcLine[1] ?? '').trim();
+    if (!src) return block;
+
+    const widthLine = /%[ \t]*zadoox-width:[ \t]*([^\r\n]+)/i.exec(block);
+    const widthOpt = widthToLatex(widthLine ? String(widthLine[1]) : null);
+
+    const caption = /\\caption\{[\s\S]*?\}/.exec(block)?.[0] ?? '';
+    const label = /\\label\{[\s\S]*?\}/.exec(block)?.[0] ?? '';
+
+    const opts = widthOpt ? `[width=${widthOpt}]` : '';
+    const lines = [
+      '\\begin{figure}',
+      '\\centering',
+      `\\includegraphics${opts}{${src}}`,
+      caption,
+      label,
+      '\\end{figure}',
+    ].filter((l) => String(l).trim().length > 0);
+    return lines.join('\n');
+  });
+
+  return ensureGraphicx(s);
+}
+
+function extractAssetKeysFromIncludegraphics(latex: string): string[] {
+  const out = new Set<string>();
+  const s = String(latex ?? '');
+
+  // Case 1: \includegraphics{ \detokenize{assets/<key>} }
+  // This is what our IR->LaTeX renderer emits to avoid escaping underscores.
+  const reDetok =
+    /\\includegraphics\s*(?:\[[^\]]*\]\s*)?\{\s*\\detokenize\{([\s\S]*?)\}\s*\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = reDetok.exec(s))) {
+    const pathArg = String(m[1] ?? '').trim();
+    if (!pathArg.startsWith('assets/')) continue;
+    const key = pathArg.slice('assets/'.length).trim();
+    if (key) out.add(key);
+  }
+
+  // Case 2: \includegraphics{assets/<key>} (no nested braces)
+  const rePlain = /\\includegraphics\s*(?:\[[^\]]*\]\s*)?\{\s*([^{}\r\n]+?)\s*\}/g;
+  while ((m = rePlain.exec(s))) {
+    const pathArg = String(m[1] ?? '').trim();
+    if (!pathArg.startsWith('assets/')) continue;
+    const key = pathArg.slice('assets/'.length).trim();
+    if (key) out.add(key);
+  }
+
+  return Array.from(out);
+}
 
 const TRANSPARENT_PIXEL =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
@@ -336,22 +512,14 @@ export async function publishRoutes(fastify: FastifyInstance) {
           return reply.status(404).send(response);
         }
 
-        const latex = String(doc.metadata?.latex ?? '').trim();
-        if (latex.length === 0) {
-          const response: ApiResponse<null> = {
-            success: false,
-            error: {
-              code: 'MISSING_LATEX',
-              message: 'No LaTeX is available for this document',
-            },
-          };
-          return reply.status(400).send(response);
-        }
+        const pkg = await buildLatexPackage({ doc });
+        if (!pkg.ok) return reply.status(pkg.status).send(pkg.response);
 
         const pdfService = new PdfCompileService();
         const pdf = await pdfService.compileLatexToPdf({
-          latex,
+          latex: pkg.latex,
           jobName: 'main',
+          extraFiles: pkg.extraFiles,
         });
 
         reply.header('Content-Type', 'application/pdf');
@@ -366,6 +534,120 @@ export async function publishRoutes(fastify: FastifyInstance) {
             code: 'INTERNAL_ERROR',
             message: errorMessage,
           },
+        };
+        return reply.status(500).send(response);
+      }
+    }
+  );
+
+  /**
+   * POST /api/v1/projects/:projectId/publish/latex-package
+   * Build a complete Overleaf-compatible LaTeX package (zip) for a document:
+   * - main.tex
+   * - assets/<key> (only if referenced by \\includegraphics{assets/<key>})
+   */
+  fastify.post(
+    '/projects/:projectId/publish/latex-package',
+    {
+      schema: {
+        description: 'Download a LaTeX project package (zip) (Phase 12.1)',
+        tags: ['Publishing'],
+        security,
+        params: {
+          type: 'object',
+          properties: {
+            projectId: { type: 'string', format: 'uuid' },
+          },
+          required: ['projectId'],
+        },
+        body: {
+          type: 'object',
+          properties: {
+            documentId: { type: 'string', format: 'uuid' },
+            source: { type: 'string', enum: ['latex'] },
+          },
+          required: ['documentId', 'source'],
+        },
+      },
+    },
+    async (request: AuthenticatedRequest, reply) => {
+      try {
+        const paramValidation = projectIdParamSchema.safeParse(request.params);
+        if (!paramValidation.success) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid project ID',
+              details: paramValidation.error.errors,
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        const bodyValidation = publishPdfSchema.safeParse(request.body);
+        if (!bodyValidation.success) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid request body',
+              details: bodyValidation.error.errors,
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        const { projectId } = paramValidation.data;
+        const { documentId } = bodyValidation.data as PublishPdfBody;
+
+        const documentService = new DocumentService(request.supabase!);
+        const doc = await documentService.getDocumentById(documentId);
+        if (doc.projectId !== projectId) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: { code: 'NOT_FOUND', message: 'Document not found in this project' },
+          };
+          return reply.status(404).send(response);
+        }
+
+        const pkg = await buildLatexPackage({ doc });
+        if (!pkg.ok) return reply.status(pkg.status).send(pkg.response);
+
+        const safeBase = String(doc.title || 'document').replace(/[^a-zA-Z0-9_-]+/g, '_');
+        const zipName = `${safeBase}.zip`;
+
+        reply.header('Content-Type', 'application/zip');
+        reply.header('Content-Disposition', `attachment; filename="${zipName}"`);
+
+        const archive = archiver('zip', { zlib: { level: 9 } });
+        archive.on('warning', (err: unknown) => {
+          // Non-fatal warnings (e.g. stat failures). Log and continue.
+          request.log.warn({ err }, 'latex-package zip warning');
+        });
+        archive.on('error', (err: unknown) => {
+          request.log.error({ err }, 'latex-package zip error');
+          try {
+            reply.raw.destroy(err as Error);
+          } catch {
+            // ignore
+          }
+        });
+
+        // Always include the main file
+        archive.append(pkg.latex, { name: 'main.tex' });
+        for (const f of pkg.extraFiles) {
+          archive.append(f.bytes, { name: f.relPath });
+        }
+
+        void archive.finalize();
+        return reply.send(archive);
+      } catch (error: unknown) {
+        fastify.log.error(error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to build LaTeX package';
+        const response: ApiResponse<null> = {
+          success: false,
+          error: { code: 'INTERNAL_ERROR', message: errorMessage },
         };
         return reply.status(500).send(response);
       }

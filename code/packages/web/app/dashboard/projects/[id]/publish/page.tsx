@@ -50,6 +50,9 @@ export default function ProjectPublishPage() {
   const [selectedDocumentId, setSelectedDocumentId] = useState<string>('');
   const [target, setTarget] = useState<PublishTarget>('pdf');
   const [source, setSource] = useState<PublishSource>('markdown');
+  // Keep a synchronous ref so a user can toggle the radio and immediately click Publish
+  // without the handler accidentally using a stale state value.
+  const sourceRef = useRef<PublishSource>('markdown');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [previewTitle, setPreviewTitle] = useState<string | null>(null);
@@ -106,7 +109,17 @@ export default function ProjectPublishPage() {
   useEffect(() => {
     // Keep source in a sane state when switching documents.
     setSource((prev) => {
-      if (prev === 'latex' && !hasLatex) return 'markdown';
+      if (prev === 'latex' && !hasLatex) {
+        sourceRef.current = 'markdown';
+        return 'markdown';
+      }
+      // Preserve the user's previous choice if still valid; otherwise use recommendation.
+      // (This also avoids surprising "source jumps" when a doc has both representations.)
+      if (prev === 'latex' && hasLatex) {
+        sourceRef.current = 'latex';
+        return 'latex';
+      }
+      sourceRef.current = recommendedSource;
       return recommendedSource;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -127,11 +140,12 @@ export default function ProjectPublishPage() {
       return;
     }
 
+    const effectiveSource = sourceRef.current;
     if (target === 'pdf') {
       router.push(
         `/dashboard/projects/${projectId}/publish/preview?documentId=${encodeURIComponent(
           selectedDocument.id
-        )}&source=${encodeURIComponent(source)}`
+        )}&source=${encodeURIComponent(effectiveSource)}`
       );
       return;
     }
@@ -142,7 +156,7 @@ export default function ProjectPublishPage() {
     setPreviewTitle(null);
     setPreviewForTarget(null);
     api.publish
-      .web(projectId, { documentId: selectedDocument.id, source })
+      .web(projectId, { documentId: selectedDocument.id, source: effectiveSource })
       .then(({ html, title }) => {
         const htmlStr = String((html as unknown) ?? '');
         const titleStr = String((title as unknown) ?? '');
@@ -308,7 +322,10 @@ export default function ProjectPublishPage() {
                         name="source"
                         value="markdown"
                         checked={source === 'markdown'}
-                        onChange={() => setSource('markdown')}
+                        onChange={() => {
+                          sourceRef.current = 'markdown';
+                          setSource('markdown');
+                        }}
                       />
                       Markdown (XMD)
                     </label>
@@ -323,7 +340,10 @@ export default function ProjectPublishPage() {
                         name="source"
                         value="latex"
                         checked={source === 'latex'}
-                        onChange={() => setSource('latex')}
+                        onChange={() => {
+                          sourceRef.current = 'latex';
+                          setSource('latex');
+                        }}
                         disabled={!hasLatex}
                       />
                       LaTeX

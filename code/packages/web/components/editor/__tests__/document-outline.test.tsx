@@ -22,6 +22,7 @@ describe('DocumentOutline', () => {
     render(<DocumentOutline content="Just text" ir={ir} />);
 
     expect(screen.getByText('No outline available')).toBeInTheDocument();
+    expect(screen.getByText('Documents')).toBeInTheDocument();
   });
 
   it('should render headings when content has headings', () => {
@@ -30,6 +31,7 @@ describe('DocumentOutline', () => {
       type: 'document',
       docId: 'doc-1',
       children: [
+        { id: 't1', type: 'document_title', text: 'My Doc' },
         {
           id: 's1',
           type: 'section',
@@ -52,6 +54,7 @@ describe('DocumentOutline', () => {
 
     expect(screen.getByText('Introduction')).toBeInTheDocument();
     expect(screen.getByText('Getting Started')).toBeInTheDocument();
+    expect(screen.getByText('My Doc')).toBeInTheDocument();
   });
 
   it('should render figures in the outline', () => {
@@ -60,6 +63,7 @@ describe('DocumentOutline', () => {
       type: 'document',
       docId: 'doc-1',
       children: [
+        { id: 't1', type: 'document_title', text: 'My Doc' },
         { id: 's1', type: 'section', level: 1, title: 'Intro', children: [] },
         {
           id: 'f1',
@@ -82,5 +86,29 @@ describe('DocumentOutline', () => {
 
     expect(screen.getByText('Figure — A caption')).toBeInTheDocument();
     expect(screen.getByText('Figure 2')).toBeInTheDocument();
+    expect(screen.getByText('My Doc')).toBeInTheDocument();
+  });
+
+  it('should render an assets folder with referenced zadoox-asset files', () => {
+    const ir: DocumentNode = {
+      id: 'doc',
+      type: 'document',
+      docId: 'doc-1',
+      children: [
+        { id: 't1', type: 'document_title', text: 'My Doc' },
+        {
+          id: 'f1',
+          type: 'figure',
+          src: 'zadoox-asset://doc-1__img-1.png',
+          caption: 'Has asset',
+          label: 'fig:generated-1',
+        },
+      ],
+    };
+
+    render(<DocumentOutline content="" ir={ir} />);
+
+    expect(screen.getByText('assets')).toBeInTheDocument();
+    expect(screen.getByText('doc-1__img-1.png')).toBeInTheDocument();
   });
 });

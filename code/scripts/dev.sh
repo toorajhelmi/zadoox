@@ -36,6 +36,6 @@ elif [ "$BACKEND_RUNTIME" = "dev" ]; then
   pnpm --filter './packages/web' dev
 else
   # local (default): start backend and frontend in parallel
-  pnpm --parallel --filter './packages/backend' --filter './packages/web' dev
+pnpm --parallel --filter './packages/backend' --filter './packages/web' dev
 fi
 

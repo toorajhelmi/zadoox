@@ -5,7 +5,7 @@ import { irToLatexDocument } from '../to-latex';
 import { parseLatexToIr } from '../to-ir';
 
 describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
-  it('XMD -> IR -> LaTeX emits zadoox-* figure comments (even if trailing text)', () => {
+  it('XMD -> IR -> LaTeX emits wrapfigure for placement="inline" (even if trailing text)', () => {
     const xmd = [
       '@ Title',
       '',
@@ -16,30 +16,25 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     const ir = parseXmdToIr({ docId: 'doc-1', xmd });
     const latex = irToLatexDocument(ir);
 
-    expect(latex).toContain('\\begin{figure}');
-    expect(latex).toContain('% zadoox-src: zadoox-asset://img');
-    expect(latex).toContain('% zadoox-align: right');
-    expect(latex).toContain('% zadoox-placement: inline');
-    expect(latex).toContain('% zadoox-width: 33\\%');
-    expect(latex).toContain('% zadoox-desc: d');
+    expect(latex).toContain('\\usepackage{wrapfig}');
+    expect(latex).toContain('\\begin{wrapfigure}{r}{0.330\\textwidth}');
+    expect(latex).toContain('\\includegraphics[width=\\linewidth]{\\detokenize{assets/img}}');
     expect(latex).toContain('\\caption{Cap}');
     expect(latex).toContain('\\label{fig:demo}');
-    expect(latex).toContain('\\end{figure}');
+    expect(latex).toContain('\\end{wrapfigure}');
   });
 
-  it('LaTeX -> IR -> XMD reconstructs figure attrs from zadoox-* comments', () => {
+  it('LaTeX -> IR -> XMD reconstructs inline placement from wrapfigure + includegraphics', () => {
     const latex = [
       '\\documentclass{article}',
+      '\\usepackage{wrapfig}',
       '\\begin{document}',
-      '\\begin{figure}',
-      '% zadoox-src: zadoox-asset://img',
-      '% zadoox-align: right',
-      '% zadoox-placement: inline',
-      '% zadoox-width: 33%',
-      '% zadoox-desc: d',
+      '\\begin{wrapfigure}{r}{0.33\\textwidth}',
+      '\\raggedleft',
+      '\\includegraphics[width=\\linewidth]{\\detokenize{assets/img}}',
       '\\caption{Cap}',
       '\\label{fig:demo}',
-      '\\end{figure}',
+      '\\end{wrapfigure}',
       '\\end{document}',
     ].join('\n');
 
@@ -50,7 +45,6 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     expect(xmd).toContain('align="right"');
     expect(xmd).toContain('placement="inline"');
     expect(xmd).toContain('width="33%"');
-    expect(xmd).toContain('desc="d"');
   });
 
   it('XMD title/author/date round-trip to LaTeX without injecting missing author/date', () => {
