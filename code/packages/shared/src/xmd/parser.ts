@@ -276,9 +276,6 @@ function parseBlocks(xmd: string): Block[] {
       const bodyLines: string[] = [];
       let foundClose = false;
       let closeLineIndex = -1;
-      // For grids, allow nested ::: directives inside cells (e.g. :::table ... :::).
-      // We must not treat the nested closing ':::' as the grid closing fence.
-      let nestedDirectiveDepth = 0;
       const detectClose = (ln: string): { isClose: boolean; before: string } => {
         const raw = String(ln ?? '');
         const t = raw.trim();
@@ -298,32 +295,8 @@ function parseBlocks(xmd: string): Block[] {
 
       while (j < lines.length) {
         const ln = lines[j].line;
-        const t = String(ln ?? '').trim();
-        if (kind === 'grid') {
-          // Nested directive start, e.g. ":::table", ":::figure".
-          if (/^:::\w/.test(t)) {
-            nestedDirectiveDepth += 1;
-            bodyLines.push(ln);
-            j++;
-            continue;
-          }
-          // Nested directive close.
-          if (t === ':::' && nestedDirectiveDepth > 0) {
-            nestedDirectiveDepth -= 1;
-            bodyLines.push(ln);
-            j++;
-            continue;
-          }
-        }
         const d = detectClose(ln);
         if (d.isClose) {
-          if (kind === 'grid' && nestedDirectiveDepth > 0) {
-            // This closes a nested directive, not the grid.
-            nestedDirectiveDepth -= 1;
-            bodyLines.push(ln);
-            j++;
-            continue;
-          }
           if (d.before.trim().length > 0) bodyLines.push(d.before);
           foundClose = true;
           closeLineIndex = j;

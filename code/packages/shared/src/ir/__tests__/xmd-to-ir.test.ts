@@ -66,11 +66,7 @@ describe('parseXmdToIr', () => {
       '|||',
       '![Cap](zadoox-asset://img){#fig:demo}',
       '---',
-      ':::table',
-      '| a | b |',
-      '| --- | --- |',
-      '| 1 | 2 |',
-      ':::',
+      'Cell C text.',
       '|||',
       'Cell D text.',
       ':::',
@@ -89,10 +85,10 @@ describe('parseXmdToIr', () => {
     expect(gridA.rows[0]?.length).toBe(2);
     expect(gridA.rows[1]?.length).toBe(2);
 
-    // Ensure cell children were parsed (paragraph + figure + table + paragraph).
+    // Ensure cell children were parsed (paragraph + figure + paragraph + paragraph).
     expect(gridA.rows[0]![0]!.children.some((n) => n.type === 'paragraph')).toBe(true);
     expect(gridA.rows[0]![1]!.children.some((n) => n.type === 'figure')).toBe(true);
-    expect(gridA.rows[1]![0]!.children.some((n) => n.type === 'table')).toBe(true);
+    expect(gridA.rows[1]![0]!.children.some((n) => n.type === 'paragraph')).toBe(true);
     expect(gridA.rows[1]![1]!.children.some((n) => n.type === 'paragraph')).toBe(true);
 
     // IDs should be stable for identical input (including inside grid cells).
