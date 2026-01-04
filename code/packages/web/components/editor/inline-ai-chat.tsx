@@ -15,10 +15,12 @@ import type { InlineWizardScopeStrategy } from './inline-wizards/types';
 import { TranslateWizard } from './inline-wizards/translate-wizard';
 import { InsertFigureWizard } from './inline-wizards/insert-figure-wizard';
 import { TodoWizard } from './inline-wizards/todo-wizard';
+import type { EditorSurfaceFormat } from './inline-wizards/types';
 
 interface InlineAIChatProps {
   position: { top: number; left: number };
   documentId: string;
+  editFormat: EditorSurfaceFormat;
   content: string;
   cursorPosition: { line: number; column: number };
   selection?: { from: number; to: number; text: string } | null;
@@ -40,6 +42,7 @@ interface InlineAIChatProps {
 export function InlineAIChat({
   position,
   documentId,
+  editFormat,
   content,
   cursorPosition,
   selection,
@@ -215,6 +218,7 @@ export function InlineAIChat({
             ctx={{
               option: activeWizard.option,
               documentId,
+              editFormat,
               content,
               cursorPosition,
               scope: { kind: derivedScopeKind, text: derivedScopeText },

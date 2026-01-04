@@ -95,7 +95,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [isGeneratingContent, setIsGeneratingContent] = useState(false);
   const [busyOverlayMessage, setBusyOverlayMessage] = useState<string>('Generating content...');
   const previousContentForHistoryRef = useRef<string>(content);
+  const previousLatexForHistoryRef = useRef<string>(latexDraft);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const latexDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const editorViewRef = useRef<import('@codemirror/view').EditorView | null>(null);
   const editorContainerRef = useRef<HTMLDivElement | null>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -112,9 +114,18 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     try {
       const sel = view.state.selection.main;
       const line = view.state.doc.lineAt(sel.head).text;
-      const t = /^@\s+/.exec(line.trimStart());
+      const trimmed = line.trimStart();
+      if (editFormat === 'latex') {
+        if (/^\\title\{/.test(trimmed)) return 'title' as const;
+        if (/^\\section\{/.test(trimmed)) return 'heading1' as const;
+        if (/^\\subsection\{/.test(trimmed)) return 'heading2' as const;
+        if (/^\\subsubsection\{/.test(trimmed)) return 'heading3' as const;
+        return 'paragraph' as const;
+      }
+
+      const t = /^@\s+/.exec(trimmed);
       if (t) return 'title' as const;
-      const m = /^(#{1,6})\s+/.exec(line.trimStart());
+      const m = /^(#{1,6})\s+/.exec(trimmed);
       if (!m) return 'paragraph' as const;
       const level = m[1].length;
       if (level === 1) return 'heading1' as const; // Section
@@ -637,6 +648,42 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     },
   });
 
+  // Undo/Redo for LaTeX edit surface (separate history from XMD content).
+  const latexUndoRedo = useUndoRedo(latexDraft, {
+    maxHistorySize: 50,
+    onStateChange: (state) => {
+      // Undo/redo in LaTeX mode should restore the LaTeX draft and re-derive XMD from it.
+      isUserInputRef.current = false;
+      setLatexDraft(state.content);
+      // Keep metadata in sync so refresh reopens in LaTeX reliably.
+      setDocumentMetadata({ ...(documentMetadata as any), lastEditedFormat: 'latex', latex: state.content });
+      try {
+        const ir = parseLatexToIr({ docId: actualDocumentId || documentId, latex: state.content });
+        const nextXmd = irToXmd(ir);
+        setContentWithoutSave(nextXmd);
+      } catch {
+        // Never block undo/redo; keep LaTeX draft visible even if conversion fails.
+      }
+
+      // Restore cursor position if available
+      if (state.cursorPosition && editorViewRef.current) {
+        setCursorPosition(state.cursorPosition);
+        try {
+          const { line, column } = state.cursorPosition;
+          const doc = editorViewRef.current.state.doc;
+          const lineInfo = doc.line(Math.min(line, doc.lines));
+          const pos = lineInfo.from + Math.min(column - 1, lineInfo.length);
+          editorViewRef.current.dispatch({
+            selection: { anchor: pos, head: pos },
+            scrollIntoView: true,
+          });
+        } catch {
+          // ignore
+        }
+      }
+    },
+  });
+
   // Change tracking hook
   const changeTracking = useChangeTracking(content, {
     onApply: async (newContent: string) => {
@@ -681,6 +728,15 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     // Reset the flag after checking
     isUserInputRef.current = false;
   }, [content, undoRedo]);
+
+  useEffect(() => {
+    if (previousLatexForHistoryRef.current !== latexDraft && !isUserInputRef.current) {
+      latexUndoRedo.clearHistory(latexDraft);
+      previousLatexForHistoryRef.current = latexDraft;
+    }
+    // Reset the flag after checking (shared guard for external updates)
+    isUserInputRef.current = false;
+  }, [latexDraft, latexUndoRedo]);
 
   // Handle opening panel for a paragraph
   const handleOpenPanel = useCallback((paragraphId: string) => {
@@ -808,6 +864,34 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           }
         }, 300); // Debounce for 300ms
       }
+
+      // Track undo/redo for LaTeX draft edits too (separate history from XMD).
+      if (!changeTracking.isTracking && editFormat === 'latex') {
+        if (latexDebounceTimeoutRef.current) {
+          clearTimeout(latexDebounceTimeoutRef.current);
+        }
+        latexDebounceTimeoutRef.current = setTimeout(() => {
+          if (previousLatexForHistoryRef.current !== value) {
+            let currentCursorPos = cursorPosition;
+            if (editorViewRef.current && !currentCursorPos) {
+              try {
+                const selection = editorViewRef.current.state.selection.main;
+                const line = editorViewRef.current.state.doc.lineAt(selection.head);
+                currentCursorPos = { line: line.number, column: selection.head - line.from + 1 };
+              } catch {
+                // ignore
+              }
+            }
+            latexUndoRedo.addToHistory({
+              content: value,
+              cursorPosition: currentCursorPos,
+              selection: currentSelectionRef.current,
+              timestamp: Date.now(),
+            });
+            previousLatexForHistoryRef.current = value;
+          }
+        }, 300);
+      }
     },
     [
       updateContent,
@@ -821,6 +905,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       documentId,
       documentMetadata,
       setDocumentMetadata,
+      latexUndoRedo,
     ]
   );
 
@@ -856,7 +941,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         if (changeTracking.isTracking) {
           changeTracking.cancelTracking();
         }
-        const state = undoRedo.undo();
+        if (editFormat === 'latex') latexUndoRedo.undo();
+        else undoRedo.undo();
         // State change is handled by onStateChange callback
         return;
       }
@@ -868,9 +954,50 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         if (changeTracking.isTracking) {
           changeTracking.cancelTracking();
         }
-        const state = undoRedo.redo();
+        if (editFormat === 'latex') latexUndoRedo.redo();
+        else undoRedo.redo();
         // State change is handled by onStateChange callback
         return;
+      }
+
+      // View mode shortcuts: Cmd/Ctrl+Alt+E/P/S/I
+      if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey) {
+        const k = e.key.toLowerCase();
+        if (k === 'e') {
+          e.preventDefault();
+          setViewMode('edit');
+          return;
+        }
+        if (k === 'p') {
+          e.preventDefault();
+          setViewMode('preview');
+          return;
+        }
+        if (k === 's') {
+          e.preventDefault();
+          setViewMode('split');
+          return;
+        }
+        if (k === 'i') {
+          e.preventDefault();
+          setViewMode('ir');
+          return;
+        }
+      }
+
+      // Edit surface shortcuts: Cmd/Ctrl+Alt+M/L
+      if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey) {
+        const k = e.key.toLowerCase();
+        if (k === 'm') {
+          e.preventDefault();
+          void handleEditFormatChange('markdown');
+          return;
+        }
+        if (k === 'l') {
+          e.preventDefault();
+          void handleEditFormatChange('latex');
+          return;
+        }
       }
       
       // Ctrl+S / Cmd+S for immediate auto-save
@@ -942,7 +1069,21 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [content, saveDocument, selectedVersion, latestVersion, cursorPosition, handleOpenPanel, undoRedo, changeTracking, thinkPanelOpen, getCursorScreenPosition]);
+  }, [
+    content,
+    saveDocument,
+    selectedVersion,
+    latestVersion,
+    cursorPosition,
+    handleOpenPanel,
+    undoRedo,
+    latexUndoRedo,
+    changeTracking,
+    thinkPanelOpen,
+    getCursorScreenPosition,
+    editFormat,
+    handleEditFormatChange,
+  ]);
 
   // Handle formatting from toolbar
   const handleFormat = useCallback((format: FormatType) => {
@@ -952,40 +1093,61 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       return; // Don't allow formatting older versions
     }
 
-    // Formatting is a user edit: route through undo/redo + prevent external-change history reset
-    const applyUserEdit = (newContent: string) => {
+    // Formatting is a user edit: apply to the active edit surface (MD or LaTeX) and record history.
+    const applyUserEdit = (nextText: string) => {
       // Mark as user input so the "external content change" effect does not clear history
       isUserInputRef.current = true;
 
-      // Cancel any pending debounced history entry (typing) to avoid weird ordering
+      // Capture cursor position if available
+      let currentCursorPos = cursorPosition;
+      if (editorViewRef.current && !currentCursorPos) {
+        try {
+          const selection = editorViewRef.current.state.selection.main;
+          const line = editorViewRef.current.state.doc.lineAt(selection.head);
+          currentCursorPos = { line: line.number, column: selection.head - line.from + 1 };
+        } catch {
+          // ignore
+        }
+      }
+
+      if (editFormat === 'latex') {
+        // Cancel any pending LaTeX typing history entry to avoid duplicates/out-of-order.
+        if (latexDebounceTimeoutRef.current) {
+          clearTimeout(latexDebounceTimeoutRef.current);
+          latexDebounceTimeoutRef.current = null;
+        }
+        // Prevent the LaTeX typing debounce from adding another identical entry.
+        previousLatexForHistoryRef.current = nextText;
+
+        // Apply to LaTeX surface (this also re-derives XMD).
+        handleContentChange(nextText);
+
+        if (!changeTracking.isTracking) {
+          latexUndoRedo.addToHistory({
+            content: nextText,
+            cursorPosition: currentCursorPos,
+            selection: currentSelectionRef.current,
+            timestamp: Date.now(),
+          });
+        }
+        return;
+      }
+
+      // Markdown surface
       if (debounceTimeoutRef.current) {
         clearTimeout(debounceTimeoutRef.current);
         debounceTimeoutRef.current = null;
       }
+      updateContent(nextText);
 
-      updateContent(newContent);
-
-      // Add to undo history immediately (formatting is an intentional edit)
       if (!changeTracking.isTracking) {
-        // Capture cursor position if available
-        let currentCursorPos = cursorPosition;
-        if (editorViewRef.current && !currentCursorPos) {
-          try {
-            const selection = editorViewRef.current.state.selection.main;
-            const line = editorViewRef.current.state.doc.lineAt(selection.head);
-            currentCursorPos = { line: line.number, column: selection.head - line.from + 1 };
-          } catch {
-            // ignore
-          }
-        }
-
         undoRedo.addToHistory({
-          content: newContent,
+          content: nextText,
           cursorPosition: currentCursorPos,
           selection: currentSelectionRef.current,
           timestamp: Date.now(),
         });
-        previousContentForHistoryRef.current = newContent;
+        previousContentForHistoryRef.current = nextText;
       }
     };
     
@@ -1016,6 +1178,23 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       }
 
       const replaceLine = (lineText: string) => {
+        const trimmed = lineText.trimStart();
+        if (editFormat === 'latex') {
+          // Strip existing heading-ish commands.
+          const stripLatex = (t: string) => {
+            const m =
+              /^\\(title|section|subsection|subsubsection)\{([\s\S]*)\}\s*$/.exec(t) ||
+              /^\\(title|section|subsection|subsubsection)\{([\s\S]*)\}\s*$/.exec(t.trim());
+            if (m) return String(m[2] ?? '');
+            return t.replace(/^\s+/, '');
+          };
+          const core = stripLatex(trimmed);
+          if (level === null) return core;
+          if (level === 0) return core;
+          const cmd = level === 1 ? '\\section' : level === 2 ? '\\subsection' : '\\subsubsection';
+          return `${cmd}{${core}}`;
+        }
+
         const stripped = lineText.replace(/^\s*(?:@\s+|#{1,6}\s+)/, '');
         if (level === null) return stripped; // "Normal"
         const hashes = '#'.repeat(level);
@@ -1037,6 +1216,13 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       const doc = view.state.doc;
       const pos = typeof from === 'number' ? from : view.state.selection.main.head;
       const l = doc.lineAt(pos);
+      if (editFormat === 'latex') {
+        const stripped = l.text.replace(/^\s*\\(title|section|subsection|subsubsection)\{/, '').replace(/\}\s*$/, '');
+        const replaced = `\\title{${stripped}}`;
+        const next = baseContent.slice(0, l.from) + replaced + baseContent.slice(l.to);
+        applyUserEdit(next);
+        return;
+      }
       const stripped = l.text.replace(/^\s*(?:@\s+|#{1,6}\s+)/, '');
       const replaced = `@ ${stripped}`;
       const next = baseContent.slice(0, l.from) + replaced + baseContent.slice(l.to);
@@ -1055,26 +1241,29 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       const selectedText = baseContent.slice(from!, to!);
       switch (format) {
         case 'bold':
-          formattedText = `**${selectedText}**`;
+          formattedText = editFormat === 'latex' ? `\\textbf{${selectedText}}` : `**${selectedText}**`;
           break;
         case 'italic':
-          formattedText = `*${selectedText}*`;
+          formattedText = editFormat === 'latex' ? `\\emph{${selectedText}}` : `*${selectedText}*`;
           break;
         case 'underline':
-          formattedText = `<u>${selectedText}</u>`;
+          formattedText = editFormat === 'latex' ? `\\underline{${selectedText}}` : `<u>${selectedText}</u>`;
           break;
         case 'superscript':
-          formattedText = `<sup>${selectedText}</sup>`;
+          formattedText = editFormat === 'latex' ? `\\textsuperscript{${selectedText}}` : `<sup>${selectedText}</sup>`;
           break;
         case 'subscript':
-          formattedText = `<sub>${selectedText}</sub>`;
+          formattedText = editFormat === 'latex' ? `\\textsubscript{${selectedText}}` : `<sub>${selectedText}</sub>`;
           break;
         case 'code':
-          formattedText = `\`${selectedText}\``;
+          formattedText = editFormat === 'latex' ? `\\texttt{${selectedText}}` : `\`${selectedText}\``;
           break;
         case 'link':
           // Use an absolute placeholder so clicking in preview doesn't navigate the SPA route
-          formattedText = `[${selectedText}](https://example.com)`;
+          formattedText =
+            editFormat === 'latex'
+              ? `\\href{https://example.com}{${selectedText}}`
+              : `[${selectedText}](https://example.com)`;
           break;
       }
 
@@ -1095,33 +1284,44 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       let placeholder = '';
       switch (format) {
         case 'bold':
-          placeholder = '****';
+          placeholder = editFormat === 'latex' ? '\\textbf{}' : '****';
           break;
         case 'italic':
-          placeholder = '**';
+          placeholder = editFormat === 'latex' ? '\\emph{}' : '**';
           break;
         case 'underline':
-          placeholder = '<u></u>';
+          placeholder = editFormat === 'latex' ? '\\underline{}' : '<u></u>';
           break;
         case 'superscript':
-          placeholder = '<sup></sup>';
+          placeholder = editFormat === 'latex' ? '\\textsuperscript{}' : '<sup></sup>';
           break;
         case 'subscript':
-          placeholder = '<sub></sub>';
+          placeholder = editFormat === 'latex' ? '\\textsubscript{}' : '<sub></sub>';
           break;
         case 'code':
-          placeholder = '``';
+          placeholder = editFormat === 'latex' ? '\\texttt{}' : '``';
           break;
         case 'link':
-          placeholder = '[]()';
+          placeholder = editFormat === 'latex' ? '\\href{https://example.com}{}' : '[]()';
           break;
       }
       const insertPos = cmSelection ? cmSelection.head : content.length;
       const safeInsertPos = Math.min(Math.max(0, insertPos), baseContent.length);
-      const newContent = baseContent.slice(0, safeInsertPos) + placeholder + baseContent.slice(safeInsertPos);
-      applyUserEdit(newContent);
+      const nextText = baseContent.slice(0, safeInsertPos) + placeholder + baseContent.slice(safeInsertPos);
+      applyUserEdit(nextText);
     }
-  }, [content, updateContent, selectedVersion, latestVersion, cursorPosition, undoRedo, changeTracking.isTracking]);
+  }, [
+    content,
+    updateContent,
+    selectedVersion,
+    latestVersion,
+    cursorPosition,
+    undoRedo,
+    latexUndoRedo,
+    editFormat,
+    handleContentChange,
+    changeTracking.isTracking,
+  ]);
 
   return (
     <div className="flex h-screen bg-vscode-bg text-vscode-text">
@@ -1239,30 +1439,30 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           onViewModeChange={setViewMode}
           editFormat={editFormat}
           onEditFormatChange={handleEditFormatChange}
-          canUndo={undoRedo.canUndo}
-          canRedo={undoRedo.canRedo}
+          canUndo={editFormat === 'latex' ? latexUndoRedo.canUndo : undoRedo.canUndo}
+          canRedo={editFormat === 'latex' ? latexUndoRedo.canRedo : undoRedo.canRedo}
           onUndo={() => {
             if (changeTracking.isTracking) {
               changeTracking.cancelTracking();
             }
-            undoRedo.undo();
+            if (editFormat === 'latex') latexUndoRedo.undo();
+            else undoRedo.undo();
           }}
           onRedo={() => {
             if (changeTracking.isTracking) {
               changeTracking.cancelTracking();
             }
-            undoRedo.redo();
+            if (editFormat === 'latex') latexUndoRedo.redo();
+            else undoRedo.redo();
           }}
         />
 
         {/* Formatting Toolbar */}
-        {editFormat === 'markdown' && (
-          <FormattingToolbar
-            onFormat={handleFormat}
-            viewMode={viewMode}
-            currentStyle={currentTextStyle}
-          />
-        )}
+        <FormattingToolbar
+          onFormat={handleFormat}
+          viewMode={viewMode}
+          currentStyle={currentTextStyle}
+        />
 
         {/* Change Tracking Banner - shown at top when tracking is active */}
         {changeTracking.isTracking && (
@@ -1328,7 +1528,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 <InlineAIChat
                   position={cursorScreenPosition}
                   documentId={actualDocumentId}
-                  content={content}
+                  editFormat={editFormat}
+                  content={editFormat === 'latex' ? latexDraft : content}
                   cursorPosition={cursorPosition}
                   selection={currentSelectionRef.current}
                   scopeKind={currentSelectionRef.current?.text?.trim() ? 'selection' : 'cursor_paragraph'}
@@ -1337,6 +1538,12 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                     if (sel && sel.text && sel.text.trim().length > 0) return sel.text;
 
                     if (!cursorPosition) return '';
+                    if (editFormat === 'latex') {
+                      const lines = latexDraft.split('\n');
+                      const idx = Math.max(0, Math.min(cursorPosition.line - 1, Math.max(0, lines.length - 1)));
+                      return (lines[idx] ?? '').trim();
+                    }
+
                     const cursorLine = cursorPosition.line - 1;
                     const { blocks, cursorBlockId } = buildInlineBlocksAroundCursor(content, cursorLine);
                     const cursorBlock = blocks.find((b) => b.id === cursorBlockId);
@@ -1354,6 +1561,10 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                     setInlineAIChatOpen(false);
                   }}
                   onPreviewInlineEdit={async ({ prompt, mode, scopeStrategy = 'selection-or-prev-paragraph' }) => {
+                    if (editFormat === 'latex') {
+                      // Inline edits are currently markdown/XMD-only. Keep LaTeX surface stable.
+                      return { operations: [], previewText: '', newContent: latexDraft };
+                    }
                     if (!cursorPosition) {
                       return { operations: [], previewText: '', newContent: content };
                     }
@@ -1455,7 +1666,20 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                   }}
                   onPreviewInsertAtCursor={async ({ content: insertContent, placement = 'after' }) => {
                     if (!cursorPosition) {
-                      return { operations: [], previewText: '', newContent: content };
+                      return { operations: [], previewText: '', newContent: editFormat === 'latex' ? latexDraft : content };
+                    }
+
+                    if (editFormat === 'latex') {
+                      const src = latexDraft;
+                      const lines = src.split('\n');
+                      const lineIdx = Math.max(0, Math.min(cursorPosition.line - 1, Math.max(0, lines.length - 1)));
+                      let lineStart = 0;
+                      for (let i = 0; i < lineIdx; i++) lineStart += (lines[i]?.length ?? 0) + 1;
+                      const lineEnd = lineStart + (lines[lineIdx]?.length ?? 0);
+                      const lineEndWithNewline = lineEnd + (lineIdx < lines.length - 1 ? 1 : 0);
+                      const insertAt = placement === 'before' ? lineStart : lineEndWithNewline;
+                      const newLatex = src.slice(0, insertAt) + insertContent + src.slice(insertAt);
+                      return { operations: [], previewText: insertContent, newContent: newLatex };
                     }
 
                     const cursorLine = cursorPosition.line - 1; // Convert to 0-based
@@ -1475,6 +1699,12 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                     return { operations, previewText: insertContent, newContent };
                   }}
                   onApplyInlinePreview={async (preview) => {
+                    if (editFormat === 'latex') {
+                      handleContentChange(preview.newContent);
+                      setInlineAIChatOpen(false);
+                      return;
+                    }
+
                     // Apply the already-previewed content without another AI call
                     setPendingChangeContent({ original: content, new: preview.newContent });
                     changeTracking.startTracking(preview.newContent, content);

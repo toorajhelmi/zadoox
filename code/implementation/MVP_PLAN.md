@@ -788,15 +788,8 @@ This phase implements undo/redo functionality for document editing, allowing use
 - [ ] Table creation/editing
 - [ ] Basic formatting toolbar
 - [ ] Find/replace
-- [ ] LaTeX preview (optional, basic)
 - [ ] AI suggestion UI component
 - [ ] Inline suggestions (accept with Tab)
-- [ ] AI toolbar/menu:
-  - [ ] Expand text
-  - [ ] Improve text
-  - [ ] Suggest completion
-- [ ] Loading states
-- [ ] Error handling
 
 **Deliverables**:
 - AI features in UI

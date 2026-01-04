@@ -3,6 +3,8 @@
 import type { InlineEditOperation } from '@zadoox/shared';
 import type { QuickOption, QuickOptionWizardKey } from '@/lib/services/context-options';
 
+export type EditorSurfaceFormat = 'markdown' | 'latex';
+
 export interface InlineWizardPreview {
   operations: InlineEditOperation[];
   previewText: string;
@@ -17,6 +19,7 @@ export type InlineWizardScopeStrategy =
 export interface InlineWizardContext {
   option: QuickOption;
   documentId: string;
+  editFormat: EditorSurfaceFormat;
   content: string;
   cursorPosition: { line: number; column: number };
   scope: {
