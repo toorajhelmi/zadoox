@@ -18,8 +18,8 @@ export function useEditorEditMode(params: {
   documentId: string;
   content: string;
   ir: DocumentNode | null;
-  documentMetadata: EditorDocMetadata;
-  setDocumentMetadata: React.Dispatch<React.SetStateAction<EditorDocMetadata>>;
+  documentMetadata: EditorDocMetadata | null | undefined;
+  setDocumentMetadata: React.Dispatch<React.SetStateAction<EditorDocMetadata | null | undefined>>;
   updateContent: (next: string) => void;
 }) {
   const { actualDocumentId, documentId, content, ir, documentMetadata, setDocumentMetadata, updateContent } = params;
@@ -41,7 +41,7 @@ export function useEditorEditMode(params: {
       didInitModeRef.current = false;
     }
 
-    const meta = documentMetadata;
+    const meta: EditorDocMetadata = documentMetadata ?? {};
     const last = meta.lastEditedFormat;
     const latex = meta.latex;
     if (!didInitModeRef.current && (last === 'latex' || last === 'markdown')) {
@@ -75,7 +75,7 @@ export function useEditorEditMode(params: {
       try {
         const currentIr = ir ?? parseXmdToIr({ docId: actualDocumentId, xmd: content });
         const currentIrHash = computeDocIrHash(currentIr);
-        const meta = documentMetadata;
+        const meta: EditorDocMetadata = documentMetadata ?? {};
 
         const switchImpl: Record<EditMode, () => Promise<void>> = {
           latex: async () => {
