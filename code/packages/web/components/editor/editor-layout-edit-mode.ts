@@ -11,15 +11,15 @@ export type EditorDocMetadata = {
   lastEditedFormat?: EditMode;
   latex?: string;
   latexIrHash?: string | null;
-} & Record<string, unknown>;
+} & Record<string, any>;
 
 export function useEditorEditMode(params: {
   actualDocumentId: string | undefined;
   documentId: string;
   content: string;
   ir: DocumentNode | null;
-  documentMetadata: EditorDocMetadata | null | undefined;
-  setDocumentMetadata: React.Dispatch<React.SetStateAction<EditorDocMetadata | null | undefined>>;
+  documentMetadata: EditorDocMetadata | undefined;
+  setDocumentMetadata: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   updateContent: (next: string) => void;
 }) {
   const { actualDocumentId, documentId, content, ir, documentMetadata, setDocumentMetadata, updateContent } = params;
