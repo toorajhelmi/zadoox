@@ -16,13 +16,23 @@ import { useDocumentState } from '@/hooks/use-document-state';
 import { useIrDocument } from '@/hooks/use-ir-document';
 import { api } from '@/lib/api/client';
 import type { FormatType } from './floating-format-menu';
-import { useChangeTracking } from '@/hooks/use-change-tracking';
-import { useUndoRedo } from '@/hooks/use-undo-redo';
 import type { ResearchSource, DocumentStyle } from '@zadoox/shared';
 import type { InlineEditBlock, InlineEditOperation } from '@zadoox/shared';
-import { extractCitedSourceIds } from '@/lib/utils/citation';
 import type { QuickOption } from '@/lib/services/context-options';
 import { irToLatexDocument, irToXmd, parseLatexToIr, parseXmdToIr } from '@zadoox/shared';
+import { applyInlineOperations, buildInlineBlocksAroundCursor } from './editor-layout-inline-edit';
+import { useEditorKeyboardShortcuts } from './editor-layout-shortcuts';
+import { useEditorFormatHandler } from './editor-layout-formatting';
+import { useEditorLayoutSizing } from './editor-layout-sizing';
+import { useProjectDocumentStyle } from './editor-layout-project-settings';
+import { useEditorCursorScreenPosition } from './editor-layout-cursor';
+import { useEditorSaveWithCitationsCleanup } from './editor-layout-save';
+import { useEditorVersionMetadata } from './editor-layout-versioning';
+import { useEditorHistoryAndChangeTracking } from './editor-layout-history';
+import { useEditorEditFormat } from './editor-layout-edit-format';
+import { applyThinkModeGeneratedContentToXmd } from './editor-layout-think-apply';
+import { rollbackToVersion, selectVersionForViewing } from './editor-layout-version-actions';
+import { previewInsertAtCursor } from './editor-layout-inline-preview';
 
 interface EditorLayoutProps {
   projectId: string;
@@ -30,7 +40,6 @@ interface EditorLayoutProps {
 }
 
 type ViewMode = 'edit' | 'preview' | 'split' | 'ir';
-type EditFormat = 'markdown' | 'latex';
 
 type SidebarTab = 'outline' | 'history';
 
@@ -49,12 +58,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     documentMetadata,
     setDocumentMetadata,
   } = useDocumentState(documentId, projectId);
-  const previousContentRef = useRef<string>(content);
-  
-  // Update previousContentRef when content changes from outside (e.g., document load)
-  useEffect(() => {
-    previousContentRef.current = content;
-  }, [content]);
   
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('outline');
@@ -76,8 +79,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   }, []);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
-  const [editFormat, setEditFormat] = useState<EditFormat>('markdown');
-  const [latexDraft, setLatexDraft] = useState<string>('');
   // Editor/preview splitter state (used in split mode)
   const [editorPaneWidth, setEditorPaneWidth] = useState<number>(0); // px; 0 => default (50%)
   const [isResizingEditorPane, setIsResizingEditorPane] = useState(false);
@@ -95,7 +96,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [isGeneratingContent, setIsGeneratingContent] = useState(false);
   const [busyOverlayMessage, setBusyOverlayMessage] = useState<string>('Generating content...');
   const previousContentForHistoryRef = useRef<string>(content);
+  const previousLatexForHistoryRef = useRef<string>('');
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const latexDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const editorViewRef = useRef<import('@codemirror/view').EditorView | null>(null);
   const editorContainerRef = useRef<HTMLDivElement | null>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -106,15 +109,42 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     isAnalyzing: boolean;
   } | null>(null);
 
+  // Phase 11: keep IR updated as XMD changes (debounced), compute node-level delta + events.
+  const irState = useIrDocument({
+    docId: actualDocumentId || documentId,
+    xmd: content,
+    debounceMs: 250,
+    enabled: Boolean(actualDocumentId || documentId),
+  });
+
+  const { editFormat, setEditFormat, latexDraft, setLatexDraft, handleEditFormatChange } = useEditorEditFormat({
+    actualDocumentId,
+    documentId,
+    content,
+    ir: irState.ir,
+    documentMetadata,
+    setDocumentMetadata,
+    updateContent,
+  });
+
   const currentTextStyle = (() => {
     const view = editorViewRef.current;
     if (!view) return 'paragraph' as const;
     try {
       const sel = view.state.selection.main;
       const line = view.state.doc.lineAt(sel.head).text;
-      const t = /^@\s+/.exec(line.trimStart());
+      const trimmed = line.trimStart();
+      if (editFormat === 'latex') {
+        if (/^\\title\{/.test(trimmed)) return 'title' as const;
+        if (/^\\section\{/.test(trimmed)) return 'heading1' as const;
+        if (/^\\subsection\{/.test(trimmed)) return 'heading2' as const;
+        if (/^\\subsubsection\{/.test(trimmed)) return 'heading3' as const;
+        return 'paragraph' as const;
+      }
+
+      const t = /^@\s+/.exec(trimmed);
       if (t) return 'title' as const;
-      const m = /^(#{1,6})\s+/.exec(line.trimStart());
+      const m = /^(#{1,6})\s+/.exec(trimmed);
       if (!m) return 'paragraph' as const;
       const level = m[1].length;
       if (level === 1) return 'heading1' as const; // Section
@@ -125,562 +155,59 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     }
   })();
 
-  // Phase 11: keep IR updated as XMD changes (debounced), compute node-level delta + events.
-  const irState = useIrDocument({
-    docId: actualDocumentId || documentId,
-    xmd: content,
-    debounceMs: 250,
-    enabled: Boolean(actualDocumentId || documentId),
+  const { handleSidebarResizeStart, handleEditorPaneResizeStart } = useEditorLayoutSizing({
+    sidebarRef,
+    editorContainerRef,
+    isResizingSidebar,
+    setIsResizingSidebar,
+    setSidebarWidth,
+    isResizingEditorPane,
+    setIsResizingEditorPane,
+    setEditorPaneWidth,
   });
 
-  // Initialize edit format / cached latex from metadata (Phase 12).
-  useEffect(() => {
-    const last = (documentMetadata as any)?.lastEditedFormat as EditFormat | undefined;
-    const latex = (documentMetadata as any)?.latex as string | undefined;
-    if (last === 'latex' || last === 'markdown') {
-      setEditFormat(last);
-    }
-    if (typeof latex === 'string') {
-      // Avoid overwriting while the user is actively typing in LaTeX (prevents cursor/scroll reset).
-      // We intentionally do NOT regenerate LaTeX from IR here; the LaTeX draft is treated as the
-      // persisted editing surface when lastEditedFormat === 'latex'.
-      const shouldAdopt = latexDraft.length === 0 || editFormat !== 'latex';
-      if (shouldAdopt) setLatexDraft(latex);
-    } else if (last === 'latex' && !latexDraft) {
-      // If last format is LaTeX but we have no cached latex yet, derive it from IR/XMD.
-      try {
-        const ir = irState.ir;
-        if (ir) setLatexDraft(irToLatexDocument(ir));
-      } catch {
-        // ignore
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actualDocumentId, (documentMetadata as any)?.lastEditedFormat, (documentMetadata as any)?.latex]);
-
-  const handleEditFormatChange = useCallback(
-    async (next: EditFormat) => {
-      if (next === editFormat) return;
-      if (!actualDocumentId || actualDocumentId === 'default') {
-        setEditFormat(next);
-        return;
-      }
-
-      try {
-        if (next === 'latex') {
-          const ir = irState.ir ?? parseXmdToIr({ docId: actualDocumentId, xmd: content });
-          const latex = irToLatexDocument(ir);
-          // #region agent log
-          try {
-            const figureLines = (content || '').split('\n').filter((l) => l.includes('![') && l.includes('](') && l.includes('{'));
-            const commentCount = (latex.match(/% zadoox-(align|placement|width|desc):/g) || []).length;
-            fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'figattrs1',hypothesisId:'FA2',location:'editor-layout.tsx:handleEditFormatChange',message:'MD->IR->LaTeX on switch',data:{docId:actualDocumentId,figureLineCount:figureLines.length,figureLine0:(figureLines[0]||'').slice(0,240),latexLen:latex.length,zadooxCommentCount:commentCount},timestamp:Date.now()})}).catch(()=>{});
-          } catch {}
-          // #endregion
-          setLatexDraft(latex);
-          setEditFormat('latex');
-          const nextMeta = { ...(documentMetadata as any), latex, lastEditedFormat: 'latex' as const };
-          setDocumentMetadata(nextMeta);
-          await api.documents.update(actualDocumentId, {
-            content,
-            metadata: nextMeta,
-            changeType: 'manual-save',
-            changeDescription: 'Switched editor to LaTeX',
-          });
-          return;
-        }
-
-        // next === 'markdown'
-        setEditFormat('markdown');
-        const nextMeta = { ...(documentMetadata as any), latex: latexDraft, lastEditedFormat: 'markdown' as const };
-        setDocumentMetadata(nextMeta);
-        await api.documents.update(actualDocumentId, {
-          content,
-          metadata: nextMeta,
-          changeType: 'manual-save',
-          changeDescription: 'Switched editor to Markdown',
-        });
-      } catch (e) {
-        console.error('Failed to switch edit format:', e);
-        // Keep UI responsive even if persistence fails.
-        setEditFormat(next);
-      }
-    },
-    [actualDocumentId, content, documentMetadata, editFormat, irState.ir, latexDraft, setDocumentMetadata]
-  );
-
-  // Sidebar resize handlers
-  const handleSidebarResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizingSidebar(true);
-  }, []);
-
-  // Editor/preview splitter resize handlers (split + compare modes)
-  const handleEditorPaneResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizingEditorPane(true);
-  }, []);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('editor-pane-width');
-      if (saved) {
-        const next = parseInt(saved, 10);
-        if (Number.isFinite(next) && next > 0) {
-          setEditorPaneWidth(next);
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isResizingSidebar) return;
-
-    const MIN_SIDEBAR_WIDTH = 150;
-    const MAX_SIDEBAR_WIDTH = typeof window !== 'undefined' ? window.innerWidth * 0.5 : 600;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      e.preventDefault();
-      if (!sidebarRef.current) return;
-      
-      // Get the sidebar container's left position
-      const sidebarRect = sidebarRef.current.getBoundingClientRect();
-      const newWidth = e.clientX - sidebarRect.left;
-      const clampedWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, newWidth));
-      setSidebarWidth(clampedWidth);
-      localStorage.setItem('editor-sidebar-width', clampedWidth.toString());
-    };
-
-    const handleMouseUp = () => {
-      setIsResizingSidebar(false);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove, { passive: false });
-    document.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isResizingSidebar]);
-
-  useEffect(() => {
-    if (!isResizingEditorPane) return;
-
-    const MIN_EDITOR_WIDTH = 360;
-    const MIN_PREVIEW_WIDTH = 360;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      e.preventDefault();
-      if (!editorContainerRef.current) return;
-
-      const rect = editorContainerRef.current.getBoundingClientRect();
-      const raw = e.clientX - rect.left;
-      const maxEditor = Math.max(MIN_EDITOR_WIDTH, rect.width - MIN_PREVIEW_WIDTH);
-      const clamped = Math.max(MIN_EDITOR_WIDTH, Math.min(maxEditor, raw));
-
-      setEditorPaneWidth(clamped);
-      try {
-        localStorage.setItem('editor-pane-width', clamped.toString());
-      } catch {
-        // ignore
-      }
-    };
-
-    const handleMouseUp = () => {
-      setIsResizingEditorPane(false);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove, { passive: false });
-    document.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isResizingEditorPane]);
-
-  function buildInlineBlocksAroundCursor(fullText: string, cursorLine0: number) {
-    const lines = fullText.split('\n');
-    const startLine = Math.max(0, cursorLine0 - 40);
-    const endLine = Math.min(lines.length - 1, cursorLine0 + 40);
-
-    let prefixOffset = 0;
-    for (let i = 0; i < startLine; i++) prefixOffset += (lines[i]?.length || 0) + 1;
-
-    const windowLines = lines.slice(startLine, endLine + 1);
-    const windowText = windowLines.join('\n');
-
-    const blocks: InlineEditBlock[] = [];
-    const isBlank = (s: string) => s.trim().length === 0;
-
-    const windowOffsets: number[] = [];
-    {
-      let off = 0;
-      for (const l of windowLines) {
-        windowOffsets.push(off);
-        off += l.length + 1;
-      }
-    }
-
-    let i = 0;
-    let blockIndex = 0;
-    while (i < windowLines.length) {
-      const line = windowLines[i] ?? '';
-      const lineTrim = line.trim();
-
-      const startInWindow = windowOffsets[i] ?? 0;
-
-      // Code fence block
-      if (lineTrim.startsWith('```')) {
-        let j = i + 1;
-        while (j < windowLines.length) {
-          const t = (windowLines[j] ?? '').trim();
-          if (t.startsWith('```')) {
-            j++;
-            break;
-          }
-          j++;
-        }
-        const endInWindow = j < windowLines.length ? (windowOffsets[j] ?? windowText.length) : windowText.length;
-        const text = windowText.slice(startInWindow, endInWindow);
-        blocks.push({
-          id: `b${blockIndex++}`,
-          kind: 'code',
-          text,
-          start: prefixOffset + startInWindow,
-          end: prefixOffset + endInWindow,
-        });
-        i = j;
-        continue;
-      }
-
-      // Heading as its own block (include following blank line if present)
-      if (lineTrim.startsWith('#')) {
-        let j = i + 1;
-        while (j < windowLines.length && isBlank(windowLines[j] ?? '')) j++;
-        const endInWindow = j < windowLines.length ? (windowOffsets[j] ?? windowText.length) : windowText.length;
-        const text = windowText.slice(startInWindow, endInWindow);
-        blocks.push({
-          id: `b${blockIndex++}`,
-          kind: 'heading',
-          text,
-          start: prefixOffset + startInWindow,
-          end: prefixOffset + endInWindow,
-        });
-        i = j;
-        continue;
-      }
-
-      // Blank block (collapse contiguous blanks)
-      if (isBlank(line)) {
-        let j = i + 1;
-        while (j < windowLines.length && isBlank(windowLines[j] ?? '')) j++;
-        const endInWindow = j < windowLines.length ? (windowOffsets[j] ?? windowText.length) : windowText.length;
-        const text = windowText.slice(startInWindow, endInWindow);
-        blocks.push({
-          id: `b${blockIndex++}`,
-          kind: 'blank',
-          text,
-          start: prefixOffset + startInWindow,
-          end: prefixOffset + endInWindow,
-        });
-        i = j;
-        continue;
-      }
-
-      // List block (basic)
-      const isListLine = (s: string) => {
-        const t = s.trim();
-        return /^([-*+])\s+/.test(t) || /^\d+\.\s+/.test(t);
-      };
-      if (isListLine(line)) {
-        let j = i + 1;
-        while (j < windowLines.length) {
-          const l2 = windowLines[j] ?? '';
-          if (isBlank(l2)) {
-            j++;
-            break;
-          }
-          if (!isListLine(l2)) break;
-          j++;
-        }
-        const endInWindow = j < windowLines.length ? (windowOffsets[j] ?? windowText.length) : windowText.length;
-        const text = windowText.slice(startInWindow, endInWindow);
-        blocks.push({
-          id: `b${blockIndex++}`,
-          kind: 'list',
-          text,
-          start: prefixOffset + startInWindow,
-          end: prefixOffset + endInWindow,
-        });
-        i = j;
-        continue;
-      }
-
-      // Paragraph/other: consume until blank line
-      let j = i + 1;
-      while (j < windowLines.length && !isBlank(windowLines[j] ?? '')) {
-        const t = (windowLines[j] ?? '').trim();
-        if (t.startsWith('#') || t.startsWith('```')) break;
-        j++;
-      }
-      if (j < windowLines.length && isBlank(windowLines[j] ?? '')) j++;
-      const endInWindow = j < windowLines.length ? (windowOffsets[j] ?? windowText.length) : windowText.length;
-      const text = windowText.slice(startInWindow, endInWindow);
-      blocks.push({
-        id: `b${blockIndex++}`,
-        kind: 'paragraph',
-        text,
-        start: prefixOffset + startInWindow,
-        end: prefixOffset + endInWindow,
-      });
-      i = j;
-    }
-
-    // Identify cursor block by absolute character offset
-    let cursorPos = 0;
-    for (let li = 0; li < cursorLine0 && li < lines.length; li++) cursorPos += (lines[li]?.length || 0) + 1;
-    const cursorBlock = blocks.find(b => cursorPos >= b.start && cursorPos < b.end) || blocks[0];
-    return { blocks, cursorBlockId: cursorBlock?.id };
-  }
-
-  function applyInlineOperations(fullText: string, blocks: InlineEditBlock[], operations: InlineEditOperation[]) {
-    const byId = new Map(blocks.map(b => [b.id, b]));
-    let text = fullText;
-
-    // Apply from end to start (stable offsets)
-    const toSpan = (op: InlineEditOperation) => {
-      if (op.type === 'replace_range') {
-        const a = byId.get(op.startBlockId);
-        const b = byId.get(op.endBlockId);
-        if (!a || !b) return null;
-        const start = Math.min(a.start, b.start);
-        const end = Math.max(a.end, b.end);
-        return { start, end, insert: op.content };
-      }
-      if (op.type === 'insert_before') {
-        const a = byId.get(op.anchorBlockId);
-        if (!a) return null;
-        return { start: a.start, end: a.start, insert: op.content };
-      }
-      if (op.type === 'insert_after') {
-        const a = byId.get(op.anchorBlockId);
-        if (!a) return null;
-        return { start: a.end, end: a.end, insert: op.content };
-      }
-      return null;
-    };
-
-    const spans = operations.map(toSpan).filter((x): x is { start: number; end: number; insert: string } => !!x);
-    spans.sort((s1, s2) => s2.start - s1.start);
-
-    for (const s of spans) {
-      text = text.slice(0, s.start) + s.insert + text.slice(s.end);
-    }
-    return text;
-  }
+  // Inline edit helpers extracted to `editor-layout-inline-edit.ts`
 
 
-  // Helper to clean up insertedSources when citations are removed
-  // This is a background cleanup operation - errors are logged but don't block the main flow
-  const cleanupInsertedSources = useCallback(async (newContent: string, _oldContent: string) => {
-    const currentDocument = await api.documents.get(actualDocumentId);
-    const insertedSources: ResearchSource[] = currentDocument.metadata?.insertedSources || [];
-    
-    // Extract source IDs that are still cited in the new content
-    const citedSourceIds = extractCitedSourceIds(newContent);
-    
-    // Filter out sources that are no longer cited
-    const remainingInsertedSources = insertedSources.filter(source => citedSourceIds.has(source.id));
-    
-    // Only update if something changed
-    if (remainingInsertedSources.length !== insertedSources.length) {
-      await api.documents.update(actualDocumentId, {
-        metadata: {
-          ...currentDocument.metadata,
-          insertedSources: remainingInsertedSources,
-        },
-      });
-    }
-  }, [actualDocumentId]);
-
-  // Wrapper for saveDocument that also cleans up insertedSources
-  const saveDocument = useCallback(async (contentToSave: string, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
-    const oldContent = previousContentRef.current;
-    // Clean up insertedSources before saving
-    await cleanupInsertedSources(contentToSave, oldContent);
-    previousContentRef.current = contentToSave;
-    await originalSaveDocument(contentToSave, changeType);
-  }, [originalSaveDocument, cleanupInsertedSources]);
-
-  // Load project settings for document style
-  useEffect(() => {
-    let cancelled = false;
-    async function loadProjectSettings() {
-      try {
-        const project = await api.projects.get(projectId);
-        if (cancelled) return;
-        setProjectName(String(project.name ?? ''));
-        
-        // FIX: If documentStyle is missing, update it based on project type
-        // This handles the case where the database has it but the API doesn't return it properly
-        if (!project.settings.documentStyle) {
-          const defaultDocumentStyle = project.type === 'academic' ? 'academic' : 'other';
-          try {
-            await api.projects.update(projectId, {
-              settings: {
-                ...project.settings,
-                documentStyle: defaultDocumentStyle,
-              },
-            });
-            // Reload project to get updated settings
-            const updatedProject = await api.projects.get(projectId);
-            if (cancelled) return;
-            const loadedStyle = updatedProject.settings.documentStyle || defaultDocumentStyle;
-            setDocumentStyle(loadedStyle);
-            return;
-          } catch (updateError) {
-            console.error('Failed to update project documentStyle:', updateError);
-            // Fall through to use default
-          }
-        }
-        
-        const loadedStyle = project.settings.documentStyle || 'other';
-        setDocumentStyle(loadedStyle);
-      } catch (error) {
-        console.error('Failed to load project settings:', error);
-      }
-    }
-
-    if (projectId) {
-      loadProjectSettings();
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
-
-  // Helper to get cursor screen coordinates from CodeMirror
-  const getCursorScreenPosition = useCallback((): { top: number; left: number } | null => {
-    if (!editorViewRef.current || !editorContainerRef.current) return null;
-
-    try {
-      const view = editorViewRef.current;
-      const selection = view.state.selection.main;
-      const pos = selection.head;
-      
-      // Get coordinates at cursor position
-      const coords = view.coordsAtPos(pos);
-      if (!coords) return null;
-
-      // Get editor container bounding rect
-      const containerRect = editorContainerRef.current.getBoundingClientRect();
-      
-      // Calculate position relative to viewport
-      return {
-        top: coords.top,
-        left: coords.left,
-      };
-    } catch (error) {
-      console.error('Failed to get cursor screen position:', error);
-      return null;
-    }
-  }, []);
-
-  // Update cursor screen position when cursor moves or sidebar state changes
-  // Use requestAnimationFrame to defer update and avoid nested CodeMirror updates
-  useEffect(() => {
-    if (cursorPosition && !thinkPanelOpen && !inlineAIChatOpen) {
-      requestAnimationFrame(() => {
-        try {
-          const screenPos = getCursorScreenPosition();
-          if (screenPos) {
-            setCursorScreenPosition(screenPos);
-          }
-        } catch (error) {
-          // Silently ignore errors during cursor position updates
-          // This can happen if CodeMirror is updating
-        }
-      });
-    }
-  }, [cursorPosition, thinkPanelOpen, inlineAIChatOpen, sidebarOpen, sidebarWidth, getCursorScreenPosition]);
-
-  // Undo/Redo hook (defined first to avoid circular dependencies)
-  const undoRedo = useUndoRedo(content, {
-    maxHistorySize: 50,
-    onStateChange: (state) => {
-      // When undo/redo is performed, update content and clear change tracking
-      // Mark as undo/redo operation to prevent history clearing
-      isUserInputRef.current = false; // This is an undo/redo, not user input
-      previousContentForHistoryRef.current = state.content; // Update ref to prevent history clearing
-      setContentWithoutSave(state.content);
-      // Restore cursor position if available
-      if (state.cursorPosition && editorViewRef.current) {
-        setCursorPosition(state.cursorPosition);
-        // Restore cursor position in editor
-        try {
-          const { line, column } = state.cursorPosition;
-          const doc = editorViewRef.current.state.doc;
-          const lineInfo = doc.line(Math.min(line, doc.lines));
-          const pos = lineInfo.from + Math.min(column - 1, lineInfo.length);
-          editorViewRef.current.dispatch({
-            selection: { anchor: pos, head: pos },
-            scrollIntoView: true,
-          });
-        } catch (error) {
-          // Cursor restoration failed, but content was updated
-        }
-      }
-    },
+  const { saveDocument, cleanupInsertedSources } = useEditorSaveWithCitationsCleanup({
+    actualDocumentId,
+    originalSaveDocument,
   });
 
-  // Change tracking hook
-  const changeTracking = useChangeTracking(content, {
-    onApply: async (newContent: string) => {
-      // Clean up insertedSources before updating content
-      await cleanupInsertedSources(newContent, content);
-      updateContent(newContent);
-      await saveDocument(newContent, 'ai-action');
-      setPendingChangeContent(null);
-      // Add to undo history after applying changes
-      // Capture current cursor position
-      let currentCursorPos = cursorPosition;
-      if (editorViewRef.current && !currentCursorPos) {
-        try {
-          const selection = editorViewRef.current.state.selection.main;
-          const line = editorViewRef.current.state.doc.lineAt(selection.head);
-          currentCursorPos = { line: line.number, column: selection.head - line.from + 1 };
-        } catch {
-          // Failed to get cursor position
-        }
-      }
-      undoRedo.addToHistory({
-        content: newContent,
-        cursorPosition: currentCursorPos,
-        selection: currentSelectionRef.current,
-        timestamp: Date.now(),
-      });
-      previousContentForHistoryRef.current = newContent;
-    },
-    onCancel: () => {
-      setPendingChangeContent(null);
-    },
+  useProjectDocumentStyle({ projectId, setProjectName, setDocumentStyle });
+
+  const { getCursorScreenPosition } = useEditorCursorScreenPosition({
+    editorViewRef,
+    editorContainerRef,
+    cursorPosition,
+    thinkPanelOpen,
+    inlineAIChatOpen,
+    sidebarOpen,
+    sidebarWidth,
+    setCursorScreenPosition,
   });
 
-  // Clear undo/redo history when document changes (e.g., loading a different document)
-  // Only clear if the change is NOT from user input (i.e., from external source like document load)
-  useEffect(() => {
-    if (previousContentForHistoryRef.current !== content && !isUserInputRef.current) {
-      // Content changed from outside (e.g., document load) - clear history
-      undoRedo.clearHistory(content);
-      previousContentForHistoryRef.current = content;
-    }
-    // Reset the flag after checking
-    isUserInputRef.current = false;
-  }, [content, undoRedo]);
+  const { undoRedo, latexUndoRedo, changeTracking } = useEditorHistoryAndChangeTracking({
+    content,
+    latexDraft,
+    actualDocumentId,
+    documentId,
+    documentMetadata,
+    cursorPosition,
+    setCursorPosition,
+    editorViewRef,
+    currentSelectionRef,
+    isUserInputRef,
+    previousContentForHistoryRef,
+    previousLatexForHistoryRef,
+    setLatexDraft,
+    setDocumentMetadata,
+    setContentWithoutSave,
+    updateContent,
+    setPendingChangeContent,
+    cleanupInsertedSources,
+    saveDocument,
+  });
 
   // Handle opening panel for a paragraph
   const handleOpenPanel = useCallback((paragraphId: string) => {
@@ -697,52 +224,14 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   }, []);
 
 
-  // Load version metadata to determine latest version
-  useEffect(() => {
-    if (!actualDocumentId || actualDocumentId === 'default') return;
-
-    async function loadMetadata() {
-      const metadata = await api.versions.getMetadata(actualDocumentId);
-      let newLatestVersion: number | null = null;
-      
-      // Check if currentVersion exists and is valid
-      if (metadata.currentVersion !== undefined && metadata.currentVersion !== null) {
-        newLatestVersion = Number(metadata.currentVersion);
-      } else {
-        // Fallback: get latest from versions list
-        const versions = await api.versions.list(actualDocumentId, 1, 0);
-        if (versions.length > 0) {
-          newLatestVersion = versions[0].versionNumber;
-        }
-      }
-      
-      if (newLatestVersion !== null) {
-        // If the latest version changed and we were viewing the latest, update to new latest
-        if (latestVersion !== null && newLatestVersion > latestVersion && selectedVersion === null) {
-          // New version was created while viewing the latest - stay on latest
-          setLatestVersion(newLatestVersion);
-          setSelectedVersion(null); // Ensure we're still viewing the latest
-        } else if (latestVersion !== null && newLatestVersion > latestVersion && selectedVersion !== null) {
-          // New version was created while viewing an older version - keep viewing that older version (read-only)
-          setLatestVersion(newLatestVersion);
-          // Don't change selectedVersion - keep it read-only
-        } else {
-          setLatestVersion(newLatestVersion);
-        }
-      }
-    }
-
-    // Load metadata - errors will propagate in tests, handled gracefully in production
-    loadMetadata().catch((error) => {
-      // In test environment, let errors propagate so tests fail when mocks are incorrect
-      if (process.env.NODE_ENV === 'test') {
-        throw error;
-      }
-      // In production, log but don't break the component (background operation)
-      console.error('Failed to load version metadata:', error);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actualDocumentId, latestVersion, selectedVersion, lastSaved?.getTime()]); // Reload when lastSaved changes (new version created)
+  useEditorVersionMetadata({
+    actualDocumentId,
+    lastSavedMs: lastSaved ? lastSaved.getTime() : null,
+    latestVersion,
+    selectedVersion,
+    setLatestVersion,
+    setSelectedVersion,
+  });
 
   const handleContentChange = useCallback(
     (value: string) => {
@@ -808,6 +297,34 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           }
         }, 300); // Debounce for 300ms
       }
+
+      // Track undo/redo for LaTeX draft edits too (separate history from XMD).
+      if (!changeTracking.isTracking && editFormat === 'latex') {
+        if (latexDebounceTimeoutRef.current) {
+          clearTimeout(latexDebounceTimeoutRef.current);
+        }
+        latexDebounceTimeoutRef.current = setTimeout(() => {
+          if (previousLatexForHistoryRef.current !== value) {
+            let currentCursorPos = cursorPosition;
+            if (editorViewRef.current && !currentCursorPos) {
+              try {
+                const selection = editorViewRef.current.state.selection.main;
+                const line = editorViewRef.current.state.doc.lineAt(selection.head);
+                currentCursorPos = { line: line.number, column: selection.head - line.from + 1 };
+              } catch {
+                // ignore
+              }
+            }
+            latexUndoRedo.addToHistory({
+              content: value,
+              cursorPosition: currentCursorPos,
+              selection: currentSelectionRef.current,
+              timestamp: Date.now(),
+            });
+            previousLatexForHistoryRef.current = value;
+          }
+        }, 300);
+      }
     },
     [
       updateContent,
@@ -821,6 +338,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       documentId,
       documentMetadata,
       setDocumentMetadata,
+      latexUndoRedo,
+      setLatexDraft,
     ]
   );
 
@@ -834,294 +353,44 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     setCursorPosition(position);
   }, []);
 
-  // Handle keyboard shortcuts (Ctrl+S / Cmd+S for immediate auto-save, Ctrl+T / Cmd+T for mode toggle, Ctrl+Z/Ctrl+Shift+Z for undo/redo)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't allow shortcuts if viewing an older version
-      // Allow shortcuts if selectedVersion === null (latest) or selectedVersion === latestVersion
-      if (selectedVersion !== null && latestVersion !== null && selectedVersion !== latestVersion) {
-        return; // Don't allow shortcuts for older versions
-      }
+  useEditorKeyboardShortcuts({
+    selectedVersion,
+    latestVersion,
+    changeTracking: { isTracking: changeTracking.isTracking, cancelTracking: changeTracking.cancelTracking },
+    editFormat,
+    undoRedo,
+    latexUndoRedo,
+    setViewMode,
+    handleEditFormatChange,
+    content,
+    saveDocument,
+    thinkPanelOpen,
+    cursorPosition,
+    handleOpenPanel,
+    getCursorScreenPosition,
+    setCursorScreenPosition,
+    setInlineAIChatOpen,
+  });
 
-      // Don't allow undo/redo if change tracking is active
-      if (changeTracking.isTracking) {
-        // Allow undo/redo shortcuts to work even during change tracking
-        // They will cancel change tracking and perform undo/redo
-      }
-      
-      // Ctrl+Z / Cmd+Z for undo
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        // Clear change tracking if active
-        if (changeTracking.isTracking) {
-          changeTracking.cancelTracking();
-        }
-        const state = undoRedo.undo();
-        // State change is handled by onStateChange callback
-        return;
-      }
-      
-      // Ctrl+Shift+Z / Cmd+Shift+Z or Ctrl+Y / Cmd+Y for redo
-      if (((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z') || ((e.ctrlKey || e.metaKey) && e.key === 'y')) {
-        e.preventDefault();
-        // Clear change tracking if active
-        if (changeTracking.isTracking) {
-          changeTracking.cancelTracking();
-        }
-        const state = undoRedo.redo();
-        // State change is handled by onStateChange callback
-        return;
-      }
-      
-      // Ctrl+S / Cmd+S for immediate auto-save
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        // Trigger immediate auto-save by calling saveDocument directly
-        if (saveDocument) {
-          saveDocument(content, 'auto-save');
-        }
-      }
-      
-      // Cmd+K / Ctrl+K for inline AI chat
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        // Don't open if Think panel is open
-        if (thinkPanelOpen) return;
-        // Get cursor screen position
-        const screenPos = getCursorScreenPosition();
-        if (screenPos) {
-          setCursorScreenPosition(screenPos);
-          setInlineAIChatOpen(true);
-        }
-        return;
-      }
-
-      // Ctrl+T / Cmd+T to open Think panel for paragraph at cursor
-      if ((e.ctrlKey || e.metaKey) && e.key === 't') {
-        e.preventDefault();
-        // Find paragraph at cursor position
-        if (cursorPosition && handleOpenPanel) {
-          const lines = content.split('\n');
-          const cursorLine = cursorPosition.line - 1; // Convert to 0-based
-          
-          // Find which paragraph contains this line
-          let currentParagraph: { startLine: number; text: string } | null = null;
-          let paragraphStartLine = 0;
-          
-          for (let i = 0; i < lines.length; i++) {
-            const trimmed = lines[i].trim();
-            
-            if (!trimmed && currentParagraph) {
-              // Blank line ends current paragraph
-              if (cursorLine >= paragraphStartLine && cursorLine < i) {
-                // Cursor is in this paragraph
-                const paragraphId = `para-${paragraphStartLine}`;
-                handleOpenPanel(paragraphId);
-                return;
-              }
-              currentParagraph = null;
-            } else if (trimmed) {
-              // Non-empty line - start or continue paragraph
-              if (!currentParagraph) {
-                currentParagraph = { startLine: i, text: trimmed };
-                paragraphStartLine = i;
-              } else {
-                currentParagraph.text += ' ' + trimmed;
-              }
-            }
-          }
-          
-          // Check if cursor is in the final paragraph
-          if (currentParagraph && cursorLine >= paragraphStartLine) {
-            const paragraphId = `para-${paragraphStartLine}`;
-            handleOpenPanel(paragraphId);
-          }
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [content, saveDocument, selectedVersion, latestVersion, cursorPosition, handleOpenPanel, undoRedo, changeTracking, thinkPanelOpen, getCursorScreenPosition]);
-
-  // Handle formatting from toolbar
-  const handleFormat = useCallback((format: FormatType) => {
-    // Don't allow formatting if viewing an older version
-    // Allow formatting if selectedVersion === null (latest) or selectedVersion === latestVersion
-    if (selectedVersion !== null && latestVersion !== null && selectedVersion !== latestVersion) {
-      return; // Don't allow formatting older versions
-    }
-
-    // Formatting is a user edit: route through undo/redo + prevent external-change history reset
-    const applyUserEdit = (newContent: string) => {
-      // Mark as user input so the "external content change" effect does not clear history
-      isUserInputRef.current = true;
-
-      // Cancel any pending debounced history entry (typing) to avoid weird ordering
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current);
-        debounceTimeoutRef.current = null;
-      }
-
-      updateContent(newContent);
-
-      // Add to undo history immediately (formatting is an intentional edit)
-      if (!changeTracking.isTracking) {
-        // Capture cursor position if available
-        let currentCursorPos = cursorPosition;
-        if (editorViewRef.current && !currentCursorPos) {
-          try {
-            const selection = editorViewRef.current.state.selection.main;
-            const line = editorViewRef.current.state.doc.lineAt(selection.head);
-            currentCursorPos = { line: line.number, column: selection.head - line.from + 1 };
-          } catch {
-            // ignore
-          }
-        }
-
-        undoRedo.addToHistory({
-          content: newContent,
-          cursorPosition: currentCursorPos,
-          selection: currentSelectionRef.current,
-          timestamp: Date.now(),
-        });
-        previousContentForHistoryRef.current = newContent;
-      }
-    };
-    
-    // Always prefer CodeMirror's current doc + selection to avoid stale indices/content
-    const view = editorViewRef.current;
-    const baseContent = view ? view.state.doc.toString() : content;
-    const cmSelection = view?.state.selection.main ?? null;
-    
-    // Resolve a selection range in document coordinates (prefer stored selection, fallback to CodeMirror selection)
-    const from = cmSelection ? Math.min(cmSelection.from, cmSelection.to) : null;
-    const to = cmSelection ? Math.max(cmSelection.from, cmSelection.to) : null;
-
-    const hasRange = typeof from === 'number' && typeof to === 'number' && from >= 0 && to >= 0 && to > from;
-
-    const applyHeadingToRange = (level: number | null) => {
-      if (!view) return;
-      const doc = view.state.doc;
-      const rangeFrom = typeof from === 'number' ? from : view.state.selection.main.head;
-      const rangeTo = typeof to === 'number' ? to : rangeFrom;
-
-      const startLine = doc.lineAt(rangeFrom);
-      const endLine = doc.lineAt(rangeTo);
-
-      const lines: Array<{ from: number; to: number; text: string }> = [];
-      for (let n = startLine.number; n <= endLine.number; n++) {
-        const l = doc.line(n);
-        lines.push({ from: l.from, to: l.to, text: l.text });
-      }
-
-      const replaceLine = (lineText: string) => {
-        const stripped = lineText.replace(/^\s*(?:@\s+|#{1,6}\s+)/, '');
-        if (level === null) return stripped; // "Normal"
-        const hashes = '#'.repeat(level);
-        return `${hashes} ${stripped}`;
-      };
-
-      // Build new document content by editing from bottom to top to keep indices valid.
-      let next = baseContent;
-      for (let i = lines.length - 1; i >= 0; i--) {
-        const l = lines[i];
-        const replaced = replaceLine(l.text);
-        next = next.slice(0, l.from) + replaced + next.slice(l.to);
-      }
-      applyUserEdit(next);
-    };
-
-    const applyTitleToLine = () => {
-      if (!view) return;
-      const doc = view.state.doc;
-      const pos = typeof from === 'number' ? from : view.state.selection.main.head;
-      const l = doc.lineAt(pos);
-      const stripped = l.text.replace(/^\s*(?:@\s+|#{1,6}\s+)/, '');
-      const replaced = `@ ${stripped}`;
-      const next = baseContent.slice(0, l.from) + replaced + baseContent.slice(l.to);
-      applyUserEdit(next);
-    };
-
-    if (hasRange) {
-      if (format === 'title') return applyTitleToLine();
-      if (format === 'heading1') return applyHeadingToRange(1);
-      if (format === 'heading2') return applyHeadingToRange(2);
-      if (format === 'heading3') return applyHeadingToRange(3);
-      if (format === 'paragraph') return applyHeadingToRange(null);
-
-      // Format selected text using exact positions from CodeMirror
-      let formattedText = '';
-      const selectedText = baseContent.slice(from!, to!);
-      switch (format) {
-        case 'bold':
-          formattedText = `**${selectedText}**`;
-          break;
-        case 'italic':
-          formattedText = `*${selectedText}*`;
-          break;
-        case 'underline':
-          formattedText = `<u>${selectedText}</u>`;
-          break;
-        case 'superscript':
-          formattedText = `<sup>${selectedText}</sup>`;
-          break;
-        case 'subscript':
-          formattedText = `<sub>${selectedText}</sub>`;
-          break;
-        case 'code':
-          formattedText = `\`${selectedText}\``;
-          break;
-        case 'link':
-          // Use an absolute placeholder so clicking in preview doesn't navigate the SPA route
-          formattedText = `[${selectedText}](https://example.com)`;
-          break;
-      }
-
-      // Replace using exact positions from CodeMirror
-      const newContent = 
-        baseContent.slice(0, from!) + 
-        formattedText + 
-        baseContent.slice(to!);
-      applyUserEdit(newContent);
-    } else {
-      if (format === 'title') return applyTitleToLine();
-      if (format === 'heading1') return applyHeadingToRange(1);
-      if (format === 'heading2') return applyHeadingToRange(2);
-      if (format === 'heading3') return applyHeadingToRange(3);
-      if (format === 'paragraph') return applyHeadingToRange(null);
-
-      // No selection - insert placeholder at cursor position (fallback to end)
-      let placeholder = '';
-      switch (format) {
-        case 'bold':
-          placeholder = '****';
-          break;
-        case 'italic':
-          placeholder = '**';
-          break;
-        case 'underline':
-          placeholder = '<u></u>';
-          break;
-        case 'superscript':
-          placeholder = '<sup></sup>';
-          break;
-        case 'subscript':
-          placeholder = '<sub></sub>';
-          break;
-        case 'code':
-          placeholder = '``';
-          break;
-        case 'link':
-          placeholder = '[]()';
-          break;
-      }
-      const insertPos = cmSelection ? cmSelection.head : content.length;
-      const safeInsertPos = Math.min(Math.max(0, insertPos), baseContent.length);
-      const newContent = baseContent.slice(0, safeInsertPos) + placeholder + baseContent.slice(safeInsertPos);
-      applyUserEdit(newContent);
-    }
-  }, [content, updateContent, selectedVersion, latestVersion, cursorPosition, undoRedo, changeTracking.isTracking]);
+  const handleFormat = useEditorFormatHandler({
+    content,
+    updateContent,
+    selectedVersion,
+    latestVersion,
+    cursorPosition,
+    editFormat,
+    handleContentChange,
+    changeTracking: { isTracking: changeTracking.isTracking },
+    undoRedo,
+    latexUndoRedo,
+    editorViewRef,
+    currentSelectionRef,
+    isUserInputRef,
+    debounceTimeoutRef,
+    latexDebounceTimeoutRef,
+    previousContentForHistoryRef,
+    previousLatexForHistoryRef,
+  });
 
   return (
     <div className="flex h-screen bg-vscode-bg text-vscode-text">
@@ -1155,42 +424,23 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           activeTab={sidebarTab}
           onTabChange={setSidebarTab}
         onRollback={async (versionNumber: number) => {
-          const content = await api.versions.reconstruct(actualDocumentId, versionNumber);
-          setSelectedVersion(null); // Reset to latest after rollback
-          updateContent(content);
+          await rollbackToVersion({
+            actualDocumentId,
+            versionNumber,
+            setSelectedVersion,
+            updateContent,
+          });
         }}
         onVersionSelect={async (versionNumber: number) => {
-          const content = await api.versions.reconstruct(actualDocumentId, versionNumber);
-          
-          // Always fetch latest version metadata to ensure we have the current latest
-          let currentLatestVersion: number | null = latestVersion ?? null;
-          const metadata = await api.versions.getMetadata(actualDocumentId);
-          // Check if currentVersion exists and is valid
-          if (metadata.currentVersion !== undefined && metadata.currentVersion !== null) {
-            currentLatestVersion = Number(metadata.currentVersion);
-          } else {
-            // Metadata exists but currentVersion is missing - fall back to versions list
-            const versions = await api.versions.list(actualDocumentId, 1, 0);
-            if (versions.length > 0) {
-              currentLatestVersion = versions[0].versionNumber; // First version is latest (sorted DESC)
-            }
-          }
-          // Update latestVersion state
-          setLatestVersion(currentLatestVersion);
-          
-          // If selecting the latest version, reset to null to enable editing
-          // Use Number() to ensure type-safe comparison
-          if (currentLatestVersion !== null && Number(versionNumber) === Number(currentLatestVersion)) {
-            // This is the latest version - set to null to enable editing
-            setSelectedVersion(null);
-            // Use updateContent to allow editing
-            updateContent(content);
-          } else {
-            // This is an older version - set selectedVersion and make read-only
-            setSelectedVersion(versionNumber);
-            // Use setContentWithoutSave to prevent auto-save
-            setContentWithoutSave(content);
-          }
+          await selectVersionForViewing({
+            actualDocumentId,
+            versionNumber,
+            latestVersion,
+            setLatestVersion,
+            setSelectedVersion,
+            updateContent,
+            setContentWithoutSave,
+          });
         }}
       />
           </div>
@@ -1239,30 +489,30 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           onViewModeChange={setViewMode}
           editFormat={editFormat}
           onEditFormatChange={handleEditFormatChange}
-          canUndo={undoRedo.canUndo}
-          canRedo={undoRedo.canRedo}
+          canUndo={editFormat === 'latex' ? latexUndoRedo.canUndo : undoRedo.canUndo}
+          canRedo={editFormat === 'latex' ? latexUndoRedo.canRedo : undoRedo.canRedo}
           onUndo={() => {
             if (changeTracking.isTracking) {
               changeTracking.cancelTracking();
             }
-            undoRedo.undo();
+            if (editFormat === 'latex') latexUndoRedo.undo();
+            else undoRedo.undo();
           }}
           onRedo={() => {
             if (changeTracking.isTracking) {
               changeTracking.cancelTracking();
             }
-            undoRedo.redo();
+            if (editFormat === 'latex') latexUndoRedo.redo();
+            else undoRedo.redo();
           }}
         />
 
         {/* Formatting Toolbar */}
-        {editFormat === 'markdown' && (
-          <FormattingToolbar
-            onFormat={handleFormat}
-            viewMode={viewMode}
-            currentStyle={currentTextStyle}
-          />
-        )}
+        <FormattingToolbar
+          onFormat={handleFormat}
+          viewMode={viewMode}
+          currentStyle={currentTextStyle}
+        />
 
         {/* Change Tracking Banner - shown at top when tracking is active */}
         {changeTracking.isTracking && (
@@ -1328,7 +578,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 <InlineAIChat
                   position={cursorScreenPosition}
                   documentId={actualDocumentId}
-                  content={content}
+                  editFormat={editFormat}
+                  content={editFormat === 'latex' ? latexDraft : content}
                   cursorPosition={cursorPosition}
                   selection={currentSelectionRef.current}
                   scopeKind={currentSelectionRef.current?.text?.trim() ? 'selection' : 'cursor_paragraph'}
@@ -1337,6 +588,12 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                     if (sel && sel.text && sel.text.trim().length > 0) return sel.text;
 
                     if (!cursorPosition) return '';
+                    if (editFormat === 'latex') {
+                      const lines = latexDraft.split('\n');
+                      const idx = Math.max(0, Math.min(cursorPosition.line - 1, Math.max(0, lines.length - 1)));
+                      return (lines[idx] ?? '').trim();
+                    }
+
                     const cursorLine = cursorPosition.line - 1;
                     const { blocks, cursorBlockId } = buildInlineBlocksAroundCursor(content, cursorLine);
                     const cursorBlock = blocks.find((b) => b.id === cursorBlockId);
@@ -1354,6 +611,10 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                     setInlineAIChatOpen(false);
                   }}
                   onPreviewInlineEdit={async ({ prompt, mode, scopeStrategy = 'selection-or-prev-paragraph' }) => {
+                    if (editFormat === 'latex') {
+                      // Inline edits are currently markdown/XMD-only. Keep LaTeX surface stable.
+                      return { operations: [], previewText: '', newContent: latexDraft };
+                    }
                     if (!cursorPosition) {
                       return { operations: [], previewText: '', newContent: content };
                     }
@@ -1454,27 +715,22 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                     return { operations, previewText, newContent };
                   }}
                   onPreviewInsertAtCursor={async ({ content: insertContent, placement = 'after' }) => {
-                    if (!cursorPosition) {
-                      return { operations: [], previewText: '', newContent: content };
-                    }
-
-                    const cursorLine = cursorPosition.line - 1; // Convert to 0-based
-                    const { blocks, cursorBlockId } = buildInlineBlocksAroundCursor(content, cursorLine);
-                    const anchorBlockId = cursorBlockId;
-                    if (!anchorBlockId) {
-                      return { operations: [], previewText: '', newContent: content };
-                    }
-
-                    const operations: InlineEditOperation[] = [
-                      placement === 'before'
-                        ? { type: 'insert_before', anchorBlockId, content: insertContent }
-                        : { type: 'insert_after', anchorBlockId, content: insertContent },
-                    ];
-
-                    const newContent = applyInlineOperations(content, blocks, operations);
-                    return { operations, previewText: insertContent, newContent };
+                    return previewInsertAtCursor({
+                      cursorPosition,
+                      editFormat,
+                      latexDraft,
+                      content,
+                      insertContent,
+                      placement: placement === 'before' ? 'before' : 'after',
+                    });
                   }}
                   onApplyInlinePreview={async (preview) => {
+                    if (editFormat === 'latex') {
+                      handleContentChange(preview.newContent);
+                      setInlineAIChatOpen(false);
+                      return;
+                    }
+
                     // Apply the already-previewed content without another AI call
                     setPendingChangeContent({ original: content, new: preview.newContent });
                     changeTracking.startTracking(preview.newContent, content);
@@ -1639,95 +895,17 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             projectId={projectId}
             onGeneratingChange={setIsGeneratingContent}
             onContentGenerated={async (generatedContent, mode, _sources, scope = 'block') => {
-              // Find the paragraph and replace/blend content
-              const applyingToDocument = scope === 'document';
-              if (!applyingToDocument && !openParagraphId) return;
-              
-              const lines = content.split('\n');
-              const startLine = applyingToDocument ? 0 : parseInt(openParagraphId!.match(/^para-(\d+)$/)![1], 10);
-              if (!applyingToDocument) {
-                const match = openParagraphId!.match(/^para-(\d+)$/);
-                if (!match) return;
-                if (startLine < 0 || startLine >= lines.length) return;
-              }
-              
-              // Check if section
-              const isHeading = (line: string) => /^#{1,6}\s/.test(line.trim());
-              const startLineIsHeading = startLine < lines.length && isHeading(lines[startLine].trim());
-              
-              let endLine = startLine;
-              if (applyingToDocument) {
-                endLine = lines.length;
-              } else if (startLineIsHeading) {
-                endLine = startLine + 1;
-                while (endLine < lines.length) {
-                  if (isHeading(lines[endLine].trim())) break;
-                  endLine++;
-                }
-              } else {
-                while (endLine < lines.length) {
-                  const trimmed = lines[endLine].trim();
-                  if (!trimmed || isHeading(trimmed)) break;
-                  endLine++;
-                }
-              }
-              
-              const beforeLines = lines.slice(0, startLine);
-              const afterLines = lines.slice(endLine); // endLine is exclusive (first line after block)
-              
-              let newContent: string;
-              if (mode === 'replace' || mode === 'lead' || mode === 'conclude' || mode === 'extend' || mode === 'citation' || mode === 'summary') {
-                // Replace: use generated content directly
-                // Lead: prepend generated content (handled in frontend)
-                // Conclude: append generated content (handled in frontend)
-                // Extend: legacy append generated content (handled in frontend)
-                // Citation/Summary: insert generated content with citations
-                if (mode === 'lead' || mode === 'conclude' || mode === 'extend') {
-                  const currentBlockContent = lines.slice(startLine, endLine).join('\n');
+              const newContent = applyThinkModeGeneratedContentToXmd({
+                content,
+                openParagraphId,
+                generatedContent,
+                mode,
+                scope: scope === 'document' ? 'document' : 'block',
+              });
+              if (!newContent) return;
 
-                  // Special case: sections start with a markdown heading. "Lead" should add content
-                  // to the beginning of the section body (right after the heading), not above the heading.
-                  if (mode === 'lead' && startLineIsHeading && !applyingToDocument) {
-                    const headingLine = lines[startLine] ?? '';
-                    const bodyContent = lines.slice(startLine + 1, endLine).join('\n');
-                    const gen = generatedContent.trim();
-                    const body = bodyContent.trim();
-                    const combined =
-                      gen && body
-                        ? `${headingLine}\n\n${gen}\n\n${bodyContent}`
-                        : gen
-                          ? `${headingLine}\n\n${gen}`
-                          : body
-                            ? `${headingLine}\n\n${bodyContent}`
-                            : headingLine;
-                    newContent = [...beforeLines, combined, ...afterLines].join('\n');
-                  } else {
-                    // Regular Lead/Conclude/Extend behavior for non-heading blocks
-                    const left = mode === 'lead' ? generatedContent : currentBlockContent;
-                    const right = mode === 'lead' ? currentBlockContent : generatedContent;
-                    const combined =
-                      left.trimEnd() && right.trimStart()
-                        ? `${left.trimEnd()}\n\n${right.trimStart()}`
-                        : `${left}${right}`;
-                    newContent = [...beforeLines, combined, ...afterLines].join('\n');
-                  }
-                } else {
-                  // Replace, Citation, or Summary: replace with generated content
-                  newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
-                }
-              } else {
-                // Blend: the AI already returned the complete blended content (existing + new)
-                // So we replace the entire block with the blended result
-                newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
-              }
-              
-              // Note: We don't clear researchSessions - they remain associated with the block
-              // Only insertedSources will be cleaned up when citations are removed (handled in cleanupInsertedSources)
-              
-              // Start change tracking instead of directly applying
               setPendingChangeContent({ original: content, new: newContent });
               changeTracking.startTracking(newContent, content);
-              // Hide progress indicator after change tracking is set up
               setIsGeneratingContent(false);
             }}
           />

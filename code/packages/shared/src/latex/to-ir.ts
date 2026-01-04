@@ -419,7 +419,9 @@ function parseBlocks(latex: string): Block[] {
 
     // Boilerplate (system-generated for compilable docs) — ignore so round-trips stay clean.
     // Also tolerate trailing comments like: \end{document} % comment
-    const trimmed = line.trim();
+    // Some environments may introduce a BOM/zero-width chars (e.g. from copy/paste or server transforms).
+    // Strip them so boilerplate lines like \end{document} never leak into IR/XMD.
+    const trimmed = line.trim().replace(/^[\uFEFF\u200B\u200C\u200D]+/, '');
     if (/^\\+documentclass\{[^}]+\}(?:\s*%.*)?$/.test(trimmed)) {
       i++;
       blockIndex++;
@@ -711,22 +713,38 @@ function parseBlocks(latex: string): Block[] {
       break;
     }
 
-    // Paragraph: consume until blank line or recognized block start
+    // Paragraph: consume until blank line or recognized block start.
+    // Note: we must stop if we hit LaTeX boilerplate mid-paragraph (e.g. copy/paste adds "\end{document}"
+    // without a blank line), otherwise it can leak into XMD/Markdown.
     const startIdx = i;
     let j = i;
     while (j < lines.length) {
-      const t = lines[j].line.trim();
+      const t = lines[j].line.trim().replace(/^[\uFEFF\u200B\u200C\u200D]+/, '');
       if (j !== startIdx && isBlank(t)) break;
-      if (j !== startIdx && (/^\\(section|subsection|subsubsection)\{/.test(t) || t === '\\begin{verbatim}' || t === '\\begin{equation}' || /^\\begin\{(itemize|enumerate)\}/.test(t))) {
+      if (
+        j !== startIdx &&
+        (/^\\(section|subsection|subsubsection)\{/.test(t) ||
+          t === '\\begin{verbatim}' ||
+          t === '\\begin{equation}' ||
+          t === '\\begin{figure}' ||
+          /^\\begin\{wrapfigure\}\{[lr]\}\{/.test(t) ||
+          /^\\begin\{(itemize|enumerate)\}/.test(t))
+      ) {
         break;
       }
-      if (j !== startIdx && isBlank(lines[j].line)) break;
-      if (j !== startIdx && isBlank(t)) break;
-      if (j !== startIdx && t === '') break;
+      if (
+        j !== startIdx &&
+        (/^\\+documentclass\{[^}]+\}(?:\s*%.*)?$/.test(t) ||
+          /^\\+usepackage(\[[^\]]+\])?\{[^}]+\}(?:\s*%.*)?$/.test(t) ||
+          /^\\+begin\{document\}(?:\s*%.*)?$/.test(t) ||
+          /^\\+end\{document\}(?:\s*%.*)?$/.test(t) ||
+          /^\\+maketitle(?:\s*%.*)?$/.test(t))
+      ) {
+        break;
+      }
       if (j !== startIdx && t.startsWith('%')) {
         // comments can be inside paragraphs; keep them
       }
-      if (j !== startIdx && isBlank(lines[j].line)) break;
       j++;
       if (j < lines.length && isBlank(lines[j].line)) break;
     }

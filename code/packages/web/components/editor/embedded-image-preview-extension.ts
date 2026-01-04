@@ -137,7 +137,7 @@ class FigureCardWidget extends WidgetType {
 
     const img = document.createElement('img');
     img.src = this.displaySrc || '';
-    img.alt = this.alt || 'Figure';
+    img.alt = this.alt || '';
     img.style.display = 'block';
     // Default: allow the image to size naturally but never overflow the container.
     img.style.maxWidth = '100%';
@@ -251,47 +251,51 @@ class FigureCardWidget extends WidgetType {
       // Alignment is handled by wrap.style.textAlign in block mode.
     }
 
-    // If we explicitly sized the figure (block + width), make the image fill the inner width.
+    // Block + width: do NOT force width=100% on the image (it can conflict with maxHeight and squash aspect ratio).
+    // Instead, let the image size naturally within the constrained inner wrapper.
     if (placement !== 'inline' && width) {
-      img.style.width = '100%';
+      img.style.width = 'auto';
       img.style.maxWidth = '100%';
     }
 
-    const caption = document.createElement('div');
-    caption.textContent = this.alt || 'Figure';
-    caption.style.marginTop = '6px';
-    caption.style.fontSize = '12px';
-    caption.style.color = '#9aa0a6';
-    caption.style.fontStyle = 'italic';
-    // Product rule: caption text centered relative to the image width (via inner wrapper)
-    caption.style.textAlign = 'center';
-    caption.style.display = 'block';
-    caption.style.width = '100%';
-    // Ensure long captions wrap within the figure width (never overflow wider than the image).
-    caption.style.whiteSpace = 'normal';
-    (caption.style as unknown as { overflowWrap?: string }).overflowWrap = 'anywhere';
-    caption.style.wordBreak = 'break-word';
-
-    const clampCaption = () => {
-      try {
-        const w = img.getBoundingClientRect().width;
-        if (!Number.isFinite(w) || w <= 0) return;
-        caption.style.maxWidth = `${w}px`;
-        caption.style.marginLeft = 'auto';
-        caption.style.marginRight = 'auto';
-      } catch {
-        // ignore
-      }
-    };
-
-    if (img.complete) {
-      clampCaption();
-    } else {
-      img.addEventListener('load', clampCaption, { once: true });
+    const captionText = (this.alt || '').trim();
+    const caption = captionText ? document.createElement('div') : null;
+    if (caption) {
+      caption.textContent = captionText;
+      caption.style.marginTop = '6px';
+      caption.style.fontSize = '12px';
+      caption.style.color = '#9aa0a6';
+      caption.style.fontStyle = 'italic';
+      // Product rule: caption text centered relative to the image width (via inner wrapper)
+      caption.style.textAlign = 'center';
+      caption.style.display = 'block';
+      caption.style.width = '100%';
+      // Ensure long captions wrap within the figure width (never overflow wider than the image).
+      caption.style.whiteSpace = 'normal';
+      (caption.style as unknown as { overflowWrap?: string }).overflowWrap = 'anywhere';
+      caption.style.wordBreak = 'break-word';
     }
 
     inner.appendChild(img);
-    inner.appendChild(caption);
+    if (caption) {
+      const clampCaption = () => {
+        try {
+          const w = img.getBoundingClientRect().width;
+          if (!Number.isFinite(w) || w <= 0) return;
+          caption.style.maxWidth = `${w}px`;
+          caption.style.marginLeft = 'auto';
+          caption.style.marginRight = 'auto';
+        } catch {
+          // ignore
+        }
+      };
+      if (img.complete) {
+        clampCaption();
+      } else {
+        img.addEventListener('load', clampCaption, { once: true });
+      }
+      inner.appendChild(caption);
+    }
     wrap.appendChild(inner);
 
     // Hover toolbar (quick controls)
@@ -346,7 +350,7 @@ class FigureCardWidget extends WidgetType {
     };
 
     const applyAttrUpdate = (updates: { align?: string | null; width?: string | null; placement?: string | null; desc?: string | null; caption?: string | null; src?: string | null }) => {
-      const currentCaption = (updates.caption ?? this.alt ?? 'Figure').trim() || 'Figure';
+      const currentCaption = (updates.caption ?? this.alt ?? '').trim();
       const currentDesc = updates.desc ?? this.desc ?? '';
       const currentSrc = updates.src ?? this.rawUrl;
       const cleaned = stripAttrKeys(baseAttrs, ['align', 'width', 'placement', 'desc']);
@@ -361,9 +365,6 @@ class FigureCardWidget extends WidgetType {
 
       const attrBlock = nextAttrs.trim().length > 0 ? `{${nextAttrs.trim()}}` : '';
       const nextText = `![${currentCaption}](${currentSrc})${attrBlock}`;
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'figattrs1',hypothesisId:'FA1',location:'embedded-image-preview-extension.ts:applyAttrUpdate',message:'Figure wizard writes markdown',data:{nextText:nextText.slice(0,240),nextTextLen:nextText.length,updates},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       view.dispatch({ changes: { from: this.from, to: this.to, insert: nextText } });
     };
 
@@ -650,7 +651,7 @@ class FigureCardWidget extends WidgetType {
     btnSave.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const nextCaption = captionInput.value.trim() || 'Figure';
+      const nextCaption = captionInput.value.trim();
       const nextDesc = descInput.value;
       const nextText = rebuildMarkdown(this.rawUrl, nextCaption, nextDesc);
       view.dispatch({ changes: { from: this.from, to: this.to, insert: nextText } });
@@ -700,7 +701,7 @@ class FigureCardWidget extends WidgetType {
             nextSrc = asset.ref;
           }
         }
-        const nextCaption = (captionInput.value || this.alt || 'Figure').trim() || 'Figure';
+        const nextCaption = (captionInput.value || this.alt || '').trim();
         const nextDesc = descInput.value || this.desc || '';
         const nextText = rebuildMarkdown(nextSrc, nextCaption, nextDesc);
         view.dispatch({ changes: { from: this.from, to: this.to, insert: nextText } });
@@ -774,7 +775,7 @@ export function embeddedImagePreviewExtension() {
             widget: new FigureCardWidget(
               rawUrl,
               src,
-              alt || 'Figure',
+              alt,
               desc,
               attrsInner,
               matchStart,

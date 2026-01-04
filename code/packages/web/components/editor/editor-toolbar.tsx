@@ -145,6 +145,7 @@ export function EditorToolbar({
                 : 'text-vscode-text-secondary hover:text-vscode-text'
             }`}
             aria-label="Edit mode"
+            title="Edit mode (Cmd/Ctrl+Alt+E)"
           >
             <PencilIcon className="w-4 h-4" />
           </button>
@@ -156,6 +157,7 @@ export function EditorToolbar({
                 : 'text-vscode-text-secondary hover:text-vscode-text'
             }`}
             aria-label="Preview mode"
+            title="Preview mode (Cmd/Ctrl+Alt+P)"
           >
             <EyeIcon className="w-4 h-4" />
           </button>
@@ -167,6 +169,7 @@ export function EditorToolbar({
                 : 'text-vscode-text-secondary hover:text-vscode-text'
             }`}
             aria-label="Split view"
+            title="Split view (Cmd/Ctrl+Alt+S)"
           >
             <Squares2X2Icon className="w-4 h-4" />
           </button>
@@ -182,7 +185,7 @@ export function EditorToolbar({
                 : 'text-vscode-text-secondary hover:text-vscode-text'
             }`}
             aria-label="Markdown edit mode"
-            title="Edit Markdown (XMD)"
+            title="Edit Markdown (XMD) (Cmd/Ctrl+Alt+M)"
           >
             MD
           </button>
@@ -194,7 +197,7 @@ export function EditorToolbar({
                 : 'text-vscode-text-secondary hover:text-vscode-text'
             }`}
             aria-label="LaTeX edit mode"
-            title="Edit LaTeX (subset)"
+            title="Edit LaTeX (subset) (Cmd/Ctrl+Alt+L)"
           >
             LaTeX
           </button>

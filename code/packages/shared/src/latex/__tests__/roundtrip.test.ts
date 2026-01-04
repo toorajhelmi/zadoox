@@ -85,6 +85,20 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     expect(xmd).toContain('@^');
     expect(xmd).toContain('@=');
   });
+
+  it('LaTeX boilerplate \\end{document} is ignored even with a BOM/zero-width prefix', () => {
+    const latex = [
+      '\\documentclass{article}',
+      '\\begin{document}',
+      'Hello.',
+      '\uFEFF\\end{document}',
+    ].join('\n');
+
+    const ir = parseLatexToIr({ docId: 'doc-6', latex });
+    const xmd = irToXmd(ir);
+    expect(xmd).toContain('Hello.');
+    expect(xmd).not.toContain('\\end{document}');
+  });
 });
 
 

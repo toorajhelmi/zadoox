@@ -296,32 +296,6 @@ See `POST_MVP_FEATURES.md` for detailed post-MVP feature list, including:
 
 ---
 
-### Phase 6: Shared Package - Editor Logic ✅
-**Status**: Not Started
-
-- [ ] Markdown utilities:
-  - [ ] Extended Markdown parser
-  - [ ] Markdown renderer (HTML)
-- [ ] LaTeX utilities:
-  - [ ] LaTeX to Extended Markdown converter
-  - [ ] Extended Markdown to LaTeX converter
-- [ ] Placeholder system:
-  - [ ] Placeholder resolver
-  - [ ] Placeholder replacer
-  - [ ] Placeholder validator
-- [ ] Unit tests for editor logic:
-  - [ ] Markdown parser tests
-  - [ ] LaTeX converter tests
-  - [ ] Placeholder system tests
-
-**Deliverables**:
-- Editor logic in shared package
-- Markdown/LaTeX conversion working
-- Placeholder system functional
-- Unit tests for all editor logic functions
-
----
-
 ### Phase 7: Web App - Document Editor (Basic) ✅
 **Status**: ✅ COMPLETED
 
@@ -475,8 +449,6 @@ This phase focuses on the core AI-driven features that make Zadoox feel like a f
 - Add inline suggestion underlines (CodeMirror decorations)
 - Implement smart completion with context-aware autocomplete
 - Add citation research service (Phase 9 backend + Phase 7.5 frontend)
-
----
 
 ---
 
@@ -772,30 +744,6 @@ This phase implements undo/redo functionality for document editing, allowing use
 
 ---
 
-### Phase 8: Backend API - Export Service ✅
-**Status**: Not Started
-
-- [ ] Extended Markdown parser
-- [ ] LaTeX converter:
-  - [ ] Markdown → LaTeX conversion
-  - [ ] Placeholder replacement ({REF}, {CH})
-  - [ ] Math support
-  - [ ] Image handling
-- [ ] PDF generation:
-  - [ ] LaTeX compilation integration
-  - [ ] Template support (basic)
-  - [ ] Error handling
-- [ ] Export API endpoint
-- [ ] File storage integration (Supabase Storage)
-
-**Deliverables**:
-- Export API working
-- Can convert Extended Markdown to LaTeX
-- Can generate PDF from LaTeX
-- Downloads working
-
----
-
 ### Phase 9: Backend API - AI Service ✅
 **Status**: Not Started
 
@@ -840,15 +788,8 @@ This phase implements undo/redo functionality for document editing, allowing use
 - [ ] Table creation/editing
 - [ ] Basic formatting toolbar
 - [ ] Find/replace
-- [ ] LaTeX preview (optional, basic)
 - [ ] AI suggestion UI component
 - [ ] Inline suggestions (accept with Tab)
-- [ ] AI toolbar/menu:
-  - [ ] Expand text
-  - [ ] Improve text
-  - [ ] Suggest completion
-- [ ] Loading states
-- [ ] Error handling
 
 **Deliverables**:
 - AI features in UI
@@ -933,16 +874,7 @@ Goal: Introduce **IR (Intermediate Representation)** as Zadoox’s internal cano
 - [ ] Update AI metrics service to accept changed node IDs + node payloads, returning metrics per node
 - [ ] Ensure only changed nodes are re-analyzed (debounced/incremental)
 
-**Deliverables**:
-- ✅ XMD → IR parsing working (block-first, no-throw)
-- ✅ IR store with stable node IDs + node hashes
-- ✅ Node-level delta computation + event emission
-- ⚠️ Preview and outline driven from IR (partially: IR Preview + optional outline flag; not default yet)
-- ⏳ AI metrics computed per changed node (not implemented yet)
-
----
-
-### Phase 12: Web App - Editor MD ↔ LaTeX Switch (IR-backed) ✅
+#### Web App - Editor MD ↔ LaTeX Switch (IR-backed) ✅
 **Status**: ✅ COMPLETED
 
 - [x] Add an **Edit view switch** (toggle) to swap between **MD** and **LaTeX** editing modes
@@ -976,6 +908,11 @@ Goal: Introduce **IR (Intermediate Representation)** as Zadoox’s internal cano
   - [x] Error handling + safe fallback (never lose user text)
 
 **Deliverables**:
+- ✅ XMD → IR parsing working (block-first, no-throw)
+- ✅ IR store with stable node IDs + node hashes
+- ✅ Node-level delta computation + event emission
+- ⚠️ Preview and outline driven from IR (partially: IR Preview + optional outline flag; not default yet)
+- ⏳ AI metrics computed per changed node (not implemented yet)
 - ✅ Editor can switch between MD and LaTeX modes using IR as the canonical model
 - ✅ Switching updates/saves **both** representations (MD and LaTeX)
 - ✅ IR↔LaTeX conversion with support for document title, author, date, figures with attributes
@@ -988,8 +925,8 @@ Goal: Introduce **IR (Intermediate Representation)** as Zadoox’s internal cano
 
 ---
 
-### Phase 12.1: Publishing Features 📤
-**Status**: In Progress
+### Phase 12: Publishing Features 📤
+**Status**: ✅ COMPLETED (Core MVP)
 
 This phase implements publishing capabilities to export documents to various formats and platforms. The focus is on a minimal, clean UX from the project page, with support for both MD and LaTeX as input sources.
 
@@ -1041,7 +978,9 @@ This phase implements publishing capabilities to export documents to various for
   - [x] Resolve `zadoox-asset://` figures in the preview by fetching assets with auth
   - [x] Generate PDF from **LaTeX** via backend API (compiler swappable via env var):
     - [x] `POST /api/v1/projects/:projectId/publish/pdf` returns `application/pdf`
-    - [ ] Ensure backend runtime has `tectonic` (local/dev via Docker; Railway via Docker image)
+    - [x] Ensure backend runtime has `tectonic` (local/dev via Docker; Railway via Docker image)
+    - [x] Provide an Overleaf-compatible **LaTeX package** (`main.tex` + `assets/`) for download:
+      - [x] `POST /api/v1/projects/:projectId/publish/latex-package` returns `application/zip`
   - [ ] Generate PDF from **MD/XMD** server-side (future):
     - [ ] HTML → PDF renderer (to avoid the browser print dialog)
     - [ ] Detect and warn on unsupported constructs (e.g., figure placement/alignment directives not yet represented in HTML/CSS print)
@@ -1080,12 +1019,17 @@ This phase implements publishing capabilities to export documents to various for
   - [ ] Track publishing status per target
 
 **Deliverables**:
-- ✅ PDF publishing (download from project page)
-- ✅ Web publishing (hosted on Zadoox, public URL)
-- ✅ Minimal publishing UI on project page
-- ✅ Support for both MD and LaTeX as input
-- ✅ Publishing status tracking
-- ✅ Published links management
+- ✅ Minimal publishing UI from project page (Publish → dedicated Publish page; no popup)
+- ✅ Web publishing preview (IR → HTML; inline iframe preview; asset resolution for figures)
+- ✅ MD/XMD → PDF (MVP) via print-optimized HTML + in-app preview page + browser print dialog
+- ✅ LaTeX → PDF backend compilation (Tectonic by default; swappable via env var)
+- ✅ Downloadable LaTeX package for Overleaf (`main.tex` + `assets/`)
+- ✅ Asset handling across publish flows (HTML preview + LaTeX compile)
+
+**Not in Phase 12 (moved to later)**:
+- ⏳ Public hosting + stable web URL/slug
+- ⏳ Published links management + republish tracking
+- ⏳ Async publish jobs/status in DB
 
 **Note**: This phase focuses on minimal UX for MVP. Future enhancements (Phase 12.3+) will include:
 - Advanced publishing settings (templates, styling)
@@ -1101,7 +1045,7 @@ This phase implements publishing capabilities to export documents to various for
 ### Phase 12.2: Publishing Integrations (Google Docs + GitHub) 🔌
 **Status**: Not Started
 
-This phase adds external publishing integrations on top of Phase 12.1 (core PDF/Web). These are intentionally separated because they require OAuth + third‑party APIs and are higher-variance to ship.
+This phase adds external publishing integrations on top of Phase 12 (core PDF/Web). These are intentionally separated because they require OAuth + third‑party APIs and are higher-variance to ship.
 
 #### Integration Targets:
 - [ ] **Google Docs Publishing**:
@@ -1144,28 +1088,45 @@ This phase adds external publishing integrations on top of Phase 12.1 (core PDF/
 
 ---
 
-### Phase 13: Shared Package - API Client ✅
+### Phase 13: Project Assets (Files & Folders) 📁
 **Status**: Not Started
 
-- [ ] API client setup
-- [ ] Authentication handling
-- [ ] Document API methods
-- [ ] Project API methods
-- [ ] Export API methods
-- [ ] AI API methods
-- [ ] Error handling
-- [ ] Type-safe API calls
+Goal: manage project-level files (images, datasets, PDFs, etc.) as a real file tree with import/export workflows.
+
+#### Frontend (UX)
+- [ ] Add a **Project Assets** panel (sidebar / project page): tree view with folders & files
+- [ ] Root node shows **Project name**
+- [ ] Support **create folder**, **rename**, **delete**, **move** (drag/drop)
+- [ ] Support **upload** (single/multi) into a folder
+- [ ] Show **preview on hover** for images (thumbnail), and basic file metadata (size, type, last updated)
+- [ ] Support **download file** and **download folder** (zip)
+- [ ] Support **import** (zip → folder tree) and **export** (folder tree → zip)
+- [ ] (Nice-to-have) Search/filter within assets
+
+#### Backend (API)
+- [ ] Storage model: map assets to a **project folder path** (not only doc-scoped keys)
+- [ ] Endpoints:
+  - [ ] `GET /api/v1/projects/:projectId/assets/tree` (folders/files)
+  - [ ] `POST /api/v1/projects/:projectId/assets/folders` (create)
+  - [ ] `PATCH /api/v1/projects/:projectId/assets/*` (rename/move)
+  - [ ] `DELETE /api/v1/projects/:projectId/assets/*` (delete)
+  - [ ] `POST /api/v1/projects/:projectId/assets/upload` (multipart upload)
+  - [ ] `GET /api/v1/projects/:projectId/assets/:assetId/download` (download)
+  - [ ] `POST /api/v1/projects/:projectId/assets/export` (zip)
+  - [ ] `POST /api/v1/projects/:projectId/assets/import` (zip)
+- [ ] Enforce auth/RLS: only project members can read/write assets
+- [ ] Validate file types/size limits (MVP), antivirus scanning (future)
+
+#### Editor Integration
+- [ ] Allow inserting project assets into documents (image picker, link picker)
+- [ ] Keep document figure refs stable when assets are moved/renamed (indirection via `assetId`)
 
 **Deliverables**:
-- API client in shared package
-- All API methods implemented
-- Type-safe API usage
-- Used in web app
+- ✅ Project has a real file tree (folders/files)
+- ✅ Upload/download/import/export works
+- ✅ Images can be previewed and inserted into docs
 
----
-
-
-### Phase 14: Integration & Testing ✅
+### Phase 14: Integration & Testing 
 **Status**: Not Started
 
 - [ ] **Fix and re-enable authentication**:
@@ -1244,29 +1205,6 @@ code/
 ├── pnpm-workspace.yaml       # Phase 0
 └── tsconfig.json             # Phase 0
 ```
-
----
-
-## Development Order
-
-1. **Phase 0**: Foundation (monorepo setup, CI/CD infrastructure)
-2. **Phase 1**: Shared types + testing framework setup
-3. **Phase 2**: Database schema
-4. **Phase 3**: Backend core API (+ unit tests, deployment setup)
-5. **Phase 6**: Shared editor logic (needed for Phase 4) (+ unit tests)
-6. **Phase 4**: Export service (+ unit tests)
-7. **Phase 5**: AI service (+ unit tests)
-8. **Phase 13**: API client (needed for Phase 7+)
-9. **Phase 7**: Web app setup & auth (+ deployment setup)
-10. **Phase 8**: Dashboard
-11. **Phase 9**: Basic editor
-12. **Phase 10**: Editor features
-13. **Phase 11**: AI integration
-14. **Phase 12**: Editor MD ↔ LaTeX Switch (IR-backed)
-15. **Phase 12.1**: Publishing Features (PDF, Web)
-16. **Phase 12.2**: Publishing Integrations (Google Docs, GitHub)
-17. **Phase 14**: Integration & testing (integration tests, E2E)
-
 ---
 
 ## Dependencies Between Phases
@@ -1279,32 +1217,26 @@ Phase 1 (Shared Types)
 Phase 2 (Database) ──┐
     ↓                │
 Phase 3 (Backend Core) ──┐
-    ↓                    │
-Phase 13 (API Client) ───┤
-    ↓                    │
-Phase 4 (Web Setup) ─────┤
-    ↓                    │
-Phase 5 (Dashboard) ─────┤
-    ↓                    │
-Phase 7 (AI)             │
-    ↓                    │
-Phase 8 (Editor Logic)    │
-    ↓                    │
-Phase 9 (Basic Editor) ──┤
-    ↓                    │
-Phase 10 (Editor Features)┤
-    ↓                     │
-Phase 11 (AI UI) ─────────┤
-    ↓                     │
-Phase 6 (Export) ─────────┤
-    ↓                     │
-Phase 12 (MD ↔ LaTeX Switch) ─────┤
-    ↓                     │
-Phase 12.1 (Publishing) ──┤
-    ↓                     │
-Phase 12.2 (Publishing Integrations) ──┤
-    ↓                     │
-Phase 14 (Integration) ←──┘
+    ↓                      │
+Phase 4 (Web Setup & Auth) ─┤
+    ↓                      │
+Phase 5 (Project Dashboard) ┤
+    ↓                      │
+Phase 7 (Basic Editor) ─────┤
+    ↓                      │
+Phase 9 (Backend AI Service) ─┐
+    ↓                         │
+Phase 7.5 (AI UI / WOW) ──────┤
+    ↓                         │
+Phase 11 (IR-first + MD ↔ LaTeX Switch) ──┤
+    ↓                         │
+Phase 12 (Publishing: PDF/Web) ───────────┤
+    ↓                         │
+Phase 12.2 (Publishing Integrations) ─────┤
+    ↓                         │
+Phase 13 (Project Assets) ────────────────┤
+    ↓                         │
+Phase 14 (Integration) ←──────────────────┘
 ```
 
 ---
@@ -1347,13 +1279,12 @@ Phase 14 (Integration) ←──┘
 
 **Last Updated**: January 2, 2026
 
-**Current Phase**: Phase 12 - Editor MD ↔ LaTeX Switch ✅ COMPLETED
+**Current Phase**: Phase 13 - Project Assets (Files & Folders) 📁
 
 **Next Steps**: 
-1. Phase 12.1 - Publishing Features (PDF, Web)
-2. Phase 12.2 - Publishing Integrations (Google Docs, GitHub)
-3. Phase 13 - Shared Package API Client (if needed)
-4. Phase 14 - Integration & Testing (fix authentication, integration tests, polish)
+1. Phase 12.2 - Publishing Integrations (Google Docs, GitHub)
+2. Phase 13 - Project Assets (Files & Folders)
+3. Phase 14 - Integration & Testing (fix authentication, integration tests, polish)
 
 ---
 
