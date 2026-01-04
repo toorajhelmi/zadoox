@@ -30,8 +30,9 @@ describe('embeddedImagePreviewExtension', () => {
       'After',
     ].join('\n');
 
-    const [field] = embeddedImagePreviewExtension();
-    const state = EditorState.create({ doc, extensions: [field] });
+    const exts = embeddedImagePreviewExtension();
+    const field = exts[1]!;
+    const state = EditorState.create({ doc, extensions: exts });
     const decos = state.field(field);
 
     const found: Array<{ from: number; to: number; deco: Decoration }> = [];
@@ -48,8 +49,9 @@ describe('embeddedImagePreviewExtension', () => {
 
   it('treats non-inline figures as block decorations', () => {
     const doc = '![Cap](zadoox-asset://k){#fig:x width="50%"}';
-    const [field] = embeddedImagePreviewExtension();
-    const state = EditorState.create({ doc, extensions: [field] });
+    const exts = embeddedImagePreviewExtension();
+    const field = exts[1]!;
+    const state = EditorState.create({ doc, extensions: exts });
     const decos = state.field(field);
 
     const found: any[] = [];
@@ -60,8 +62,9 @@ describe('embeddedImagePreviewExtension', () => {
 
   it('widget DOM reflects inline placement styling', () => {
     const doc = '![Cap](zadoox-asset://k){#fig:x align="right" width="50%" placement="inline"}';
-    const [field] = embeddedImagePreviewExtension();
-    const state = EditorState.create({ doc, extensions: [field] });
+    const exts = embeddedImagePreviewExtension();
+    const field = exts[1]!;
+    const state = EditorState.create({ doc, extensions: exts });
     const decos = state.field(field);
 
     const found: any[] = [];
