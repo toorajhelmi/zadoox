@@ -14,6 +14,7 @@ import type { AIActionType, AIAnalysisResponse, ParagraphMode, ChangeBlock } fro
 import { EditorView } from '@codemirror/view';
 import { changeHighlightExtension, setChanges } from './change-highlight-extension';
 import { embeddedImagePreviewExtension } from './embedded-image-preview-extension';
+import { xmdMarkupHighlightExtension } from './xmd-markup-highlight-extension';
 
 interface AIEnhancedEditorProps {
   value: string;
@@ -125,6 +126,10 @@ export function AIEnhancedEditor({
 
   const embeddedImagePreviewExt = useMemo(() => {
     return embeddedImagePreviewExtension();
+  }, []);
+
+  const xmdMarkupHighlightExt = useMemo(() => {
+    return xmdMarkupHighlightExtension();
   }, []);
 
   // Dispatch changes to CodeMirror when they update
@@ -705,6 +710,7 @@ export function AIEnhancedEditor({
           extensions={[
             toolbarExt,
             ...disableSelectionExt,
+            xmdMarkupHighlightExt,
             ...(changeHighlightExt ? [changeHighlightExt] : []),
             ...paragraphBlockControlsExt,
             ...embeddedImagePreviewExt,

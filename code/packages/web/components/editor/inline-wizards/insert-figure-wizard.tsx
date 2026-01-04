@@ -73,11 +73,13 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
     const alt = String(params.captionText ?? '').replace(/\n/g, ' ').trim();
     const label = `label="Figure {REF}.1"`;
     const desc = what.trim().length > 0 ? ` desc="${escapeXmdAttr(what)}"` : '';
+    const gen = mode === 'generate' ? ` gen="ai"` : '';
     const alignAttr = align !== 'center' ? ` align="${align}"` : '';
     const placementAttr = placement === 'inline' ? ` placement="inline"` : '';
     const widthAttr = effectiveWidth ? ` width="${escapeXmdAttr(effectiveWidth)}"` : '';
-    return `\n\n![${alt}](${params.src}){#${effectiveFigureId} ${label}${desc}${alignAttr}${widthAttr}${placementAttr}}\n\n`;
+    return `\n\n![${alt}](${params.src}){#${effectiveFigureId} ${label}${desc}${gen}${alignAttr}${widthAttr}${placementAttr}}\n\n`;
   };
+
 
   const toLatexAssetsPath = (ref: string) => {
     const s = String(ref ?? '').trim();
@@ -137,6 +139,7 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
     // No leading/trailing blank lines; keep a trailing newline so subsequent content starts cleanly.
     return `\\begin{figure}\n${alignCmd}\n${zComments.join('\n')}\n\\includegraphics${widthOpt}{\\detokenize{${srcPath}}}\n${captionText ? `\\caption{${captionText}}\n` : ''}\\label{${label}}\n\\end{figure}\n`;
   };
+
 
   const parseDataUrl = (dataUrl: string): { mimeType: string; b64: string } => {
     const m = /^data:([^;]+);base64,(.*)$/.exec(dataUrl);
@@ -236,7 +239,7 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
       const captionForInsert = includeCaption ? caption.trim() : '';
 
       const snippet =
-        ctx.editFormat === 'latex'
+        ctx.editMode === 'latex'
           ? latexFigureBlockFor({ src: asset.ref, captionText: captionForInsert })
           : xmdFigureLineFor({ src: asset.ref, captionText: captionForInsert });
 
@@ -248,6 +251,7 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
       setIsLoading(false);
     }
   };
+
 
   return (
     <div className="p-3">
@@ -409,114 +413,116 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
               </summary>
               <div className="p-2 space-y-2">
                 <div className="grid grid-cols-1 gap-2 min-w-0">
-                  <label className="block">
-                    <div className="text-[11px] text-gray-400 mb-1">Placement</div>
-                    <div className="flex items-center gap-1 flex-wrap">
-                      {(
-                        [
-                          { key: 'block', label: 'Block' },
-                          { key: 'inline', label: 'Inline' },
-                        ] as const
-                      ).map((o) => (
-                        <button
-                          key={o.key}
-                          type="button"
-                          onClick={() => {
-                            setPlacement(o.key);
-                            // "Inline" means text should wrap around the figure.
-                            // Center alignment is ambiguous for wrapping, so default to left.
-                            if (o.key === 'inline' && align === 'center') {
-                              setAlign('left');
-                            }
-                          }}
-                          className={`px-2 py-1 text-[11px] rounded border transition-colors ${
-                            placement === o.key
-                              ? 'bg-gray-800 text-gray-200 border-gray-700'
-                              : 'bg-gray-900 text-gray-400 border-gray-800 hover:bg-gray-800'
-                          }`}
-                        >
-                          {o.label}
-                        </button>
-                      ))}
-                    </div>
-                  </label>
-
-                  <label className="block">
-                    <div className="text-[11px] text-gray-400 mb-1">Align</div>
-                    <div className="flex items-center gap-1 flex-wrap">
-                      {(
-                        placement === 'inline'
-                          ? ([
-                              { key: 'left', label: 'Left' },
-                              { key: 'right', label: 'Right' },
-                            ] as const)
-                          : ([
-                              { key: 'left', label: 'Left' },
-                              { key: 'center', label: 'Center' },
-                              { key: 'right', label: 'Right' },
-                            ] as const)
-                      ).map((o) => (
-                        <button
-                          key={o.key}
-                          type="button"
-                          onClick={() => setAlign(o.key)}
-                          className={`px-2 py-1 text-[11px] rounded border transition-colors ${
-                            align === o.key
-                              ? 'bg-gray-800 text-gray-200 border-gray-700'
-                              : 'bg-gray-900 text-gray-400 border-gray-800 hover:bg-gray-800'
-                          }`}
-                        >
-                          {o.label}
-                        </button>
-                      ))}
-                    </div>
-                  </label>
-
-                  <label className="block">
-                    <div className="text-[11px] text-gray-400 mb-1">Width</div>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-1 flex-wrap">
-                        {(
-                          [
-                            { key: 'auto', label: 'Auto' },
-                            { key: 'small', label: 'Small' },
-                            { key: 'medium', label: 'Medium' },
-                            { key: 'large', label: 'Large' },
-                            { key: 'custom', label: 'Custom' },
-                          ] as const
-                        ).map((o) => (
-                          <button
-                            key={o.key}
-                            type="button"
-                            onClick={() => setWidthPreset(o.key)}
-                            className={`px-2 py-1 text-[11px] rounded border transition-colors ${
-                              widthPreset === o.key
-                                ? 'bg-gray-800 text-gray-200 border-gray-700'
-                                : 'bg-gray-900 text-gray-400 border-gray-800 hover:bg-gray-800'
-                            }`}
-                          >
-                            {o.label}
-                          </button>
-                        ))}
-                      </div>
-
-                      {widthPreset === 'custom' && (
-                        <div className="flex items-center gap-2">
-                          <input
-                            value={customWidthPct}
-                            onChange={(e) => {
-                              const raw = e.target.value.replace(/%/g, '').trim();
-                              if (raw === '' || /^\d+(\.\d+)?$/.test(raw)) setCustomWidthPct(raw);
-                            }}
-                            className="w-full min-w-0 bg-gray-950 text-xs text-gray-200 placeholder-gray-500 border border-gray-700 rounded px-2 py-1 focus:outline-none focus:border-gray-600"
-                            placeholder="e.g. 50"
-                            inputMode="decimal"
-                          />
-                          <div className="text-xs text-gray-400">%</div>
+                  <>
+                      <label className="block">
+                        <div className="text-[11px] text-gray-400 mb-1">Placement</div>
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {(
+                            [
+                              { key: 'block', label: 'Block' },
+                              { key: 'inline', label: 'Inline' },
+                            ] as const
+                          ).map((o) => (
+                            <button
+                              key={o.key}
+                              type="button"
+                              onClick={() => {
+                                setPlacement(o.key);
+                                // "Inline" means text should wrap around the figure.
+                                // Center alignment is ambiguous for wrapping, so default to left.
+                                if (o.key === 'inline' && align === 'center') {
+                                  setAlign('left');
+                                }
+                              }}
+                              className={`px-2 py-1 text-[11px] rounded border transition-colors ${
+                                placement === o.key
+                                  ? 'bg-gray-800 text-gray-200 border-gray-700'
+                                  : 'bg-gray-900 text-gray-400 border-gray-800 hover:bg-gray-800'
+                              }`}
+                            >
+                              {o.label}
+                            </button>
+                          ))}
                         </div>
-                      )}
-                    </div>
-                  </label>
+                      </label>
+
+                      <label className="block">
+                        <div className="text-[11px] text-gray-400 mb-1">Align</div>
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {(
+                            placement === 'inline'
+                              ? ([
+                                  { key: 'left', label: 'Left' },
+                                  { key: 'right', label: 'Right' },
+                                ] as const)
+                              : ([
+                                  { key: 'left', label: 'Left' },
+                                  { key: 'center', label: 'Center' },
+                                  { key: 'right', label: 'Right' },
+                                ] as const)
+                          ).map((o) => (
+                            <button
+                              key={o.key}
+                              type="button"
+                              onClick={() => setAlign(o.key)}
+                              className={`px-2 py-1 text-[11px] rounded border transition-colors ${
+                                align === o.key
+                                  ? 'bg-gray-800 text-gray-200 border-gray-700'
+                                  : 'bg-gray-900 text-gray-400 border-gray-800 hover:bg-gray-800'
+                              }`}
+                            >
+                              {o.label}
+                            </button>
+                          ))}
+                        </div>
+                      </label>
+
+                      <label className="block">
+                        <div className="text-[11px] text-gray-400 mb-1">Width</div>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {(
+                              [
+                                { key: 'auto', label: 'Auto' },
+                                { key: 'small', label: 'Small' },
+                                { key: 'medium', label: 'Medium' },
+                                { key: 'large', label: 'Large' },
+                                { key: 'custom', label: 'Custom' },
+                              ] as const
+                            ).map((o) => (
+                              <button
+                                key={o.key}
+                                type="button"
+                                onClick={() => setWidthPreset(o.key)}
+                                className={`px-2 py-1 text-[11px] rounded border transition-colors ${
+                                  widthPreset === o.key
+                                    ? 'bg-gray-800 text-gray-200 border-gray-700'
+                                    : 'bg-gray-900 text-gray-400 border-gray-800 hover:bg-gray-800'
+                                }`}
+                              >
+                                {o.label}
+                              </button>
+                            ))}
+                          </div>
+
+                          {widthPreset === 'custom' && (
+                            <div className="flex items-center gap-2">
+                              <input
+                                value={customWidthPct}
+                                onChange={(e) => {
+                                  const raw = e.target.value.replace(/%/g, '').trim();
+                                  if (raw === '' || /^\d+(\.\d+)?$/.test(raw)) setCustomWidthPct(raw);
+                                }}
+                                className="w-full min-w-0 bg-gray-950 text-xs text-gray-200 placeholder-gray-500 border border-gray-700 rounded px-2 py-1 focus:outline-none focus:border-gray-600"
+                                placeholder="e.g. 50"
+                                inputMode="decimal"
+                              />
+                              <div className="text-xs text-gray-400">%</div>
+                            </div>
+                          )}
+                        </div>
+                      </label>
+                  </>
                 </div>
               </div>
             </details>

@@ -58,11 +58,36 @@ function collectAssetFilesFromIr(ir: DocumentNode): AssetFile[] {
         if (key && !out.has(key)) out.set(key, { key, relPath: `assets/${key}` });
       }
     }
+    if (n.type === 'grid') {
+      const rows = (n as unknown as { rows?: Array<Array<{ children?: import('@zadoox/shared').IrNode[] }>> }).rows ?? [];
+      for (const row of rows) {
+        for (const cell of row ?? []) {
+          for (const child of cell?.children ?? []) walk(child);
+        }
+      }
+    }
+    // Fallback: if a paragraph contains markdown asset images, still count them as assets.
+    // This protects the outline even if a cell wasn't parsed into a FigureNode for any reason.
+    if (n.type === 'paragraph') {
+      const t = String((n as any).text ?? '');
+      const re = /!\[[^\]]*\]\(\s*(zadoox-asset:\/\/[^)\s]+)\s*\)/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(t))) {
+        const src = String(m[1] ?? '').trim();
+        const prefix = 'zadoox-asset://';
+        if (!src.startsWith(prefix)) continue;
+        const key = src.slice(prefix.length).trim();
+        if (key && !out.has(key)) out.set(key, { key, relPath: `assets/${key}` });
+      }
+    }
     if ((n.type === 'document' || n.type === 'section') && (n as any).children?.length) {
       for (const c of (n as any).children) walk(c);
     }
   };
   walk(ir);
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'outline-grid',hypothesisId:'H5',location:'document-outline.tsx:collectAssetFilesFromIr',message:'Collected asset keys from IR',data:{assetCount:out.size},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion agent log
   return Array.from(out.values());
 }
 
@@ -118,6 +143,10 @@ export function DocumentOutline({ content, ir, projectName }: DocumentOutlinePro
     // Phase 11: outline is IR-driven.
     return extractOutlineItemsFromIr(derivedIr);
   }, [derivedIr]);
+
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'grid-insert',hypothesisId:'H7',location:'document-outline.tsx:items',message:'Outline items computed',data:{total:items.length,figureItems:items.filter((i:any)=>i.kind==='figure').length,headingItems:items.filter((i:any)=>i.kind==='heading').length,docId:(derivedIr as any)?.docId||null},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion agent log
 
   // We render a file/folder tree UI in the outline pane. The "file" represents the current document.
   // The document title (if present) becomes the file label; outline contents are headings/figures under that file.
