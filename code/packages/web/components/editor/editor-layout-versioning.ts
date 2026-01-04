@@ -14,9 +14,10 @@ export function useEditorVersionMetadata(params: {
   // Load version metadata to determine latest version
   useEffect(() => {
     if (!actualDocumentId || actualDocumentId === 'default') return;
+    const docId = actualDocumentId;
 
     async function loadMetadata() {
-      const metadata = await api.versions.getMetadata(actualDocumentId);
+      const metadata = await api.versions.getMetadata(docId);
       let newLatestVersion: number | null = null;
 
       // Check if currentVersion exists and is valid
@@ -24,7 +25,7 @@ export function useEditorVersionMetadata(params: {
         newLatestVersion = Number(metadata.currentVersion);
       } else {
         // Fallback: get latest from versions list
-        const versions = await api.versions.list(actualDocumentId, 1, 0);
+        const versions = await api.versions.list(docId, 1, 0);
         if (versions.length > 0) {
           newLatestVersion = versions[0].versionNumber;
         }

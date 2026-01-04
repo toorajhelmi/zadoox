@@ -4,6 +4,7 @@ import type { FormatType } from './floating-format-menu';
 
 type CursorPosition = { line: number; column: number } | null;
 type SelectionRefValue = { from: number; to: number; text: string } | null;
+type MutableRef<T> = { current: T };
 
 type HistoryEntry = {
   content: string;
@@ -28,13 +29,13 @@ export type EditorLayoutFormatHandlerParams = {
   undoRedo: UndoRedoApi;
   latexUndoRedo: UndoRedoApi;
 
-  editorViewRef: React.RefObject<EditorView | null>;
-  currentSelectionRef: React.RefObject<SelectionRefValue>;
-  isUserInputRef: React.RefObject<boolean>;
-  debounceTimeoutRef: React.RefObject<NodeJS.Timeout | null>;
-  latexDebounceTimeoutRef: React.RefObject<NodeJS.Timeout | null>;
-  previousContentForHistoryRef: React.RefObject<string>;
-  previousLatexForHistoryRef: React.RefObject<string>;
+  editorViewRef: MutableRef<EditorView | null>;
+  currentSelectionRef: MutableRef<SelectionRefValue>;
+  isUserInputRef: MutableRef<boolean>;
+  debounceTimeoutRef: MutableRef<NodeJS.Timeout | null>;
+  latexDebounceTimeoutRef: MutableRef<NodeJS.Timeout | null>;
+  previousContentForHistoryRef: MutableRef<string>;
+  previousLatexForHistoryRef: MutableRef<string>;
 };
 
 export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) {

@@ -6,6 +6,7 @@ import { irToXmd, parseLatexToIr } from '@zadoox/shared';
 
 type CursorPosition = { line: number; column: number } | null;
 type SelectionRefValue = { from: number; to: number; text: string } | null;
+type MutableRef<T> = { current: T };
 
 type HistoryEntry = {
   content: string;
@@ -25,12 +26,12 @@ export function useEditorHistoryAndChangeTracking(params: {
 
   cursorPosition: CursorPosition;
   setCursorPosition: (p: CursorPosition) => void;
-  editorViewRef: React.RefObject<EditorView | null>;
-  currentSelectionRef: React.RefObject<SelectionRefValue>;
+  editorViewRef: MutableRef<EditorView | null>;
+  currentSelectionRef: MutableRef<SelectionRefValue>;
 
-  isUserInputRef: React.RefObject<boolean>;
-  previousContentForHistoryRef: React.RefObject<string>;
-  previousLatexForHistoryRef: React.RefObject<string>;
+  isUserInputRef: MutableRef<boolean>;
+  previousContentForHistoryRef: MutableRef<string>;
+  previousLatexForHistoryRef: MutableRef<string>;
 
   setLatexDraft: (t: string) => void;
   setDocumentMetadata: React.Dispatch<React.SetStateAction<any>>;
