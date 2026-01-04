@@ -23,7 +23,7 @@ export type EditorLayoutFormatHandlerParams = {
   selectedVersion: number | null;
   latestVersion: number | null;
   cursorPosition: CursorPosition;
-  editFormat: 'markdown' | 'latex';
+  editMode: 'markdown' | 'latex';
   handleContentChange: (next: string) => void;
   changeTracking: { isTracking: boolean };
   undoRedo: UndoRedoApi;
@@ -45,7 +45,7 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
     selectedVersion,
     latestVersion,
     cursorPosition,
-    editFormat,
+    editMode,
     handleContentChange,
     changeTracking,
     undoRedo,
@@ -84,7 +84,7 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
           }
         }
 
-        if (editFormat === 'latex') {
+      if (editMode === 'latex') {
           // Cancel any pending LaTeX typing history entry to avoid duplicates/out-of-order.
           if (latexDebounceTimeoutRef.current) {
             clearTimeout(latexDebounceTimeoutRef.current);
@@ -153,7 +153,7 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
 
         const replaceLine = (lineText: string) => {
           const trimmed = lineText.trimStart();
-          if (editFormat === 'latex') {
+      if (editMode === 'latex') {
             // Strip existing heading-ish commands.
             const stripLatex = (t: string) => {
               const m =
@@ -190,7 +190,7 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
         const doc = view.state.doc;
         const pos = typeof from === 'number' ? from : view.state.selection.main.head;
         const l = doc.lineAt(pos);
-        if (editFormat === 'latex') {
+      if (editMode === 'latex') {
           const stripped = l.text
             .replace(/^\s*\\(title|section|subsection|subsubsection)\{/, '')
             .replace(/\}\s*$/, '');
@@ -217,27 +217,27 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
         const selectedText = baseContent.slice(from!, to!);
         switch (format) {
           case 'bold':
-            formattedText = editFormat === 'latex' ? `\\textbf{${selectedText}}` : `**${selectedText}**`;
+            formattedText = editMode === 'latex' ? `\\textbf{${selectedText}}` : `**${selectedText}**`;
             break;
           case 'italic':
-            formattedText = editFormat === 'latex' ? `\\emph{${selectedText}}` : `*${selectedText}*`;
+            formattedText = editMode === 'latex' ? `\\emph{${selectedText}}` : `*${selectedText}*`;
             break;
           case 'underline':
-            formattedText = editFormat === 'latex' ? `\\underline{${selectedText}}` : `<u>${selectedText}</u>`;
+            formattedText = editMode === 'latex' ? `\\underline{${selectedText}}` : `<u>${selectedText}</u>`;
             break;
           case 'superscript':
-            formattedText = editFormat === 'latex' ? `\\textsuperscript{${selectedText}}` : `<sup>${selectedText}</sup>`;
+            formattedText = editMode === 'latex' ? `\\textsuperscript{${selectedText}}` : `<sup>${selectedText}</sup>`;
             break;
           case 'subscript':
-            formattedText = editFormat === 'latex' ? `\\textsubscript{${selectedText}}` : `<sub>${selectedText}</sub>`;
+            formattedText = editMode === 'latex' ? `\\textsubscript{${selectedText}}` : `<sub>${selectedText}</sub>`;
             break;
           case 'code':
-            formattedText = editFormat === 'latex' ? `\\texttt{${selectedText}}` : `\`${selectedText}\``;
+            formattedText = editMode === 'latex' ? `\\texttt{${selectedText}}` : `\`${selectedText}\``;
             break;
           case 'link':
             // Use an absolute placeholder so clicking in preview doesn't navigate the SPA route
             formattedText =
-              editFormat === 'latex'
+              editMode === 'latex'
                 ? `\\href{https://example.com}{${selectedText}}`
                 : `[${selectedText}](https://example.com)`;
             break;
@@ -257,25 +257,25 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
         let placeholder = '';
         switch (format) {
           case 'bold':
-            placeholder = editFormat === 'latex' ? '\\textbf{}' : '****';
+            placeholder = editMode === 'latex' ? '\\textbf{}' : '****';
             break;
           case 'italic':
-            placeholder = editFormat === 'latex' ? '\\emph{}' : '**';
+            placeholder = editMode === 'latex' ? '\\emph{}' : '**';
             break;
           case 'underline':
-            placeholder = editFormat === 'latex' ? '\\underline{}' : '<u></u>';
+            placeholder = editMode === 'latex' ? '\\underline{}' : '<u></u>';
             break;
           case 'superscript':
-            placeholder = editFormat === 'latex' ? '\\textsuperscript{}' : '<sup></sup>';
+            placeholder = editMode === 'latex' ? '\\textsuperscript{}' : '<sup></sup>';
             break;
           case 'subscript':
-            placeholder = editFormat === 'latex' ? '\\textsubscript{}' : '<sub></sub>';
+            placeholder = editMode === 'latex' ? '\\textsubscript{}' : '<sub></sub>';
             break;
           case 'code':
-            placeholder = editFormat === 'latex' ? '\\texttt{}' : '``';
+            placeholder = editMode === 'latex' ? '\\texttt{}' : '``';
             break;
           case 'link':
-            placeholder = editFormat === 'latex' ? '\\href{https://example.com}{}' : '[]()';
+            placeholder = editMode === 'latex' ? '\\href{https://example.com}{}' : '[]()';
             break;
         }
         const insertPos = cmSelection ? cmSelection.head : content.length;
@@ -292,7 +292,7 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
       cursorPosition,
       undoRedo,
       latexUndoRedo,
-      editFormat,
+      editMode,
       handleContentChange,
       changeTracking.isTracking,
       editorViewRef,

@@ -14,13 +14,14 @@ import type { InlineWizardPreview, InlineWizardComponent } from './inline-wizard
 import type { InlineWizardScopeStrategy } from './inline-wizards/types';
 import { TranslateWizard } from './inline-wizards/translate-wizard';
 import { InsertFigureWizard } from './inline-wizards/insert-figure-wizard';
+import { InsertFigureGridWizard } from './inline-wizards/insert-figure-grid-wizard';
 import { TodoWizard } from './inline-wizards/todo-wizard';
-import type { EditorSurfaceFormat } from './inline-wizards/types';
+import type { EditorSurfaceMode } from './inline-wizards/types';
 
 interface InlineAIChatProps {
   position: { top: number; left: number };
   documentId: string;
-  editFormat: EditorSurfaceFormat;
+  editMode: EditorSurfaceMode;
   content: string;
   cursorPosition: { line: number; column: number };
   selection?: { from: number; to: number; text: string } | null;
@@ -42,7 +43,7 @@ interface InlineAIChatProps {
 export function InlineAIChat({
   position,
   documentId,
-  editFormat,
+  editMode,
   content,
   cursorPosition,
   selection,
@@ -198,6 +199,7 @@ export function InlineAIChat({
     if (!option?.wizardKey) return null;
     if (option.wizardKey === 'translate') return TranslateWizard;
     if (option.wizardKey === 'insert-figure') return InsertFigureWizard;
+    if (option.wizardKey === 'insert-figure-grid') return InsertFigureGridWizard;
     return TodoWizard;
   })();
 
@@ -218,7 +220,7 @@ export function InlineAIChat({
             ctx={{
               option: activeWizard.option,
               documentId,
-              editFormat,
+              editMode,
               content,
               cursorPosition,
               scope: { kind: derivedScopeKind, text: derivedScopeText },

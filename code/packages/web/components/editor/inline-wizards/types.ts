@@ -3,7 +3,7 @@
 import type { InlineEditOperation } from '@zadoox/shared';
 import type { QuickOption, QuickOptionWizardKey } from '@/lib/services/context-options';
 
-export type EditorSurfaceFormat = 'markdown' | 'latex';
+export type EditorSurfaceMode = 'markdown' | 'latex';
 
 export interface InlineWizardPreview {
   operations: InlineEditOperation[];
@@ -19,7 +19,7 @@ export type InlineWizardScopeStrategy =
 export interface InlineWizardContext {
   option: QuickOption;
   documentId: string;
-  editFormat: EditorSurfaceFormat;
+  editMode: EditorSurfaceMode;
   content: string;
   cursorPosition: { line: number; column: number };
   scope: {
@@ -44,6 +44,7 @@ export function isWizardKey(value: unknown): value is QuickOptionWizardKey {
     value === 'translate' ||
     value === 'add-section' ||
     value === 'insert-figure' ||
+    value === 'insert-figure-grid' ||
     value === 'insert-table' ||
     value === 'insert-equation'
   );
