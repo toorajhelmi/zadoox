@@ -295,6 +295,13 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
       editFormat,
       handleContentChange,
       changeTracking.isTracking,
+      editorViewRef,
+      currentSelectionRef,
+      isUserInputRef,
+      debounceTimeoutRef,
+      latexDebounceTimeoutRef,
+      previousContentForHistoryRef,
+      previousLatexForHistoryRef,
     ]
   );
 }

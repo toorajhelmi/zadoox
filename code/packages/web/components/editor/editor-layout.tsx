@@ -339,6 +339,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       documentMetadata,
       setDocumentMetadata,
       latexUndoRedo,
+      setLatexDraft,
     ]
   );
 
