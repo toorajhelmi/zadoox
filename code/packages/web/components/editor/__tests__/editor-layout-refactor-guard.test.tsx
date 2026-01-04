@@ -228,11 +228,11 @@ describe('EditorLayout refactor guard', () => {
     (api.documents.update as any).mockResolvedValue({});
   });
 
-  it('Cmd/Ctrl+Alt+L switches to LaTeX and persists metadata', async () => {
+  it('Cmd/Ctrl+Alt+Shift+L switches to LaTeX and persists metadata', async () => {
     render(<EditorLayout projectId="p1" documentId="doc-1" />);
 
     await act(async () => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', altKey: true, ctrlKey: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', altKey: true, shiftKey: true, ctrlKey: true }));
     });
 
     const latex = await screen.findByTestId('latex-editor');
@@ -269,7 +269,7 @@ describe('EditorLayout refactor guard', () => {
 
     // Switch to latex via shortcut and undo should route to latex controller.
     await act(async () => {
-      keydownHandler(new KeyboardEvent('keydown', { key: 'l', altKey: true, ctrlKey: true }));
+      keydownHandler(new KeyboardEvent('keydown', { key: 'l', altKey: true, shiftKey: true, ctrlKey: true }));
     });
     // After switching formats, the effect is re-registered; use the latest handler.
     keydownHandler = await waitFor(() => {

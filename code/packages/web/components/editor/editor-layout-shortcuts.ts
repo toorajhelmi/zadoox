@@ -87,8 +87,9 @@ export function useEditorKeyboardShortcuts(opts: {
         }
       }
 
-      // Edit surface shortcuts: Cmd/Ctrl+Alt+M/L
-      if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey) {
+      // Edit surface shortcuts: Cmd/Ctrl+Alt+Shift+M/L
+      // (use Shift to reduce accidental triggers / collisions with other common shortcuts)
+      if ((e.ctrlKey || e.metaKey) && e.altKey && e.shiftKey) {
         const k = e.key.toLowerCase();
         if (k === 'm') {
           e.preventDefault();

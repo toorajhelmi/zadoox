@@ -185,7 +185,7 @@ export function EditorToolbar({
                 : 'text-vscode-text-secondary hover:text-vscode-text'
             }`}
             aria-label="Markdown edit mode"
-            title="Edit Markdown (XMD) (Cmd/Ctrl+Alt+M)"
+            title="Edit Markdown (XMD) (Cmd/Ctrl+Alt+Shift+M)"
           >
             MD
           </button>
@@ -197,7 +197,7 @@ export function EditorToolbar({
                 : 'text-vscode-text-secondary hover:text-vscode-text'
             }`}
             aria-label="LaTeX edit mode"
-            title="Edit LaTeX (subset) (Cmd/Ctrl+Alt+L)"
+            title="Edit LaTeX (subset) (Cmd/Ctrl+Alt+Shift+L)"
           >
             LaTeX
           </button>
