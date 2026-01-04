@@ -785,6 +785,8 @@ This phase implements undo/redo functionality for document editing, allowing use
 - [ ] Extended Markdown support
 - [ ] Placeholder support ({REF}, {CH})
 - [ ] Image upload/insertion
+- [x] Grid elements (XMD/IR `:::` grid block + IR→LaTeX rendering)
+- [ ] **Fix**: inline-placement element toolbars (figure toolbars inside grids not reliably showing in `placement="inline"`; stabilize hover/visibility)
 - [ ] Table creation/editing
 - [ ] Basic formatting toolbar
 - [ ] Find/replace
