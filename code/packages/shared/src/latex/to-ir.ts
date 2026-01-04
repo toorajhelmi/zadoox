@@ -419,7 +419,9 @@ function parseBlocks(latex: string): Block[] {
 
     // Boilerplate (system-generated for compilable docs) — ignore so round-trips stay clean.
     // Also tolerate trailing comments like: \end{document} % comment
-    const trimmed = line.trim();
+    // Some environments may introduce a BOM/zero-width chars (e.g. from copy/paste or server transforms).
+    // Strip them so boilerplate lines like \end{document} never leak into IR/XMD.
+    const trimmed = line.trim().replace(/^[\uFEFF\u200B\u200C\u200D]+/, '');
     if (/^\\+documentclass\{[^}]+\}(?:\s*%.*)?$/.test(trimmed)) {
       i++;
       blockIndex++;

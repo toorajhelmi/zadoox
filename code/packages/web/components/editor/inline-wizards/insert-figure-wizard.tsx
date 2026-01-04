@@ -421,7 +421,14 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
                         <button
                           key={o.key}
                           type="button"
-                          onClick={() => setPlacement(o.key)}
+                          onClick={() => {
+                            setPlacement(o.key);
+                            // "Inline" means text should wrap around the figure.
+                            // Center alignment is ambiguous for wrapping, so default to left.
+                            if (o.key === 'inline' && align === 'center') {
+                              setAlign('left');
+                            }
+                          }}
                           className={`px-2 py-1 text-[11px] rounded border transition-colors ${
                             placement === o.key
                               ? 'bg-gray-800 text-gray-200 border-gray-700'
@@ -438,11 +445,16 @@ export function InsertFigureWizard({ ctx, onCancel, onCloseAll, onPreviewInsert,
                     <div className="text-[11px] text-gray-400 mb-1">Align</div>
                     <div className="flex items-center gap-1 flex-wrap">
                       {(
-                        [
-                          { key: 'left', label: 'Left' },
-                          { key: 'center', label: 'Center' },
-                          { key: 'right', label: 'Right' },
-                        ] as const
+                        placement === 'inline'
+                          ? ([
+                              { key: 'left', label: 'Left' },
+                              { key: 'right', label: 'Right' },
+                            ] as const)
+                          : ([
+                              { key: 'left', label: 'Left' },
+                              { key: 'center', label: 'Center' },
+                              { key: 'right', label: 'Right' },
+                            ] as const)
                       ).map((o) => (
                         <button
                           key={o.key}

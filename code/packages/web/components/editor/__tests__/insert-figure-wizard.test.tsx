@@ -85,6 +85,29 @@ describe('InsertFigureWizard', () => {
     expect(insertArg).toContain('width="50%"');
   });
 
+  it('inline placement defaults to left align (so text wraps) and emits placement/align attrs in XMD', async () => {
+    (api.ai.images.generate as any).mockResolvedValue({ mimeType: 'image/png', b64: 'AAA' });
+    (api.assets.upload as any).mockResolvedValue({ ref: 'zadoox-asset://k.png' });
+
+    const props = makeProps({ editFormat: 'markdown' });
+    render(<InsertFigureWizard {...(props as any)} />);
+
+    fireEvent.click(screen.getByText('Generate image'));
+    await waitFor(() => expect(screen.getByText('Insert')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText('Advanced'));
+    fireEvent.click(screen.getByText('Inline'));
+
+    // Center should be hidden in inline mode, and align defaults to left.
+    expect(screen.queryByText('Center')).toBeNull();
+
+    fireEvent.click(screen.getByText('Insert'));
+    await waitFor(() => expect(props.onPreviewInsert).toHaveBeenCalled());
+    const insertArg = (props.onPreviewInsert as any).mock.calls[0][0].content as string;
+    expect(insertArg).toContain('placement="inline"');
+    expect(insertArg).toContain('align="left"');
+  });
+
   it('inserts LaTeX figure in latex mode and uses caption only when Caption is enabled', async () => {
     (api.ai.images.generate as any).mockResolvedValue({ mimeType: 'image/png', b64: 'AAA' });
     (api.assets.upload as any).mockResolvedValue({ ref: 'zadoox-asset://k.png' });

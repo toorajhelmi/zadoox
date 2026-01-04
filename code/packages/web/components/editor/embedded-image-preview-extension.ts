@@ -365,9 +365,6 @@ class FigureCardWidget extends WidgetType {
 
       const attrBlock = nextAttrs.trim().length > 0 ? `{${nextAttrs.trim()}}` : '';
       const nextText = `![${currentCaption}](${currentSrc})${attrBlock}`;
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'figattrs1',hypothesisId:'FA1',location:'embedded-image-preview-extension.ts:applyAttrUpdate',message:'Figure wizard writes markdown',data:{nextText:nextText.slice(0,240),nextTextLen:nextText.length,updates},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       view.dispatch({ changes: { from: this.from, to: this.to, insert: nextText } });
     };
 

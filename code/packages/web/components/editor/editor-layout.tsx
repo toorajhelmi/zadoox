@@ -23,6 +23,8 @@ import type { InlineEditBlock, InlineEditOperation } from '@zadoox/shared';
 import { extractCitedSourceIds } from '@/lib/utils/citation';
 import type { QuickOption } from '@/lib/services/context-options';
 import { irToLatexDocument, irToXmd, parseLatexToIr, parseXmdToIr } from '@zadoox/shared';
+import { applyInlineOperations, buildInlineBlocksAroundCursor } from './editor-layout-inline-edit';
+import { useEditorKeyboardShortcuts } from './editor-layout-shortcuts';
 
 interface EditorLayoutProps {
   projectId: string;
@@ -181,13 +183,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         if (next === 'latex') {
           const ir = irState.ir ?? parseXmdToIr({ docId: actualDocumentId, xmd: content });
           const latex = irToLatexDocument(ir);
-          // #region agent log
-          try {
-            const figureLines = (content || '').split('\n').filter((l) => l.includes('![') && l.includes('](') && l.includes('{'));
-            const commentCount = (latex.match(/% zadoox-(align|placement|width|desc):/g) || []).length;
-            fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'figattrs1',hypothesisId:'FA2',location:'editor-layout.tsx:handleEditFormatChange',message:'MD->IR->LaTeX on switch',data:{docId:actualDocumentId,figureLineCount:figureLines.length,figureLine0:(figureLines[0]||'').slice(0,240),latexLen:latex.length,zadooxCommentCount:commentCount},timestamp:Date.now()})}).catch(()=>{});
-          } catch {}
-          // #endregion
           setLatexDraft(latex);
           setEditFormat('latex');
           const nextMeta = { ...(documentMetadata as any), latex, lastEditedFormat: 'latex' as const };
@@ -202,11 +197,22 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         }
 
         // next === 'markdown'
+        // When leaving LaTeX mode, re-derive XMD from the current LaTeX draft so any LaTeX-only
+        // boilerplate (e.g. \end{document}) cannot leak into the Markdown surface.
+        let nextContent = content;
+        try {
+          const ir = parseLatexToIr({ docId: actualDocumentId, latex: latexDraft });
+          nextContent = irToXmd(ir);
+          updateContent(nextContent);
+        } catch {
+          // If conversion fails, keep the last known XMD content (never block switching).
+        }
+
         setEditFormat('markdown');
         const nextMeta = { ...(documentMetadata as any), latex: latexDraft, lastEditedFormat: 'markdown' as const };
         setDocumentMetadata(nextMeta);
         await api.documents.update(actualDocumentId, {
-          content,
+          content: nextContent,
           metadata: nextMeta,
           changeType: 'manual-save',
           changeDescription: 'Switched editor to Markdown',
@@ -217,7 +223,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         setEditFormat(next);
       }
     },
-    [actualDocumentId, content, documentMetadata, editFormat, irState.ir, latexDraft, setDocumentMetadata]
+    [actualDocumentId, content, documentMetadata, editFormat, irState.ir, latexDraft, setDocumentMetadata, updateContent]
   );
 
   // Sidebar resize handlers
@@ -312,186 +318,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     };
   }, [isResizingEditorPane]);
 
-  function buildInlineBlocksAroundCursor(fullText: string, cursorLine0: number) {
-    const lines = fullText.split('\n');
-    const startLine = Math.max(0, cursorLine0 - 40);
-    const endLine = Math.min(lines.length - 1, cursorLine0 + 40);
-
-    let prefixOffset = 0;
-    for (let i = 0; i < startLine; i++) prefixOffset += (lines[i]?.length || 0) + 1;
-
-    const windowLines = lines.slice(startLine, endLine + 1);
-    const windowText = windowLines.join('\n');
-
-    const blocks: InlineEditBlock[] = [];
-    const isBlank = (s: string) => s.trim().length === 0;
-
-    const windowOffsets: number[] = [];
-    {
-      let off = 0;
-      for (const l of windowLines) {
-        windowOffsets.push(off);
-        off += l.length + 1;
-      }
-    }
-
-    let i = 0;
-    let blockIndex = 0;
-    while (i < windowLines.length) {
-      const line = windowLines[i] ?? '';
-      const lineTrim = line.trim();
-
-      const startInWindow = windowOffsets[i] ?? 0;
-
-      // Code fence block
-      if (lineTrim.startsWith('```')) {
-        let j = i + 1;
-        while (j < windowLines.length) {
-          const t = (windowLines[j] ?? '').trim();
-          if (t.startsWith('```')) {
-            j++;
-            break;
-          }
-          j++;
-        }
-        const endInWindow = j < windowLines.length ? (windowOffsets[j] ?? windowText.length) : windowText.length;
-        const text = windowText.slice(startInWindow, endInWindow);
-        blocks.push({
-          id: `b${blockIndex++}`,
-          kind: 'code',
-          text,
-          start: prefixOffset + startInWindow,
-          end: prefixOffset + endInWindow,
-        });
-        i = j;
-        continue;
-      }
-
-      // Heading as its own block (include following blank line if present)
-      if (lineTrim.startsWith('#')) {
-        let j = i + 1;
-        while (j < windowLines.length && isBlank(windowLines[j] ?? '')) j++;
-        const endInWindow = j < windowLines.length ? (windowOffsets[j] ?? windowText.length) : windowText.length;
-        const text = windowText.slice(startInWindow, endInWindow);
-        blocks.push({
-          id: `b${blockIndex++}`,
-          kind: 'heading',
-          text,
-          start: prefixOffset + startInWindow,
-          end: prefixOffset + endInWindow,
-        });
-        i = j;
-        continue;
-      }
-
-      // Blank block (collapse contiguous blanks)
-      if (isBlank(line)) {
-        let j = i + 1;
-        while (j < windowLines.length && isBlank(windowLines[j] ?? '')) j++;
-        const endInWindow = j < windowLines.length ? (windowOffsets[j] ?? windowText.length) : windowText.length;
-        const text = windowText.slice(startInWindow, endInWindow);
-        blocks.push({
-          id: `b${blockIndex++}`,
-          kind: 'blank',
-          text,
-          start: prefixOffset + startInWindow,
-          end: prefixOffset + endInWindow,
-        });
-        i = j;
-        continue;
-      }
-
-      // List block (basic)
-      const isListLine = (s: string) => {
-        const t = s.trim();
-        return /^([-*+])\s+/.test(t) || /^\d+\.\s+/.test(t);
-      };
-      if (isListLine(line)) {
-        let j = i + 1;
-        while (j < windowLines.length) {
-          const l2 = windowLines[j] ?? '';
-          if (isBlank(l2)) {
-            j++;
-            break;
-          }
-          if (!isListLine(l2)) break;
-          j++;
-        }
-        const endInWindow = j < windowLines.length ? (windowOffsets[j] ?? windowText.length) : windowText.length;
-        const text = windowText.slice(startInWindow, endInWindow);
-        blocks.push({
-          id: `b${blockIndex++}`,
-          kind: 'list',
-          text,
-          start: prefixOffset + startInWindow,
-          end: prefixOffset + endInWindow,
-        });
-        i = j;
-        continue;
-      }
-
-      // Paragraph/other: consume until blank line
-      let j = i + 1;
-      while (j < windowLines.length && !isBlank(windowLines[j] ?? '')) {
-        const t = (windowLines[j] ?? '').trim();
-        if (t.startsWith('#') || t.startsWith('```')) break;
-        j++;
-      }
-      if (j < windowLines.length && isBlank(windowLines[j] ?? '')) j++;
-      const endInWindow = j < windowLines.length ? (windowOffsets[j] ?? windowText.length) : windowText.length;
-      const text = windowText.slice(startInWindow, endInWindow);
-      blocks.push({
-        id: `b${blockIndex++}`,
-        kind: 'paragraph',
-        text,
-        start: prefixOffset + startInWindow,
-        end: prefixOffset + endInWindow,
-      });
-      i = j;
-    }
-
-    // Identify cursor block by absolute character offset
-    let cursorPos = 0;
-    for (let li = 0; li < cursorLine0 && li < lines.length; li++) cursorPos += (lines[li]?.length || 0) + 1;
-    const cursorBlock = blocks.find(b => cursorPos >= b.start && cursorPos < b.end) || blocks[0];
-    return { blocks, cursorBlockId: cursorBlock?.id };
-  }
-
-  function applyInlineOperations(fullText: string, blocks: InlineEditBlock[], operations: InlineEditOperation[]) {
-    const byId = new Map(blocks.map(b => [b.id, b]));
-    let text = fullText;
-
-    // Apply from end to start (stable offsets)
-    const toSpan = (op: InlineEditOperation) => {
-      if (op.type === 'replace_range') {
-        const a = byId.get(op.startBlockId);
-        const b = byId.get(op.endBlockId);
-        if (!a || !b) return null;
-        const start = Math.min(a.start, b.start);
-        const end = Math.max(a.end, b.end);
-        return { start, end, insert: op.content };
-      }
-      if (op.type === 'insert_before') {
-        const a = byId.get(op.anchorBlockId);
-        if (!a) return null;
-        return { start: a.start, end: a.start, insert: op.content };
-      }
-      if (op.type === 'insert_after') {
-        const a = byId.get(op.anchorBlockId);
-        if (!a) return null;
-        return { start: a.end, end: a.end, insert: op.content };
-      }
-      return null;
-    };
-
-    const spans = operations.map(toSpan).filter((x): x is { start: number; end: number; insert: string } => !!x);
-    spans.sort((s1, s2) => s2.start - s1.start);
-
-    for (const s of spans) {
-      text = text.slice(0, s.start) + s.insert + text.slice(s.end);
-    }
-    return text;
-  }
+  // Inline edit helpers extracted to `editor-layout-inline-edit.ts`
 
 
   // Helper to clean up insertedSources when citations are removed
@@ -919,171 +746,24 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     setCursorPosition(position);
   }, []);
 
-  // Handle keyboard shortcuts (Ctrl+S / Cmd+S for immediate auto-save, Ctrl+T / Cmd+T for mode toggle, Ctrl+Z/Ctrl+Shift+Z for undo/redo)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't allow shortcuts if viewing an older version
-      // Allow shortcuts if selectedVersion === null (latest) or selectedVersion === latestVersion
-      if (selectedVersion !== null && latestVersion !== null && selectedVersion !== latestVersion) {
-        return; // Don't allow shortcuts for older versions
-      }
-
-      // Don't allow undo/redo if change tracking is active
-      if (changeTracking.isTracking) {
-        // Allow undo/redo shortcuts to work even during change tracking
-        // They will cancel change tracking and perform undo/redo
-      }
-      
-      // Ctrl+Z / Cmd+Z for undo
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        // Clear change tracking if active
-        if (changeTracking.isTracking) {
-          changeTracking.cancelTracking();
-        }
-        if (editFormat === 'latex') latexUndoRedo.undo();
-        else undoRedo.undo();
-        // State change is handled by onStateChange callback
-        return;
-      }
-      
-      // Ctrl+Shift+Z / Cmd+Shift+Z or Ctrl+Y / Cmd+Y for redo
-      if (((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z') || ((e.ctrlKey || e.metaKey) && e.key === 'y')) {
-        e.preventDefault();
-        // Clear change tracking if active
-        if (changeTracking.isTracking) {
-          changeTracking.cancelTracking();
-        }
-        if (editFormat === 'latex') latexUndoRedo.redo();
-        else undoRedo.redo();
-        // State change is handled by onStateChange callback
-        return;
-      }
-
-      // View mode shortcuts: Cmd/Ctrl+Alt+E/P/S/I
-      if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey) {
-        const k = e.key.toLowerCase();
-        if (k === 'e') {
-          e.preventDefault();
-          setViewMode('edit');
-          return;
-        }
-        if (k === 'p') {
-          e.preventDefault();
-          setViewMode('preview');
-          return;
-        }
-        if (k === 's') {
-          e.preventDefault();
-          setViewMode('split');
-          return;
-        }
-        if (k === 'i') {
-          e.preventDefault();
-          setViewMode('ir');
-          return;
-        }
-      }
-
-      // Edit surface shortcuts: Cmd/Ctrl+Alt+M/L
-      if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey) {
-        const k = e.key.toLowerCase();
-        if (k === 'm') {
-          e.preventDefault();
-          void handleEditFormatChange('markdown');
-          return;
-        }
-        if (k === 'l') {
-          e.preventDefault();
-          void handleEditFormatChange('latex');
-          return;
-        }
-      }
-      
-      // Ctrl+S / Cmd+S for immediate auto-save
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        // Trigger immediate auto-save by calling saveDocument directly
-        if (saveDocument) {
-          saveDocument(content, 'auto-save');
-        }
-      }
-      
-      // Cmd+K / Ctrl+K for inline AI chat
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        // Don't open if Think panel is open
-        if (thinkPanelOpen) return;
-        // Get cursor screen position
-        const screenPos = getCursorScreenPosition();
-        if (screenPos) {
-          setCursorScreenPosition(screenPos);
-          setInlineAIChatOpen(true);
-        }
-        return;
-      }
-
-      // Ctrl+T / Cmd+T to open Think panel for paragraph at cursor
-      if ((e.ctrlKey || e.metaKey) && e.key === 't') {
-        e.preventDefault();
-        // Find paragraph at cursor position
-        if (cursorPosition && handleOpenPanel) {
-          const lines = content.split('\n');
-          const cursorLine = cursorPosition.line - 1; // Convert to 0-based
-          
-          // Find which paragraph contains this line
-          let currentParagraph: { startLine: number; text: string } | null = null;
-          let paragraphStartLine = 0;
-          
-          for (let i = 0; i < lines.length; i++) {
-            const trimmed = lines[i].trim();
-            
-            if (!trimmed && currentParagraph) {
-              // Blank line ends current paragraph
-              if (cursorLine >= paragraphStartLine && cursorLine < i) {
-                // Cursor is in this paragraph
-                const paragraphId = `para-${paragraphStartLine}`;
-                handleOpenPanel(paragraphId);
-                return;
-              }
-              currentParagraph = null;
-            } else if (trimmed) {
-              // Non-empty line - start or continue paragraph
-              if (!currentParagraph) {
-                currentParagraph = { startLine: i, text: trimmed };
-                paragraphStartLine = i;
-              } else {
-                currentParagraph.text += ' ' + trimmed;
-              }
-            }
-          }
-          
-          // Check if cursor is in the final paragraph
-          if (currentParagraph && cursorLine >= paragraphStartLine) {
-            const paragraphId = `para-${paragraphStartLine}`;
-            handleOpenPanel(paragraphId);
-          }
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    content,
-    saveDocument,
+  useEditorKeyboardShortcuts({
     selectedVersion,
     latestVersion,
-    cursorPosition,
-    handleOpenPanel,
+    changeTracking: { isTracking: changeTracking.isTracking, cancelTracking: changeTracking.cancelTracking },
+    editFormat,
     undoRedo,
     latexUndoRedo,
-    changeTracking,
-    thinkPanelOpen,
-    getCursorScreenPosition,
-    editFormat,
+    setViewMode,
     handleEditFormatChange,
-  ]);
+    content,
+    saveDocument,
+    thinkPanelOpen,
+    cursorPosition,
+    handleOpenPanel,
+    getCursorScreenPosition,
+    setCursorScreenPosition,
+    setInlineAIChatOpen,
+  });
 
   // Handle formatting from toolbar
   const handleFormat = useCallback((format: FormatType) => {
