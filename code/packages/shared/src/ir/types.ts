@@ -19,6 +19,7 @@ export type IrNodeType =
   | 'math_block'
   | 'figure'
   | 'table'
+  | 'grid'
   | 'raw_latex_block'
   | 'raw_xmd_block';
 
@@ -110,6 +111,38 @@ export interface TableNode extends BaseNode {
   rows: string[][];
 }
 
+export interface GridCell {
+  children: IrNode[];
+}
+
+export interface GridNode extends BaseNode {
+  type: 'grid';
+  /**
+   * Optional explicit column count. If absent, consumers may infer it from `rows`.
+   */
+  cols?: number;
+  /**
+   * Optional grid-level caption (typically used for figure grids).
+   */
+  caption?: string;
+  /**
+   * Optional grid-level alignment (applies to the grid block as a whole).
+   */
+  align?: 'left' | 'center' | 'right';
+  /**
+   * Optional grid-level placement. `inline` is intended to behave like wrap/flow in renderers that support it.
+   */
+  placement?: 'block' | 'inline';
+  /**
+   * Optional grid-level margin preset (controls spacing around/within the grid).
+   */
+  margin?: 'small' | 'medium' | 'large';
+  /**
+   * Rows of cells. Each cell can contain any block-level IR nodes.
+   */
+  rows: GridCell[][];
+}
+
 export interface RawLatexBlockNode extends BaseNode {
   type: 'raw_latex_block';
   latex: string;
@@ -132,6 +165,7 @@ export type IrNode =
   | MathBlockNode
   | FigureNode
   | TableNode
+  | GridNode
   | RawLatexBlockNode
   | RawXmdBlockNode;
 
