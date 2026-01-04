@@ -1,5 +1,5 @@
 import { fnv1a32, hashToId } from './id';
-import type { DocumentNode, IrNode, TableNode } from './types';
+import type { DocumentNode, GridNode, IrNode, TableNode } from './types';
 
 export interface IrStoreSnapshot {
   ir: DocumentNode;
@@ -46,6 +46,15 @@ function nodeContentForHash(node: IrNode): string {
       const rows = t.rows.map((r) => r.map(normalizeTableCell).join('|')).join('\n');
       return `table:${normalizeWhitespace(t.caption ?? '')}:${normalizeWhitespace(t.label ?? '')}:${header}\n${rows}`;
     }
+    case 'grid': {
+      const g = node as GridNode;
+      const cols = g.cols ?? 0;
+      const rowLens = (g.rows ?? []).map((r) => String(r?.length ?? 0)).join(',');
+      const align = normalizeWhitespace(g.align ?? '');
+      const placement = normalizeWhitespace(g.placement ?? '');
+      const margin = normalizeWhitespace(g.margin ?? '');
+      return `grid:${cols}:${normalizeWhitespace(g.caption ?? '')}:${align}:${placement}:${margin}:rows=${g.rows?.length ?? 0}:cells=${rowLens}`;
+    }
     case 'raw_latex_block':
       return `rawlatex:${normalizeLineEndings(node.latex)}`;
     case 'raw_xmd_block':
@@ -68,12 +77,25 @@ export function* walkIrNodes(root: DocumentNode): Generator<IrNode, void, void> 
   while (stack.length) {
     const node = stack.pop()!;
     yield node;
+    // Traverse in-order for container nodes.
     if (node.type === 'document' || node.type === 'section') {
-      // Traverse in-order
       const children = node.children ?? [];
-      for (let i = children.length - 1; i >= 0; i--) {
-        stack.push(children[i]!);
+      for (let i = children.length - 1; i >= 0; i--) stack.push(children[i]!);
+      continue;
+    }
+    if (node.type === 'grid') {
+      const g = node as GridNode;
+      const rows = g.rows ?? [];
+      // Reverse traversal to maintain in-order yield.
+      for (let r = rows.length - 1; r >= 0; r--) {
+        const row = rows[r] ?? [];
+        for (let c = row.length - 1; c >= 0; c--) {
+          const cell = row[c];
+          const children = cell?.children ?? [];
+          for (let i = children.length - 1; i >= 0; i--) stack.push(children[i]!);
+        }
       }
+      continue;
     }
   }
 }

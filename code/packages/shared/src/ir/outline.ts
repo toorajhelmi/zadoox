@@ -1,4 +1,4 @@
-import type { DocumentNode, IrNode } from './types';
+import type { DocumentNode, GridNode, IrNode } from './types';
 import type { OutlineItem } from '../editor/markdown';
 
 function slugifyId(text: string): string {
@@ -22,6 +22,14 @@ function* walk(node: IrNode): Generator<IrNode, void, void> {
   yield node;
   if (node.type === 'document' || node.type === 'section') {
     for (const c of node.children) yield* walk(c);
+  }
+  if (node.type === 'grid') {
+    const rows = (node as GridNode).rows ?? [];
+    for (const row of rows) {
+      for (const cell of row ?? []) {
+        for (const c of cell?.children ?? []) yield* walk(c);
+      }
+    }
   }
 }
 
@@ -55,6 +63,17 @@ export function extractOutlineItemsFromIr(ir: DocumentNode): OutlineItem[] {
       const id = n.label ? `figure-${sanitizeDomId(n.label)}` : `figure-${sanitizeDomId(n.id)}`;
       const caption = (n.caption || '').trim();
       const captionOrNull = caption.length > 0 ? caption : null;
+      const text = captionOrNull ? `Figure — ${captionOrNull}` : `Figure ${figureCount}`;
+      items.push({ kind: 'figure', id, text, figureNumber: figureCount, caption: captionOrNull });
+      continue;
+    }
+
+    // Treat grids as figures in the outline so they appear under sections (and are count-stable).
+    if (n.type === 'grid') {
+      figureCount += 1;
+      const caption = String(n.caption ?? '').trim();
+      const captionOrNull = caption.length > 0 ? caption : null;
+      const id = `figure-${sanitizeDomId(n.id ?? `grid-${figureCount}`)}`;
       const text = captionOrNull ? `Figure — ${captionOrNull}` : `Figure ${figureCount}`;
       items.push({ kind: 'figure', id, text, figureNumber: figureCount, caption: captionOrNull });
     }

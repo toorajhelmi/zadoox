@@ -6,6 +6,7 @@ import type {
   DocumentDateNode,
   DocumentNode,
   FigureNode,
+  GridNode,
   IrNode,
   ListNode,
   MathBlockNode,
@@ -45,7 +46,9 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
   let authorCount = 0;
   let dateCount = 0;
   type Counters = Record<string, number>;
-  const countersStack: Counters[] = [{ section: 0, paragraph: 0, list: 0, code_block: 0, math_block: 0, figure: 0, raw_latex_block: 0 }];
+  const countersStack: Counters[] = [
+    { section: 0, paragraph: 0, list: 0, code_block: 0, math_block: 0, figure: 0, grid: 0, raw_latex_block: 0 },
+  ];
   const sectionPathStack: string[] = [];
 
   const currentCounters = () => countersStack[countersStack.length - 1]!;
@@ -64,7 +67,7 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
     }
     appendToCurrentContainer(node);
     sectionStack.push(node);
-    countersStack.push({ section: 0, paragraph: 0, list: 0, code_block: 0, math_block: 0, raw_latex_block: 0 });
+    countersStack.push({ section: 0, paragraph: 0, list: 0, code_block: 0, math_block: 0, figure: 0, grid: 0, raw_latex_block: 0 });
   };
   const fullPath = (leaf: string) => (sectionPathStack.length ? `${sectionPathStack.join('/')}/${leaf}` : leaf);
 
@@ -212,6 +215,56 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
         return;
       }
 
+      if (b.kind === 'grid') {
+        const idx = counters.grid ?? 0;
+        counters.grid = idx + 1;
+        const path = fullPath(`grid[${idx}]`);
+
+        const grid: GridNode = {
+          type: 'grid',
+          id: stableNodeId({ docId, nodeType: 'grid', path }),
+          cols: b.cols,
+          caption: b.caption,
+          rows: (b.rows ?? []).map((row, r) =>
+            (row ?? []).map((cell, c) => {
+              if (!cell) return { children: [] };
+              const figPath = `${path}/r[${r}]/c[${c}]/fig[0]`;
+              const figBlock: Extract<Block, { kind: 'figure' }> = {
+                kind: 'figure',
+                src: cell.src,
+                caption: cell.caption,
+                label: undefined,
+                align: undefined,
+                placement: undefined,
+                width: undefined,
+                desc: undefined,
+                raw: '',
+                blockIndex: b.blockIndex,
+                startOffset: b.startOffset,
+                endOffset: b.endOffset,
+              };
+              const fig: FigureNode = {
+                type: 'figure',
+                id: stableNodeId({ docId, nodeType: 'figure', path: figPath }),
+                src: cell.src,
+                caption: cell.caption,
+                source: {
+                  blockIndex: b.blockIndex,
+                  raw: buildXmdFigureLine(figBlock),
+                  startOffset: b.startOffset,
+                  endOffset: b.endOffset,
+                },
+              };
+              return { children: [fig] };
+            })
+          ),
+          source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
+        };
+
+        appendToCurrentContainer(grid);
+        return;
+      }
+
       // raw fallback
       const idx = counters.raw_latex_block ?? 0;
       counters.raw_latex_block = idx + 1;
@@ -356,6 +409,16 @@ type Block =
       placement?: string;
       width?: string;
       desc?: string;
+      raw: string;
+      blockIndex: number;
+      startOffset: number;
+      endOffset: number;
+    }
+  | {
+      kind: 'grid';
+      cols: number;
+      caption?: string;
+      rows: Array<Array<{ src: string; caption: string } | null>>;
       raw: string;
       blockIndex: number;
       startOffset: number;
@@ -662,6 +725,32 @@ function parseBlocks(latex: string): Block[] {
       if (j < lines.length && lines[j].line.trim() === '\\end{figure}') {
         const endOffset = lines[j].end;
         const raw = lines.slice(i, j + 1).map((l) => l.line).join('\n');
+
+        // Detect Zadoox figure-grid pattern: outer figure with an outer tabular containing nested cells.
+        // This is emitted by the InsertFigureGridWizard and should round-trip to IR GridNode.
+        const grid = parseFigureGridFromLatexRaw(raw) ?? parseFigureGridFromSubfigureRaw(raw);
+        // #region agent log
+        try {
+          const hasTabularx = raw.includes('\\begin{tabularx}');
+          fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'md-latex-roundtrip',hypothesisId:'H12',location:'latex/to-ir.ts:figure',message:'LaTeX figure parsed; grid detection result',data:{gridDetected:Boolean(grid),caption:(caption||'').slice(0,120),hasTabularx,rawHead:raw.slice(0,120)},timestamp:Date.now()})}).catch(()=>{});
+        } catch { /* ignore */ }
+        // #endregion agent log
+        if (grid) {
+          blocks.push({
+            kind: 'grid',
+            cols: grid.cols,
+            caption: caption || undefined,
+            rows: grid.rows,
+            raw,
+            blockIndex,
+            startOffset,
+            endOffset,
+          });
+          i = j + 1;
+          blockIndex++;
+          continue;
+        }
+
         blocks.push({
           kind: 'figure',
           src,
@@ -796,6 +885,210 @@ function latexInlineToMarkdown(text: string): string {
   s = s.replace(/\\([%&#_{}])/g, '$1');
 
   return s;
+}
+
+function countTabularCols(specRaw: string): number {
+  const spec = String(specRaw ?? '')
+    .replace(/@\{[^}]*\}/g, '')
+    .replace(/\|/g, '')
+    .trim();
+  if (!spec) return 0;
+  const parts = spec.match(/(c|l|r|X|p\{[^}]+\}|m\{[^}]+\}|b\{[^}]+\})/g);
+  return parts ? parts.length : 0;
+}
+
+function parseCellCaptionFromTabularCell(lines: string[]): string {
+  for (const ln of lines) {
+    const t = String(ln ?? '').trim();
+    // Support: \\ \scriptsize Caption
+    // Support: \\ {\scriptsize Caption}
+    const m1 = /^\\\\\s*\\scriptsize\s+(.+)$/.exec(t);
+    if (m1) return latexInlineToMarkdown(String(m1[1] ?? '').trim());
+    const m2 = /^\\\\\s*\{\s*\\scriptsize\s+(.+?)\s*\}\s*$/.exec(t);
+    if (m2) return latexInlineToMarkdown(String(m2[1] ?? '').trim());
+  }
+  return '';
+}
+
+function parseFigureGridFromSubfigureRaw(raw: string): { cols: number; rows: Array<Array<{ src: string; caption: string } | null>> } | null {
+  const lines = String(raw ?? '').split('\n');
+  let inSubfigure = false;
+  let subfigureDepth = 0;
+  let currentCell: string[] = [];
+  let currentRow: Array<{ src: string; caption: string } | null> = [];
+  const rows: Array<Array<{ src: string; caption: string } | null>> = [];
+
+  const flushCell = () => {
+    const cellLines = currentCell.slice();
+    currentCell = [];
+
+    let src = '';
+    let cap = '';
+    for (const l of cellLines) {
+      const t = String(l ?? '').trim();
+      const ig = parseIncludegraphicsLine(t);
+      if (!src && ig.src) src = ig.src;
+      const mCap = /^\\caption\{([^}]*)\}(?:\s*%.*)?$/.exec(t);
+      if (mCap) cap = latexInlineToMarkdown(String(mCap[1] ?? '').trim());
+    }
+    if (!src) {
+      currentRow.push(null);
+      return;
+    }
+    currentRow.push({ src, caption: cap });
+  };
+
+  const flushRow = () => {
+    if (currentRow.length > 0) rows.push(currentRow);
+    currentRow = [];
+  };
+
+  for (const ln of lines) {
+    const t = String(ln ?? '').trim();
+
+    if (/^\\begin\{subfigure\}/.test(t)) {
+      inSubfigure = true;
+      subfigureDepth++;
+      currentCell = [];
+      continue;
+    }
+    if (t === '\\end{subfigure}') {
+      subfigureDepth = Math.max(0, subfigureDepth - 1);
+      if (inSubfigure && subfigureDepth === 0) {
+        inSubfigure = false;
+        flushCell();
+      }
+      continue;
+    }
+
+    if (inSubfigure) {
+      currentCell.push(ln);
+      continue;
+    }
+
+    // Row separator emitted by our renderer.
+    if (t.startsWith('\\par\\vspace')) {
+      flushRow();
+      continue;
+    }
+  }
+  flushRow();
+
+  const imgCount = rows.flat().filter((x) => x && x.src).length;
+  if (imgCount < 2) return null;
+  const cols = rows.reduce((m, r) => Math.max(m, r.length), 0);
+  if (cols <= 0) return null;
+
+  // Normalize rows to cols
+  const norm = rows.map((r) => {
+    const rr = r.slice();
+    while (rr.length < cols) rr.push(null);
+    if (rr.length > cols) rr.length = cols;
+    return rr;
+  });
+
+  return { cols, rows: norm };
+}
+
+function parseFigureGridFromLatexRaw(raw: string): { cols: number; rows: Array<Array<{ src: string; caption: string } | null>> } | null {
+  const lines = String(raw ?? '').split('\n');
+  // Find outer tabular and capture its content, tracking nested tabular depth.
+  let outerColSpec = '';
+  let foundOuter = false;
+  let depth = 0;
+  const captured: string[] = [];
+
+  for (const ln of lines) {
+    const t = String(ln ?? '').trim();
+    const beginOuter = /^\\begin\{tabular\}\{([^}]*)\}\s*$/.exec(t);
+    const isBeginTabular = t.startsWith('\\begin{tabular}');
+    const isEndTabular = t === '\\end{tabular}';
+    if (beginOuter) {
+      if (!foundOuter) {
+        foundOuter = true;
+        outerColSpec = String(beginOuter[1] ?? '');
+        depth = 1;
+        continue;
+      }
+    }
+    if (foundOuter && isBeginTabular) {
+      depth++;
+      captured.push(ln);
+      continue;
+    }
+    if (isEndTabular && foundOuter) {
+      depth--;
+      if (depth <= 0) break;
+      captured.push(ln);
+      continue;
+    }
+    if (foundOuter && depth >= 1) captured.push(ln);
+  }
+
+  const cols = countTabularCols(outerColSpec);
+  if (!foundOuter || cols <= 0) return null;
+  if (captured.length === 0) return null;
+
+  // Split into rows/cells using separators that our wizard emits as standalone lines:
+  // - & on its own line between cells
+  // - \\ on its own line between rows
+  const rows: Array<Array<{ src: string; caption: string } | null>> = [];
+  let currentRow: Array<{ src: string; caption: string } | null> = [];
+  let currentCell: string[] = [];
+  let innerDepth = 0;
+
+  const flushCell = () => {
+    const cellLines = currentCell.slice();
+    currentCell = [];
+
+    // Extract first includegraphics src in the cell.
+    let src = '';
+    for (const l of cellLines) {
+      const ig = parseIncludegraphicsLine(String(l ?? '').trim());
+      if (ig.src) {
+        src = ig.src;
+        break;
+      }
+    }
+    if (!src) {
+      currentRow.push(null);
+      return;
+    }
+    const cap = parseCellCaptionFromTabularCell(cellLines);
+    currentRow.push({ src, caption: cap });
+  };
+
+  const flushRow = () => {
+    if (currentCell.length > 0 || currentRow.length > 0) flushCell();
+    // Normalize row width to cols
+    while (currentRow.length < cols) currentRow.push(null);
+    if (currentRow.length > cols) currentRow = currentRow.slice(0, cols);
+    if (currentRow.length > 0) rows.push(currentRow);
+    currentRow = [];
+  };
+
+  for (const ln of captured) {
+    const t = String(ln ?? '').trim();
+    if (t.startsWith('\\begin{tabular}')) innerDepth++;
+    if (t === '\\end{tabular}') innerDepth = Math.max(0, innerDepth - 1);
+
+    if (innerDepth === 0 && t === '&') {
+      flushCell();
+      continue;
+    }
+    if (innerDepth === 0 && t === '\\\\') {
+      flushRow();
+      continue;
+    }
+    currentCell.push(ln);
+  }
+  flushRow();
+
+  // Require at least 2 images to consider it a grid (avoid changing semantics of simple figures).
+  const imgCount = rows.flat().filter((x) => x && x.src).length;
+  if (imgCount < 2) return null;
+
+  return { cols, rows };
 }
 
 

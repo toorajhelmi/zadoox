@@ -1,5 +1,5 @@
 import { renderMarkdownToHtml } from '../editor/markdown';
-import type { DocumentNode, IrNode } from './types';
+import type { DocumentNode, GridNode, IrNode } from './types';
 
 /**
  * Render HTML from IR.
@@ -96,6 +96,40 @@ function renderNode(node: IrNode): string {
         .map((r) => `<tr>${(r ?? []).map((c) => `<td>${escapeHtml(String(c))}</td>`).join('')}</tr>`)
         .join('');
       return `<table><thead>${header}</thead><tbody>${rows}</tbody></table>`;
+    }
+    case 'grid': {
+      const g = node as GridNode;
+      const rows = g.rows ?? [];
+      const cols =
+        g.cols && Number.isFinite(g.cols) && g.cols > 0
+          ? g.cols
+          : rows.reduce((m, r) => Math.max(m, (r ?? []).length), 0) || 1;
+
+      const body = rows
+        .map((row) => {
+          const cells = Array.from({ length: cols }).map((_, i) => {
+            const cell = row?.[i];
+            const inner = renderNodes(cell?.children ?? []);
+            return `<td>${inner}</td>`;
+          });
+          return `<tr>${cells.join('')}</tr>`;
+        })
+        .join('');
+
+      const caption = String(g.caption ?? '').trim();
+      const capHtml = caption.length > 0 ? `<div class="xmd-grid-caption">${escapeHtml(caption)}</div>` : '';
+      const align = g.align ?? 'left';
+      const alignCss = align === 'center' ? 'text-align:center' : align === 'right' ? 'text-align:right' : 'text-align:left';
+      const margin = g.margin ?? 'medium';
+      const pad = margin === 'small' ? 6 : margin === 'large' ? 14 : 10;
+      const placement = g.placement ?? 'block';
+      const canFloat = placement === 'inline' && (align === 'left' || align === 'right');
+      const floatCss = canFloat
+        ? `float:${align === 'right' ? 'right' : 'left'};max-width:55%;margin:${align === 'right' ? '0.25em 0 0.75em 1em' : '0.25em 1em 0.75em 0'};`
+        : '';
+      // NOTE: This enables wrap-around behavior in preview. The editor surface (CodeMirror)
+      // cannot do true wrap-around for replacement widgets, so we only implement it here (IR->HTML).
+      return `<div class="xmd-grid" style="${alignCss};padding:${pad}px;${floatCss}">${capHtml}<table><tbody>${body}</tbody></table></div>`;
     }
     case 'raw_xmd_block':
       return renderMarkdownToHtml(node.xmd ?? '');
