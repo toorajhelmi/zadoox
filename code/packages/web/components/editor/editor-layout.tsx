@@ -16,15 +16,23 @@ import { useDocumentState } from '@/hooks/use-document-state';
 import { useIrDocument } from '@/hooks/use-ir-document';
 import { api } from '@/lib/api/client';
 import type { FormatType } from './floating-format-menu';
-import { useChangeTracking } from '@/hooks/use-change-tracking';
-import { useUndoRedo } from '@/hooks/use-undo-redo';
 import type { ResearchSource, DocumentStyle } from '@zadoox/shared';
 import type { InlineEditBlock, InlineEditOperation } from '@zadoox/shared';
-import { extractCitedSourceIds } from '@/lib/utils/citation';
 import type { QuickOption } from '@/lib/services/context-options';
 import { irToLatexDocument, irToXmd, parseLatexToIr, parseXmdToIr } from '@zadoox/shared';
 import { applyInlineOperations, buildInlineBlocksAroundCursor } from './editor-layout-inline-edit';
 import { useEditorKeyboardShortcuts } from './editor-layout-shortcuts';
+import { useEditorFormatHandler } from './editor-layout-formatting';
+import { useEditorLayoutSizing } from './editor-layout-sizing';
+import { useProjectDocumentStyle } from './editor-layout-project-settings';
+import { useEditorCursorScreenPosition } from './editor-layout-cursor';
+import { useEditorSaveWithCitationsCleanup } from './editor-layout-save';
+import { useEditorVersionMetadata } from './editor-layout-versioning';
+import { useEditorHistoryAndChangeTracking } from './editor-layout-history';
+import { useEditorEditFormat } from './editor-layout-edit-format';
+import { applyThinkModeGeneratedContentToXmd } from './editor-layout-think-apply';
+import { rollbackToVersion, selectVersionForViewing } from './editor-layout-version-actions';
+import { previewInsertAtCursor } from './editor-layout-inline-preview';
 
 interface EditorLayoutProps {
   projectId: string;
@@ -32,7 +40,6 @@ interface EditorLayoutProps {
 }
 
 type ViewMode = 'edit' | 'preview' | 'split' | 'ir';
-type EditFormat = 'markdown' | 'latex';
 
 type SidebarTab = 'outline' | 'history';
 
@@ -51,12 +58,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     documentMetadata,
     setDocumentMetadata,
   } = useDocumentState(documentId, projectId);
-  const previousContentRef = useRef<string>(content);
-  
-  // Update previousContentRef when content changes from outside (e.g., document load)
-  useEffect(() => {
-    previousContentRef.current = content;
-  }, [content]);
   
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('outline');
@@ -78,8 +79,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   }, []);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
-  const [editFormat, setEditFormat] = useState<EditFormat>('markdown');
-  const [latexDraft, setLatexDraft] = useState<string>('');
   // Editor/preview splitter state (used in split mode)
   const [editorPaneWidth, setEditorPaneWidth] = useState<number>(0); // px; 0 => default (50%)
   const [isResizingEditorPane, setIsResizingEditorPane] = useState(false);
@@ -97,7 +96,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [isGeneratingContent, setIsGeneratingContent] = useState(false);
   const [busyOverlayMessage, setBusyOverlayMessage] = useState<string>('Generating content...');
   const previousContentForHistoryRef = useRef<string>(content);
-  const previousLatexForHistoryRef = useRef<string>(latexDraft);
+  const previousLatexForHistoryRef = useRef<string>('');
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const latexDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const editorViewRef = useRef<import('@codemirror/view').EditorView | null>(null);
@@ -109,6 +108,24 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     analyzedSections: number;
     isAnalyzing: boolean;
   } | null>(null);
+
+  // Phase 11: keep IR updated as XMD changes (debounced), compute node-level delta + events.
+  const irState = useIrDocument({
+    docId: actualDocumentId || documentId,
+    xmd: content,
+    debounceMs: 250,
+    enabled: Boolean(actualDocumentId || documentId),
+  });
+
+  const { editFormat, setEditFormat, latexDraft, setLatexDraft, handleEditFormatChange } = useEditorEditFormat({
+    actualDocumentId,
+    documentId,
+    content,
+    ir: irState.ir,
+    documentMetadata,
+    setDocumentMetadata,
+    updateContent,
+  });
 
   const currentTextStyle = (() => {
     const view = editorViewRef.current;
@@ -138,432 +155,59 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     }
   })();
 
-  // Phase 11: keep IR updated as XMD changes (debounced), compute node-level delta + events.
-  const irState = useIrDocument({
-    docId: actualDocumentId || documentId,
-    xmd: content,
-    debounceMs: 250,
-    enabled: Boolean(actualDocumentId || documentId),
+  const { handleSidebarResizeStart, handleEditorPaneResizeStart } = useEditorLayoutSizing({
+    sidebarRef,
+    editorContainerRef,
+    isResizingSidebar,
+    setIsResizingSidebar,
+    setSidebarWidth,
+    isResizingEditorPane,
+    setIsResizingEditorPane,
+    setEditorPaneWidth,
   });
-
-  // Initialize edit format / cached latex from metadata (Phase 12).
-  useEffect(() => {
-    const last = (documentMetadata as any)?.lastEditedFormat as EditFormat | undefined;
-    const latex = (documentMetadata as any)?.latex as string | undefined;
-    if (last === 'latex' || last === 'markdown') {
-      setEditFormat(last);
-    }
-    if (typeof latex === 'string') {
-      // Avoid overwriting while the user is actively typing in LaTeX (prevents cursor/scroll reset).
-      // We intentionally do NOT regenerate LaTeX from IR here; the LaTeX draft is treated as the
-      // persisted editing surface when lastEditedFormat === 'latex'.
-      const shouldAdopt = latexDraft.length === 0 || editFormat !== 'latex';
-      if (shouldAdopt) setLatexDraft(latex);
-    } else if (last === 'latex' && !latexDraft) {
-      // If last format is LaTeX but we have no cached latex yet, derive it from IR/XMD.
-      try {
-        const ir = irState.ir;
-        if (ir) setLatexDraft(irToLatexDocument(ir));
-      } catch {
-        // ignore
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actualDocumentId, (documentMetadata as any)?.lastEditedFormat, (documentMetadata as any)?.latex]);
-
-  const handleEditFormatChange = useCallback(
-    async (next: EditFormat) => {
-      if (next === editFormat) return;
-      if (!actualDocumentId || actualDocumentId === 'default') {
-        setEditFormat(next);
-        return;
-      }
-
-      try {
-        if (next === 'latex') {
-          const ir = irState.ir ?? parseXmdToIr({ docId: actualDocumentId, xmd: content });
-          const latex = irToLatexDocument(ir);
-          setLatexDraft(latex);
-          setEditFormat('latex');
-          const nextMeta = { ...(documentMetadata as any), latex, lastEditedFormat: 'latex' as const };
-          setDocumentMetadata(nextMeta);
-          await api.documents.update(actualDocumentId, {
-            content,
-            metadata: nextMeta,
-            changeType: 'manual-save',
-            changeDescription: 'Switched editor to LaTeX',
-          });
-          return;
-        }
-
-        // next === 'markdown'
-        // When leaving LaTeX mode, re-derive XMD from the current LaTeX draft so any LaTeX-only
-        // boilerplate (e.g. \end{document}) cannot leak into the Markdown surface.
-        let nextContent = content;
-        try {
-          const ir = parseLatexToIr({ docId: actualDocumentId, latex: latexDraft });
-          nextContent = irToXmd(ir);
-          updateContent(nextContent);
-        } catch {
-          // If conversion fails, keep the last known XMD content (never block switching).
-        }
-
-        setEditFormat('markdown');
-        const nextMeta = { ...(documentMetadata as any), latex: latexDraft, lastEditedFormat: 'markdown' as const };
-        setDocumentMetadata(nextMeta);
-        await api.documents.update(actualDocumentId, {
-          content: nextContent,
-          metadata: nextMeta,
-          changeType: 'manual-save',
-          changeDescription: 'Switched editor to Markdown',
-        });
-      } catch (e) {
-        console.error('Failed to switch edit format:', e);
-        // Keep UI responsive even if persistence fails.
-        setEditFormat(next);
-      }
-    },
-    [actualDocumentId, content, documentMetadata, editFormat, irState.ir, latexDraft, setDocumentMetadata, updateContent]
-  );
-
-  // Sidebar resize handlers
-  const handleSidebarResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizingSidebar(true);
-  }, []);
-
-  // Editor/preview splitter resize handlers (split + compare modes)
-  const handleEditorPaneResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizingEditorPane(true);
-  }, []);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('editor-pane-width');
-      if (saved) {
-        const next = parseInt(saved, 10);
-        if (Number.isFinite(next) && next > 0) {
-          setEditorPaneWidth(next);
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isResizingSidebar) return;
-
-    const MIN_SIDEBAR_WIDTH = 150;
-    const MAX_SIDEBAR_WIDTH = typeof window !== 'undefined' ? window.innerWidth * 0.5 : 600;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      e.preventDefault();
-      if (!sidebarRef.current) return;
-      
-      // Get the sidebar container's left position
-      const sidebarRect = sidebarRef.current.getBoundingClientRect();
-      const newWidth = e.clientX - sidebarRect.left;
-      const clampedWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, newWidth));
-      setSidebarWidth(clampedWidth);
-      localStorage.setItem('editor-sidebar-width', clampedWidth.toString());
-    };
-
-    const handleMouseUp = () => {
-      setIsResizingSidebar(false);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove, { passive: false });
-    document.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isResizingSidebar]);
-
-  useEffect(() => {
-    if (!isResizingEditorPane) return;
-
-    const MIN_EDITOR_WIDTH = 360;
-    const MIN_PREVIEW_WIDTH = 360;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      e.preventDefault();
-      if (!editorContainerRef.current) return;
-
-      const rect = editorContainerRef.current.getBoundingClientRect();
-      const raw = e.clientX - rect.left;
-      const maxEditor = Math.max(MIN_EDITOR_WIDTH, rect.width - MIN_PREVIEW_WIDTH);
-      const clamped = Math.max(MIN_EDITOR_WIDTH, Math.min(maxEditor, raw));
-
-      setEditorPaneWidth(clamped);
-      try {
-        localStorage.setItem('editor-pane-width', clamped.toString());
-      } catch {
-        // ignore
-      }
-    };
-
-    const handleMouseUp = () => {
-      setIsResizingEditorPane(false);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove, { passive: false });
-    document.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isResizingEditorPane]);
 
   // Inline edit helpers extracted to `editor-layout-inline-edit.ts`
 
 
-  // Helper to clean up insertedSources when citations are removed
-  // This is a background cleanup operation - errors are logged but don't block the main flow
-  const cleanupInsertedSources = useCallback(async (newContent: string, _oldContent: string) => {
-    const currentDocument = await api.documents.get(actualDocumentId);
-    const insertedSources: ResearchSource[] = currentDocument.metadata?.insertedSources || [];
-    
-    // Extract source IDs that are still cited in the new content
-    const citedSourceIds = extractCitedSourceIds(newContent);
-    
-    // Filter out sources that are no longer cited
-    const remainingInsertedSources = insertedSources.filter(source => citedSourceIds.has(source.id));
-    
-    // Only update if something changed
-    if (remainingInsertedSources.length !== insertedSources.length) {
-      await api.documents.update(actualDocumentId, {
-        metadata: {
-          ...currentDocument.metadata,
-          insertedSources: remainingInsertedSources,
-        },
-      });
-    }
-  }, [actualDocumentId]);
-
-  // Wrapper for saveDocument that also cleans up insertedSources
-  const saveDocument = useCallback(async (contentToSave: string, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
-    const oldContent = previousContentRef.current;
-    // Clean up insertedSources before saving
-    await cleanupInsertedSources(contentToSave, oldContent);
-    previousContentRef.current = contentToSave;
-    await originalSaveDocument(contentToSave, changeType);
-  }, [originalSaveDocument, cleanupInsertedSources]);
-
-  // Load project settings for document style
-  useEffect(() => {
-    let cancelled = false;
-    async function loadProjectSettings() {
-      try {
-        const project = await api.projects.get(projectId);
-        if (cancelled) return;
-        setProjectName(String(project.name ?? ''));
-        
-        // FIX: If documentStyle is missing, update it based on project type
-        // This handles the case where the database has it but the API doesn't return it properly
-        if (!project.settings.documentStyle) {
-          const defaultDocumentStyle = project.type === 'academic' ? 'academic' : 'other';
-          try {
-            await api.projects.update(projectId, {
-              settings: {
-                ...project.settings,
-                documentStyle: defaultDocumentStyle,
-              },
-            });
-            // Reload project to get updated settings
-            const updatedProject = await api.projects.get(projectId);
-            if (cancelled) return;
-            const loadedStyle = updatedProject.settings.documentStyle || defaultDocumentStyle;
-            setDocumentStyle(loadedStyle);
-            return;
-          } catch (updateError) {
-            console.error('Failed to update project documentStyle:', updateError);
-            // Fall through to use default
-          }
-        }
-        
-        const loadedStyle = project.settings.documentStyle || 'other';
-        setDocumentStyle(loadedStyle);
-      } catch (error) {
-        console.error('Failed to load project settings:', error);
-      }
-    }
-
-    if (projectId) {
-      loadProjectSettings();
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
-
-  // Helper to get cursor screen coordinates from CodeMirror
-  const getCursorScreenPosition = useCallback((): { top: number; left: number } | null => {
-    if (!editorViewRef.current || !editorContainerRef.current) return null;
-
-    try {
-      const view = editorViewRef.current;
-      const selection = view.state.selection.main;
-      const pos = selection.head;
-      
-      // Get coordinates at cursor position
-      const coords = view.coordsAtPos(pos);
-      if (!coords) return null;
-
-      // Get editor container bounding rect
-      const containerRect = editorContainerRef.current.getBoundingClientRect();
-      
-      // Calculate position relative to viewport
-      return {
-        top: coords.top,
-        left: coords.left,
-      };
-    } catch (error) {
-      console.error('Failed to get cursor screen position:', error);
-      return null;
-    }
-  }, []);
-
-  // Update cursor screen position when cursor moves or sidebar state changes
-  // Use requestAnimationFrame to defer update and avoid nested CodeMirror updates
-  useEffect(() => {
-    if (cursorPosition && !thinkPanelOpen && !inlineAIChatOpen) {
-      requestAnimationFrame(() => {
-        try {
-          const screenPos = getCursorScreenPosition();
-          if (screenPos) {
-            setCursorScreenPosition(screenPos);
-          }
-        } catch (error) {
-          // Silently ignore errors during cursor position updates
-          // This can happen if CodeMirror is updating
-        }
-      });
-    }
-  }, [cursorPosition, thinkPanelOpen, inlineAIChatOpen, sidebarOpen, sidebarWidth, getCursorScreenPosition]);
-
-  // Undo/Redo hook (defined first to avoid circular dependencies)
-  const undoRedo = useUndoRedo(content, {
-    maxHistorySize: 50,
-    onStateChange: (state) => {
-      // When undo/redo is performed, update content and clear change tracking
-      // Mark as undo/redo operation to prevent history clearing
-      isUserInputRef.current = false; // This is an undo/redo, not user input
-      previousContentForHistoryRef.current = state.content; // Update ref to prevent history clearing
-      setContentWithoutSave(state.content);
-      // Restore cursor position if available
-      if (state.cursorPosition && editorViewRef.current) {
-        setCursorPosition(state.cursorPosition);
-        // Restore cursor position in editor
-        try {
-          const { line, column } = state.cursorPosition;
-          const doc = editorViewRef.current.state.doc;
-          const lineInfo = doc.line(Math.min(line, doc.lines));
-          const pos = lineInfo.from + Math.min(column - 1, lineInfo.length);
-          editorViewRef.current.dispatch({
-            selection: { anchor: pos, head: pos },
-            scrollIntoView: true,
-          });
-        } catch (error) {
-          // Cursor restoration failed, but content was updated
-        }
-      }
-    },
+  const { saveDocument, cleanupInsertedSources } = useEditorSaveWithCitationsCleanup({
+    actualDocumentId,
+    originalSaveDocument,
   });
 
-  // Undo/Redo for LaTeX edit surface (separate history from XMD content).
-  const latexUndoRedo = useUndoRedo(latexDraft, {
-    maxHistorySize: 50,
-    onStateChange: (state) => {
-      // Undo/redo in LaTeX mode should restore the LaTeX draft and re-derive XMD from it.
-      isUserInputRef.current = false;
-      setLatexDraft(state.content);
-      // Keep metadata in sync so refresh reopens in LaTeX reliably.
-      setDocumentMetadata({ ...(documentMetadata as any), lastEditedFormat: 'latex', latex: state.content });
-      try {
-        const ir = parseLatexToIr({ docId: actualDocumentId || documentId, latex: state.content });
-        const nextXmd = irToXmd(ir);
-        setContentWithoutSave(nextXmd);
-      } catch {
-        // Never block undo/redo; keep LaTeX draft visible even if conversion fails.
-      }
+  useProjectDocumentStyle({ projectId, setProjectName, setDocumentStyle });
 
-      // Restore cursor position if available
-      if (state.cursorPosition && editorViewRef.current) {
-        setCursorPosition(state.cursorPosition);
-        try {
-          const { line, column } = state.cursorPosition;
-          const doc = editorViewRef.current.state.doc;
-          const lineInfo = doc.line(Math.min(line, doc.lines));
-          const pos = lineInfo.from + Math.min(column - 1, lineInfo.length);
-          editorViewRef.current.dispatch({
-            selection: { anchor: pos, head: pos },
-            scrollIntoView: true,
-          });
-        } catch {
-          // ignore
-        }
-      }
-    },
+  const { getCursorScreenPosition } = useEditorCursorScreenPosition({
+    editorViewRef,
+    editorContainerRef,
+    cursorPosition,
+    thinkPanelOpen,
+    inlineAIChatOpen,
+    sidebarOpen,
+    sidebarWidth,
+    setCursorScreenPosition,
   });
 
-  // Change tracking hook
-  const changeTracking = useChangeTracking(content, {
-    onApply: async (newContent: string) => {
-      // Clean up insertedSources before updating content
-      await cleanupInsertedSources(newContent, content);
-      updateContent(newContent);
-      await saveDocument(newContent, 'ai-action');
-      setPendingChangeContent(null);
-      // Add to undo history after applying changes
-      // Capture current cursor position
-      let currentCursorPos = cursorPosition;
-      if (editorViewRef.current && !currentCursorPos) {
-        try {
-          const selection = editorViewRef.current.state.selection.main;
-          const line = editorViewRef.current.state.doc.lineAt(selection.head);
-          currentCursorPos = { line: line.number, column: selection.head - line.from + 1 };
-        } catch {
-          // Failed to get cursor position
-        }
-      }
-      undoRedo.addToHistory({
-        content: newContent,
-        cursorPosition: currentCursorPos,
-        selection: currentSelectionRef.current,
-        timestamp: Date.now(),
-      });
-      previousContentForHistoryRef.current = newContent;
-    },
-    onCancel: () => {
-      setPendingChangeContent(null);
-    },
+  const { undoRedo, latexUndoRedo, changeTracking } = useEditorHistoryAndChangeTracking({
+    content,
+    latexDraft,
+    actualDocumentId,
+    documentId,
+    documentMetadata,
+    cursorPosition,
+    setCursorPosition,
+    editorViewRef,
+    currentSelectionRef,
+    isUserInputRef,
+    previousContentForHistoryRef,
+    previousLatexForHistoryRef,
+    setLatexDraft,
+    setDocumentMetadata,
+    setContentWithoutSave,
+    updateContent,
+    setPendingChangeContent,
+    cleanupInsertedSources,
+    saveDocument,
   });
-
-  // Clear undo/redo history when document changes (e.g., loading a different document)
-  // Only clear if the change is NOT from user input (i.e., from external source like document load)
-  useEffect(() => {
-    if (previousContentForHistoryRef.current !== content && !isUserInputRef.current) {
-      // Content changed from outside (e.g., document load) - clear history
-      undoRedo.clearHistory(content);
-      previousContentForHistoryRef.current = content;
-    }
-    // Reset the flag after checking
-    isUserInputRef.current = false;
-  }, [content, undoRedo]);
-
-  useEffect(() => {
-    if (previousLatexForHistoryRef.current !== latexDraft && !isUserInputRef.current) {
-      latexUndoRedo.clearHistory(latexDraft);
-      previousLatexForHistoryRef.current = latexDraft;
-    }
-    // Reset the flag after checking (shared guard for external updates)
-    isUserInputRef.current = false;
-  }, [latexDraft, latexUndoRedo]);
 
   // Handle opening panel for a paragraph
   const handleOpenPanel = useCallback((paragraphId: string) => {
@@ -580,52 +224,14 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   }, []);
 
 
-  // Load version metadata to determine latest version
-  useEffect(() => {
-    if (!actualDocumentId || actualDocumentId === 'default') return;
-
-    async function loadMetadata() {
-      const metadata = await api.versions.getMetadata(actualDocumentId);
-      let newLatestVersion: number | null = null;
-      
-      // Check if currentVersion exists and is valid
-      if (metadata.currentVersion !== undefined && metadata.currentVersion !== null) {
-        newLatestVersion = Number(metadata.currentVersion);
-      } else {
-        // Fallback: get latest from versions list
-        const versions = await api.versions.list(actualDocumentId, 1, 0);
-        if (versions.length > 0) {
-          newLatestVersion = versions[0].versionNumber;
-        }
-      }
-      
-      if (newLatestVersion !== null) {
-        // If the latest version changed and we were viewing the latest, update to new latest
-        if (latestVersion !== null && newLatestVersion > latestVersion && selectedVersion === null) {
-          // New version was created while viewing the latest - stay on latest
-          setLatestVersion(newLatestVersion);
-          setSelectedVersion(null); // Ensure we're still viewing the latest
-        } else if (latestVersion !== null && newLatestVersion > latestVersion && selectedVersion !== null) {
-          // New version was created while viewing an older version - keep viewing that older version (read-only)
-          setLatestVersion(newLatestVersion);
-          // Don't change selectedVersion - keep it read-only
-        } else {
-          setLatestVersion(newLatestVersion);
-        }
-      }
-    }
-
-    // Load metadata - errors will propagate in tests, handled gracefully in production
-    loadMetadata().catch((error) => {
-      // In test environment, let errors propagate so tests fail when mocks are incorrect
-      if (process.env.NODE_ENV === 'test') {
-        throw error;
-      }
-      // In production, log but don't break the component (background operation)
-      console.error('Failed to load version metadata:', error);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actualDocumentId, latestVersion, selectedVersion, lastSaved?.getTime()]); // Reload when lastSaved changes (new version created)
+  useEditorVersionMetadata({
+    actualDocumentId,
+    lastSavedMs: lastSaved ? lastSaved.getTime() : null,
+    latestVersion,
+    selectedVersion,
+    setLatestVersion,
+    setSelectedVersion,
+  });
 
   const handleContentChange = useCallback(
     (value: string) => {
@@ -765,243 +371,25 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     setInlineAIChatOpen,
   });
 
-  // Handle formatting from toolbar
-  const handleFormat = useCallback((format: FormatType) => {
-    // Don't allow formatting if viewing an older version
-    // Allow formatting if selectedVersion === null (latest) or selectedVersion === latestVersion
-    if (selectedVersion !== null && latestVersion !== null && selectedVersion !== latestVersion) {
-      return; // Don't allow formatting older versions
-    }
-
-    // Formatting is a user edit: apply to the active edit surface (MD or LaTeX) and record history.
-    const applyUserEdit = (nextText: string) => {
-      // Mark as user input so the "external content change" effect does not clear history
-      isUserInputRef.current = true;
-
-      // Capture cursor position if available
-      let currentCursorPos = cursorPosition;
-      if (editorViewRef.current && !currentCursorPos) {
-        try {
-          const selection = editorViewRef.current.state.selection.main;
-          const line = editorViewRef.current.state.doc.lineAt(selection.head);
-          currentCursorPos = { line: line.number, column: selection.head - line.from + 1 };
-        } catch {
-          // ignore
-        }
-      }
-
-      if (editFormat === 'latex') {
-        // Cancel any pending LaTeX typing history entry to avoid duplicates/out-of-order.
-        if (latexDebounceTimeoutRef.current) {
-          clearTimeout(latexDebounceTimeoutRef.current);
-          latexDebounceTimeoutRef.current = null;
-        }
-        // Prevent the LaTeX typing debounce from adding another identical entry.
-        previousLatexForHistoryRef.current = nextText;
-
-        // Apply to LaTeX surface (this also re-derives XMD).
-        handleContentChange(nextText);
-
-        if (!changeTracking.isTracking) {
-          latexUndoRedo.addToHistory({
-            content: nextText,
-            cursorPosition: currentCursorPos,
-            selection: currentSelectionRef.current,
-            timestamp: Date.now(),
-          });
-        }
-        return;
-      }
-
-      // Markdown surface
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current);
-        debounceTimeoutRef.current = null;
-      }
-      updateContent(nextText);
-
-      if (!changeTracking.isTracking) {
-        undoRedo.addToHistory({
-          content: nextText,
-          cursorPosition: currentCursorPos,
-          selection: currentSelectionRef.current,
-          timestamp: Date.now(),
-        });
-        previousContentForHistoryRef.current = nextText;
-      }
-    };
-    
-    // Always prefer CodeMirror's current doc + selection to avoid stale indices/content
-    const view = editorViewRef.current;
-    const baseContent = view ? view.state.doc.toString() : content;
-    const cmSelection = view?.state.selection.main ?? null;
-    
-    // Resolve a selection range in document coordinates (prefer stored selection, fallback to CodeMirror selection)
-    const from = cmSelection ? Math.min(cmSelection.from, cmSelection.to) : null;
-    const to = cmSelection ? Math.max(cmSelection.from, cmSelection.to) : null;
-
-    const hasRange = typeof from === 'number' && typeof to === 'number' && from >= 0 && to >= 0 && to > from;
-
-    const applyHeadingToRange = (level: number | null) => {
-      if (!view) return;
-      const doc = view.state.doc;
-      const rangeFrom = typeof from === 'number' ? from : view.state.selection.main.head;
-      const rangeTo = typeof to === 'number' ? to : rangeFrom;
-
-      const startLine = doc.lineAt(rangeFrom);
-      const endLine = doc.lineAt(rangeTo);
-
-      const lines: Array<{ from: number; to: number; text: string }> = [];
-      for (let n = startLine.number; n <= endLine.number; n++) {
-        const l = doc.line(n);
-        lines.push({ from: l.from, to: l.to, text: l.text });
-      }
-
-      const replaceLine = (lineText: string) => {
-        const trimmed = lineText.trimStart();
-        if (editFormat === 'latex') {
-          // Strip existing heading-ish commands.
-          const stripLatex = (t: string) => {
-            const m =
-              /^\\(title|section|subsection|subsubsection)\{([\s\S]*)\}\s*$/.exec(t) ||
-              /^\\(title|section|subsection|subsubsection)\{([\s\S]*)\}\s*$/.exec(t.trim());
-            if (m) return String(m[2] ?? '');
-            return t.replace(/^\s+/, '');
-          };
-          const core = stripLatex(trimmed);
-          if (level === null) return core;
-          if (level === 0) return core;
-          const cmd = level === 1 ? '\\section' : level === 2 ? '\\subsection' : '\\subsubsection';
-          return `${cmd}{${core}}`;
-        }
-
-        const stripped = lineText.replace(/^\s*(?:@\s+|#{1,6}\s+)/, '');
-        if (level === null) return stripped; // "Normal"
-        const hashes = '#'.repeat(level);
-        return `${hashes} ${stripped}`;
-      };
-
-      // Build new document content by editing from bottom to top to keep indices valid.
-      let next = baseContent;
-      for (let i = lines.length - 1; i >= 0; i--) {
-        const l = lines[i];
-        const replaced = replaceLine(l.text);
-        next = next.slice(0, l.from) + replaced + next.slice(l.to);
-      }
-      applyUserEdit(next);
-    };
-
-    const applyTitleToLine = () => {
-      if (!view) return;
-      const doc = view.state.doc;
-      const pos = typeof from === 'number' ? from : view.state.selection.main.head;
-      const l = doc.lineAt(pos);
-      if (editFormat === 'latex') {
-        const stripped = l.text.replace(/^\s*\\(title|section|subsection|subsubsection)\{/, '').replace(/\}\s*$/, '');
-        const replaced = `\\title{${stripped}}`;
-        const next = baseContent.slice(0, l.from) + replaced + baseContent.slice(l.to);
-        applyUserEdit(next);
-        return;
-      }
-      const stripped = l.text.replace(/^\s*(?:@\s+|#{1,6}\s+)/, '');
-      const replaced = `@ ${stripped}`;
-      const next = baseContent.slice(0, l.from) + replaced + baseContent.slice(l.to);
-      applyUserEdit(next);
-    };
-
-    if (hasRange) {
-      if (format === 'title') return applyTitleToLine();
-      if (format === 'heading1') return applyHeadingToRange(1);
-      if (format === 'heading2') return applyHeadingToRange(2);
-      if (format === 'heading3') return applyHeadingToRange(3);
-      if (format === 'paragraph') return applyHeadingToRange(null);
-
-      // Format selected text using exact positions from CodeMirror
-      let formattedText = '';
-      const selectedText = baseContent.slice(from!, to!);
-      switch (format) {
-        case 'bold':
-          formattedText = editFormat === 'latex' ? `\\textbf{${selectedText}}` : `**${selectedText}**`;
-          break;
-        case 'italic':
-          formattedText = editFormat === 'latex' ? `\\emph{${selectedText}}` : `*${selectedText}*`;
-          break;
-        case 'underline':
-          formattedText = editFormat === 'latex' ? `\\underline{${selectedText}}` : `<u>${selectedText}</u>`;
-          break;
-        case 'superscript':
-          formattedText = editFormat === 'latex' ? `\\textsuperscript{${selectedText}}` : `<sup>${selectedText}</sup>`;
-          break;
-        case 'subscript':
-          formattedText = editFormat === 'latex' ? `\\textsubscript{${selectedText}}` : `<sub>${selectedText}</sub>`;
-          break;
-        case 'code':
-          formattedText = editFormat === 'latex' ? `\\texttt{${selectedText}}` : `\`${selectedText}\``;
-          break;
-        case 'link':
-          // Use an absolute placeholder so clicking in preview doesn't navigate the SPA route
-          formattedText =
-            editFormat === 'latex'
-              ? `\\href{https://example.com}{${selectedText}}`
-              : `[${selectedText}](https://example.com)`;
-          break;
-      }
-
-      // Replace using exact positions from CodeMirror
-      const newContent = 
-        baseContent.slice(0, from!) + 
-        formattedText + 
-        baseContent.slice(to!);
-      applyUserEdit(newContent);
-    } else {
-      if (format === 'title') return applyTitleToLine();
-      if (format === 'heading1') return applyHeadingToRange(1);
-      if (format === 'heading2') return applyHeadingToRange(2);
-      if (format === 'heading3') return applyHeadingToRange(3);
-      if (format === 'paragraph') return applyHeadingToRange(null);
-
-      // No selection - insert placeholder at cursor position (fallback to end)
-      let placeholder = '';
-      switch (format) {
-        case 'bold':
-          placeholder = editFormat === 'latex' ? '\\textbf{}' : '****';
-          break;
-        case 'italic':
-          placeholder = editFormat === 'latex' ? '\\emph{}' : '**';
-          break;
-        case 'underline':
-          placeholder = editFormat === 'latex' ? '\\underline{}' : '<u></u>';
-          break;
-        case 'superscript':
-          placeholder = editFormat === 'latex' ? '\\textsuperscript{}' : '<sup></sup>';
-          break;
-        case 'subscript':
-          placeholder = editFormat === 'latex' ? '\\textsubscript{}' : '<sub></sub>';
-          break;
-        case 'code':
-          placeholder = editFormat === 'latex' ? '\\texttt{}' : '``';
-          break;
-        case 'link':
-          placeholder = editFormat === 'latex' ? '\\href{https://example.com}{}' : '[]()';
-          break;
-      }
-      const insertPos = cmSelection ? cmSelection.head : content.length;
-      const safeInsertPos = Math.min(Math.max(0, insertPos), baseContent.length);
-      const nextText = baseContent.slice(0, safeInsertPos) + placeholder + baseContent.slice(safeInsertPos);
-      applyUserEdit(nextText);
-    }
-  }, [
+  const handleFormat = useEditorFormatHandler({
     content,
     updateContent,
     selectedVersion,
     latestVersion,
     cursorPosition,
-    undoRedo,
-    latexUndoRedo,
     editFormat,
     handleContentChange,
-    changeTracking.isTracking,
-  ]);
+    changeTracking: { isTracking: changeTracking.isTracking },
+    undoRedo,
+    latexUndoRedo,
+    editorViewRef,
+    currentSelectionRef,
+    isUserInputRef,
+    debounceTimeoutRef,
+    latexDebounceTimeoutRef,
+    previousContentForHistoryRef,
+    previousLatexForHistoryRef,
+  });
 
   return (
     <div className="flex h-screen bg-vscode-bg text-vscode-text">
@@ -1035,42 +423,23 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           activeTab={sidebarTab}
           onTabChange={setSidebarTab}
         onRollback={async (versionNumber: number) => {
-          const content = await api.versions.reconstruct(actualDocumentId, versionNumber);
-          setSelectedVersion(null); // Reset to latest after rollback
-          updateContent(content);
+          await rollbackToVersion({
+            actualDocumentId,
+            versionNumber,
+            setSelectedVersion,
+            updateContent,
+          });
         }}
         onVersionSelect={async (versionNumber: number) => {
-          const content = await api.versions.reconstruct(actualDocumentId, versionNumber);
-          
-          // Always fetch latest version metadata to ensure we have the current latest
-          let currentLatestVersion: number | null = latestVersion ?? null;
-          const metadata = await api.versions.getMetadata(actualDocumentId);
-          // Check if currentVersion exists and is valid
-          if (metadata.currentVersion !== undefined && metadata.currentVersion !== null) {
-            currentLatestVersion = Number(metadata.currentVersion);
-          } else {
-            // Metadata exists but currentVersion is missing - fall back to versions list
-            const versions = await api.versions.list(actualDocumentId, 1, 0);
-            if (versions.length > 0) {
-              currentLatestVersion = versions[0].versionNumber; // First version is latest (sorted DESC)
-            }
-          }
-          // Update latestVersion state
-          setLatestVersion(currentLatestVersion);
-          
-          // If selecting the latest version, reset to null to enable editing
-          // Use Number() to ensure type-safe comparison
-          if (currentLatestVersion !== null && Number(versionNumber) === Number(currentLatestVersion)) {
-            // This is the latest version - set to null to enable editing
-            setSelectedVersion(null);
-            // Use updateContent to allow editing
-            updateContent(content);
-          } else {
-            // This is an older version - set selectedVersion and make read-only
-            setSelectedVersion(versionNumber);
-            // Use setContentWithoutSave to prevent auto-save
-            setContentWithoutSave(content);
-          }
+          await selectVersionForViewing({
+            actualDocumentId,
+            versionNumber,
+            latestVersion,
+            setLatestVersion,
+            setSelectedVersion,
+            updateContent,
+            setContentWithoutSave,
+          });
         }}
       />
           </div>
@@ -1345,38 +714,14 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                     return { operations, previewText, newContent };
                   }}
                   onPreviewInsertAtCursor={async ({ content: insertContent, placement = 'after' }) => {
-                    if (!cursorPosition) {
-                      return { operations: [], previewText: '', newContent: editFormat === 'latex' ? latexDraft : content };
-                    }
-
-                    if (editFormat === 'latex') {
-                      const src = latexDraft;
-                      const lines = src.split('\n');
-                      const lineIdx = Math.max(0, Math.min(cursorPosition.line - 1, Math.max(0, lines.length - 1)));
-                      let lineStart = 0;
-                      for (let i = 0; i < lineIdx; i++) lineStart += (lines[i]?.length ?? 0) + 1;
-                      const lineEnd = lineStart + (lines[lineIdx]?.length ?? 0);
-                      const lineEndWithNewline = lineEnd + (lineIdx < lines.length - 1 ? 1 : 0);
-                      const insertAt = placement === 'before' ? lineStart : lineEndWithNewline;
-                      const newLatex = src.slice(0, insertAt) + insertContent + src.slice(insertAt);
-                      return { operations: [], previewText: insertContent, newContent: newLatex };
-                    }
-
-                    const cursorLine = cursorPosition.line - 1; // Convert to 0-based
-                    const { blocks, cursorBlockId } = buildInlineBlocksAroundCursor(content, cursorLine);
-                    const anchorBlockId = cursorBlockId;
-                    if (!anchorBlockId) {
-                      return { operations: [], previewText: '', newContent: content };
-                    }
-
-                    const operations: InlineEditOperation[] = [
-                      placement === 'before'
-                        ? { type: 'insert_before', anchorBlockId, content: insertContent }
-                        : { type: 'insert_after', anchorBlockId, content: insertContent },
-                    ];
-
-                    const newContent = applyInlineOperations(content, blocks, operations);
-                    return { operations, previewText: insertContent, newContent };
+                    return previewInsertAtCursor({
+                      cursorPosition,
+                      editFormat,
+                      latexDraft,
+                      content,
+                      insertContent,
+                      placement: placement === 'before' ? 'before' : 'after',
+                    });
                   }}
                   onApplyInlinePreview={async (preview) => {
                     if (editFormat === 'latex') {
@@ -1549,95 +894,17 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             projectId={projectId}
             onGeneratingChange={setIsGeneratingContent}
             onContentGenerated={async (generatedContent, mode, _sources, scope = 'block') => {
-              // Find the paragraph and replace/blend content
-              const applyingToDocument = scope === 'document';
-              if (!applyingToDocument && !openParagraphId) return;
-              
-              const lines = content.split('\n');
-              const startLine = applyingToDocument ? 0 : parseInt(openParagraphId!.match(/^para-(\d+)$/)![1], 10);
-              if (!applyingToDocument) {
-                const match = openParagraphId!.match(/^para-(\d+)$/);
-                if (!match) return;
-                if (startLine < 0 || startLine >= lines.length) return;
-              }
-              
-              // Check if section
-              const isHeading = (line: string) => /^#{1,6}\s/.test(line.trim());
-              const startLineIsHeading = startLine < lines.length && isHeading(lines[startLine].trim());
-              
-              let endLine = startLine;
-              if (applyingToDocument) {
-                endLine = lines.length;
-              } else if (startLineIsHeading) {
-                endLine = startLine + 1;
-                while (endLine < lines.length) {
-                  if (isHeading(lines[endLine].trim())) break;
-                  endLine++;
-                }
-              } else {
-                while (endLine < lines.length) {
-                  const trimmed = lines[endLine].trim();
-                  if (!trimmed || isHeading(trimmed)) break;
-                  endLine++;
-                }
-              }
-              
-              const beforeLines = lines.slice(0, startLine);
-              const afterLines = lines.slice(endLine); // endLine is exclusive (first line after block)
-              
-              let newContent: string;
-              if (mode === 'replace' || mode === 'lead' || mode === 'conclude' || mode === 'extend' || mode === 'citation' || mode === 'summary') {
-                // Replace: use generated content directly
-                // Lead: prepend generated content (handled in frontend)
-                // Conclude: append generated content (handled in frontend)
-                // Extend: legacy append generated content (handled in frontend)
-                // Citation/Summary: insert generated content with citations
-                if (mode === 'lead' || mode === 'conclude' || mode === 'extend') {
-                  const currentBlockContent = lines.slice(startLine, endLine).join('\n');
+              const newContent = applyThinkModeGeneratedContentToXmd({
+                content,
+                openParagraphId,
+                generatedContent,
+                mode,
+                scope: scope === 'document' ? 'document' : 'block',
+              });
+              if (!newContent) return;
 
-                  // Special case: sections start with a markdown heading. "Lead" should add content
-                  // to the beginning of the section body (right after the heading), not above the heading.
-                  if (mode === 'lead' && startLineIsHeading && !applyingToDocument) {
-                    const headingLine = lines[startLine] ?? '';
-                    const bodyContent = lines.slice(startLine + 1, endLine).join('\n');
-                    const gen = generatedContent.trim();
-                    const body = bodyContent.trim();
-                    const combined =
-                      gen && body
-                        ? `${headingLine}\n\n${gen}\n\n${bodyContent}`
-                        : gen
-                          ? `${headingLine}\n\n${gen}`
-                          : body
-                            ? `${headingLine}\n\n${bodyContent}`
-                            : headingLine;
-                    newContent = [...beforeLines, combined, ...afterLines].join('\n');
-                  } else {
-                    // Regular Lead/Conclude/Extend behavior for non-heading blocks
-                    const left = mode === 'lead' ? generatedContent : currentBlockContent;
-                    const right = mode === 'lead' ? currentBlockContent : generatedContent;
-                    const combined =
-                      left.trimEnd() && right.trimStart()
-                        ? `${left.trimEnd()}\n\n${right.trimStart()}`
-                        : `${left}${right}`;
-                    newContent = [...beforeLines, combined, ...afterLines].join('\n');
-                  }
-                } else {
-                  // Replace, Citation, or Summary: replace with generated content
-                  newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
-                }
-              } else {
-                // Blend: the AI already returned the complete blended content (existing + new)
-                // So we replace the entire block with the blended result
-                newContent = [...beforeLines, generatedContent, ...afterLines].join('\n');
-              }
-              
-              // Note: We don't clear researchSessions - they remain associated with the block
-              // Only insertedSources will be cleaned up when citations are removed (handled in cleanupInsertedSources)
-              
-              // Start change tracking instead of directly applying
               setPendingChangeContent({ original: content, new: newContent });
               changeTracking.startTracking(newContent, content);
-              // Hide progress indicator after change tracking is set up
               setIsGeneratingContent(false);
             }}
           />
