@@ -10,7 +10,17 @@ import { embeddedImagePreviewExtension } from '../embedded-image-preview-extensi
 
 vi.mock('@/lib/api/client', () => ({
   api: {
-    ai: { images: { generate: vi.fn() } },
+    ai: {
+      images: { generate: vi.fn() },
+      component: {
+        edit: vi.fn().mockResolvedValue({
+          type: 'update',
+          updatedXmd: '![Cap](zadoox-asset://k){#fig:x width="50%" align="center"}',
+          summary: 'I will align the image to center.',
+          confirmationQuestion: 'Apply this change?',
+        }),
+      },
+    },
     assets: { upload: vi.fn() },
   },
 }));
@@ -76,6 +86,45 @@ describe('embeddedImagePreviewExtension', () => {
     expect(dom.className).toContain('cm-embedded-figure-card');
     // Inline placement adds outline hint and inline-block
     expect((dom as HTMLElement).style.outline).toContain('dashed');
+  });
+
+  it('prompt send shows inline preview and apply dispatches a change', async () => {
+    const doc = '![Cap](zadoox-asset://k){#fig:x width="50%"}';
+    const exts = embeddedImagePreviewExtension();
+    const field = exts[1]!;
+    const state = EditorState.create({ doc, extensions: exts });
+    const decos = state.field(field);
+
+    const found: any[] = [];
+    decos.between(0, state.doc.length, (_f, _t, deco) => found.push(deco));
+    const widget = found[0]?.spec?.widget;
+    expect(widget).toBeTruthy();
+
+    const dispatch = vi.fn();
+    const dom = widget.toDOM({ state, dispatch } as any);
+    const textarea = dom.querySelector('textarea[aria-label="Figure edit prompt"]') as HTMLTextAreaElement | null;
+    expect(textarea).toBeTruthy();
+    const btn = dom.querySelector('button[aria-label="Send prompt"]') as HTMLButtonElement | null;
+    expect(btn).toBeTruthy();
+
+    textarea!.value = 'align center';
+    textarea!.dispatchEvent(new Event('input', { bubbles: true }));
+    btn!.click();
+
+    // LLM plan call is async; let promises resolve and DOM update.
+    await new Promise((r) => setTimeout(r, 0));
+
+    const applyBtn = Array.from(dom.querySelectorAll('button')).find((b) => (b as HTMLButtonElement).textContent === 'Apply') as
+      | HTMLButtonElement
+      | undefined;
+    expect(applyBtn).toBeTruthy();
+    applyBtn!.click();
+
+    expect(dispatch).toHaveBeenCalled();
+    const args = dispatch.mock.calls[0]?.[0];
+    expect(args?.changes?.from).toBe(0);
+    expect(args?.changes?.to).toBe(doc.length);
+    expect(String(args?.changes?.insert || '')).toContain('align="center"');
   });
 });
 

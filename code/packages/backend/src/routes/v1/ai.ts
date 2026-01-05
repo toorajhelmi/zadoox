@@ -14,8 +14,11 @@ import {
   AISuggestResponse,
   AIModelInfo,
   ApiResponse,
+  ComponentEditRequest,
+  ComponentEditResponse,
 } from '@zadoox/shared';
 import { schemas, security } from '../../config/schemas.js';
+import { z } from 'zod';
 
 // Initialize AI service (singleton pattern)
 let aiService: AIService | null = null;
@@ -1040,6 +1043,154 @@ ${message.trim()}`
       } catch (error: unknown) {
         fastify.log.error(error);
         const errorMessage = error instanceof Error ? error.message : 'Failed to generate edit plan';
+        const response: ApiResponse<null> = {
+          success: false,
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: errorMessage,
+          },
+        };
+        return reply.status(500).send(response);
+      }
+    }
+  );
+
+  /**
+   * POST /api/v1/ai/component/edit
+   * Generate a component-scoped XMD update (or clarification) for embedded components.
+   */
+  fastify.post(
+    '/ai/component/edit',
+    {
+      schema: {
+        description: 'Generate a component-scoped XMD update (or clarification) for embedded components',
+        tags: ['AI'],
+        security,
+        body: {
+          type: 'object',
+          required: ['kind', 'prompt', 'source'],
+          properties: {
+            kind: { type: 'string' },
+            prompt: { type: 'string' },
+            source: { type: 'string' },
+            capabilities: {},
+            context: {},
+            model: { type: 'string', enum: ['openai', 'auto'] },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            required: ['success', 'data'],
+            properties: {
+              success: { type: 'boolean' },
+              data: {
+                type: 'object',
+                required: ['type'],
+                // Keep response permissive for forward compatibility.
+                additionalProperties: true,
+                properties: {
+                  type: { type: 'string', enum: ['clarify', 'update'] },
+                  question: { type: 'string' },
+                  suggestions: { type: 'array', items: { type: 'string' } },
+                  updatedXmd: { type: 'string' },
+                  summary: { type: 'string' },
+                  confirmationQuestion: { type: 'string' },
+                  model: { type: 'string' },
+                },
+              },
+              error: schemas.ApiError,
+            },
+          },
+          400: schemas.ApiResponse,
+          500: schemas.ApiResponse,
+        },
+      },
+    },
+    async (request: AuthenticatedRequest, reply) => {
+      try {
+        // Treat body as untyped at runtime; Fastify schema validates shape.
+        // This avoids tight coupling to shared types during iterative API evolution.
+        const body = (request.body || {}) as any;
+        const { kind, prompt, source, capabilities, context, model } = body;
+
+        if (!prompt || String(prompt).trim().length === 0) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: 'Prompt is required' },
+          };
+          return reply.status(400).send(response);
+        }
+        if (!source || String(source).trim().length === 0) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: 'Source is required' },
+          };
+          return reply.status(400).send(response);
+        }
+        if (!kind || String(kind).trim().length === 0) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: 'Kind is required' },
+          };
+          return reply.status(400).send(response);
+        }
+
+        const service = getAIService();
+        const mergedContext =
+          context && typeof context === 'object'
+            ? { ...(context as any), source, capabilities }
+            : { source, capabilities };
+        const rawJson = await service.generateComponentEditPlan(prompt, { kind, context: mergedContext }, model);
+
+        let payloadRaw: unknown;
+        try {
+          payloadRaw = JSON.parse(rawJson);
+        } catch {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: { code: 'AI_RESPONSE_INVALID', message: 'AI returned invalid JSON component edit response' },
+          };
+          return reply.status(500).send(response);
+        }
+
+        // Validate & coerce the response shape so the frontend always receives a usable structure.
+        const responseSchema = z.union([
+          z.object({
+            type: z.literal('clarify'),
+            question: z.string().min(1),
+            suggestions: z.array(z.string()).optional(),
+          }),
+          z.object({
+            type: z.literal('update'),
+            updatedXmd: z.string().min(1),
+            summary: z.string().min(1),
+            confirmationQuestion: z.string().optional(),
+          }),
+        ]);
+
+        const parsed = responseSchema.safeParse(payloadRaw);
+        const result = parsed.success
+          ? parsed.data
+          : ({
+              type: 'clarify',
+              question: 'I could not produce a safe component update. What exactly should change?',
+              // Frontend derives suggestions from capabilities (adapter/IR-defined). Keep backend generic.
+              suggestions: [],
+            } as const);
+
+        const modelInfo = service.getModelInfo(model || 'openai');
+        const response: ApiResponse<ComponentEditResponse> = {
+          success: true,
+          data: {
+            ...(result as any),
+            model: modelInfo?.id || 'unknown',
+          } as any,
+        };
+        return reply.send(response);
+      } catch (error: unknown) {
+        fastify.log.error(error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to generate component edit';
         const response: ApiResponse<null> = {
           success: false,
           error: {

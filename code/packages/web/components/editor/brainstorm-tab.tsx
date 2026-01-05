@@ -5,7 +5,7 @@ import { IdeaCard } from './idea-card';
 import { ChatMessage } from './chat-message';
 type GeneratedContentInsertMode = 'blend' | 'replace' | 'extend';
 import { api } from '@/lib/api/client';
-import { MicIcon, ArrowRightIcon } from '@/components/dashboard/icons';
+import { MicIcon, ArrowRightIcon } from '@/components/icons';
 import type { BrainstormingSession, ChatMessage as ChatMessageType, IdeaCard as IdeaCardType } from '@zadoox/shared';
 
 // Helper to generate UUID

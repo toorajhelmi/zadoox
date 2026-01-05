@@ -130,6 +130,18 @@ export interface AIProvider {
   ): Promise<string>;
 
   /**
+   * Component-scoped edit response as JSON (clarify or update).
+   * Used by /ai/component/edit.
+   */
+  generateComponentEditPlan(
+    prompt: string,
+    params: {
+      kind: string;
+      context?: unknown;
+    }
+  ): Promise<string>;
+
+  /**
    * Get model information
    */
   getModelInfo(): AIModelInfo;

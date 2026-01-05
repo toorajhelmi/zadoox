@@ -29,6 +29,8 @@ import type {
   InlineGenerateResponse,
   InlineEditRequest,
   InlineEditResponse,
+  ComponentEditRequest,
+  ComponentEditResponse,
   AIImageGenerateRequest,
   AIImageGenerateResponse,
   ResearchRequest,
@@ -427,6 +429,19 @@ export const api = {
           console.error('Inline edit API error:', error);
           throw error;
         }
+      },
+    },
+
+    component: {
+      edit: async (request: ComponentEditRequest): Promise<ComponentEditResponse> => {
+        const response = await fetchApi<ComponentEditResponse>('/ai/component/edit', {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+        if (!response.data) {
+          throw new ApiError('Failed to generate component edit', 'COMPONENT_EDIT_FAILED', 500);
+        }
+        return response.data;
       },
     },
 

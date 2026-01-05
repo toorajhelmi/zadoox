@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api/client';
-import { MicIcon, ArrowRightIcon } from '@/components/dashboard/icons';
+import { MicIcon, ArrowRightIcon } from '@/components/icons';
 import type { ResearchSession, ChatMessage as ChatMessageType, ResearchSource, DocumentStyle } from '@zadoox/shared';
 
 // Helper to generate UUID
