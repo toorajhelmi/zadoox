@@ -1,4 +1,4 @@
-import type { DocumentNode, IrNode, TableNode } from './types';
+import type { DocumentNode, GridNode, IrNode, TableNode } from './types';
 
 /**
  * IR -> XMD string (best-effort).
@@ -71,6 +71,41 @@ function renderNode(node: IrNode): string {
       const rows = t.rows.map((r) => `| ${r.join(' | ')} |`).join('\n');
       const body = rows ? `${header}\n${sep}\n${rows}` : `${header}\n${sep}`;
       return body;
+    }
+    case 'grid': {
+      const g = node as GridNode;
+      const cols =
+        g.cols && Number.isFinite(g.cols) && g.cols > 0
+          ? g.cols
+          : (g.rows ?? []).reduce((m, r) => Math.max(m, (r ?? []).length), 0) || 1;
+      const headerParts: string[] = [];
+      headerParts.push(`cols=${cols}`);
+      const cap = String(g.caption ?? '').trim();
+      if (cap.length > 0) headerParts.push(`caption="${cap.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').trim()}"`);
+      const align = String(g.align ?? '').trim();
+      if (align === 'left' || align === 'center' || align === 'right') headerParts.push(`align="${align}"`);
+      const placement = String(g.placement ?? '').trim();
+      if (placement === 'inline' || placement === 'block') headerParts.push(`placement="${placement}"`);
+      const margin = String(g.margin ?? '').trim();
+      if (margin === 'small' || margin === 'medium' || margin === 'large') headerParts.push(`margin="${margin}"`);
+      const header = `::: ${headerParts.join(' ')}`;
+      const parts: string[] = [header];
+      const rows = g.rows ?? [];
+      for (let r = 0; r < rows.length; r++) {
+        const row = rows[r] ?? [];
+        for (let c = 0; c < row.length; c++) {
+          const cell = row[c];
+          const cellXmd = renderNodes(cell?.children ?? []).trimEnd();
+          if (cellXmd.length > 0) parts.push(cellXmd);
+          // Preferred grid delimiters:
+          // - `|||` for new cell
+          // - `---` for new row
+          if (c < row.length - 1) parts.push('|||');
+        }
+        if (r < rows.length - 1) parts.push('---');
+      }
+      parts.push(':::');
+      return parts.join('\n');
     }
     case 'raw_xmd_block':
       return node.xmd;

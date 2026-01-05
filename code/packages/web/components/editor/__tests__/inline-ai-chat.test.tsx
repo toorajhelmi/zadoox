@@ -58,7 +58,7 @@ describe('InlineAIChat', () => {
       <InlineAIChat
         position={{ top: 1000, left: 1000 }}
         documentId="doc-1"
-        editFormat="markdown"
+        editMode="markdown"
         content="Hello"
         cursorPosition={{ line: 1, column: 1 }}
         documentStyle="other" as any
@@ -87,7 +87,7 @@ describe('InlineAIChat', () => {
       <InlineAIChat
         position={{ top: 10, left: 10 }}
         documentId="doc-1"
-        editFormat="markdown"
+        editMode="markdown"
         content="Hello"
         cursorPosition={{ line: 1, column: 1 }}
         documentStyle="other" as any
@@ -112,7 +112,7 @@ describe('InlineAIChat', () => {
       <InlineAIChat
         position={{ top: 10, left: 10 }}
         documentId="doc-1"
-        editFormat="markdown"
+        editMode="markdown"
         content="Hello"
         cursorPosition={{ line: 1, column: 1 }}
         documentStyle="other" as any

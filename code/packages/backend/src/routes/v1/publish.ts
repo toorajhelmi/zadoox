@@ -454,6 +454,30 @@ export async function publishRoutes(fastify: FastifyInstance) {
       } catch (error: unknown) {
         fastify.log.error(error);
         const errorMessage = error instanceof Error ? error.message : 'Failed to generate PDF';
+
+        // Common local-dev failure: PDF compiler binary not installed (ENOENT).
+        // `PdfCompileService` wraps spawn errors as: `Failed to run <cmd>: spawn <cmd> ENOENT`
+        const lower = String(errorMessage).toLowerCase();
+        const isCompilerMissing =
+          lower.includes('failed to run tectonic') ||
+          lower.includes('spawn tectonic enoent') ||
+          lower.includes('failed to run latexmk') ||
+          lower.includes('spawn latexmk enoent');
+        if (isCompilerMissing) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'PDF_COMPILER_MISSING',
+              message:
+                'PDF compiler is not available on the backend. Install "tectonic" (default) or set PDF_COMPILER=texlive and install "latexmk".',
+              details: {
+                pdfCompiler: process.env.PDF_COMPILER ?? 'tectonic',
+                originalError: errorMessage,
+              },
+            },
+          };
+          return reply.status(503).send(response);
+        }
         const response: ApiResponse<null> = {
           success: false,
           error: {

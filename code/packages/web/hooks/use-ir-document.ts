@@ -57,6 +57,12 @@ export function useIrDocument(params: {
         const d = computeIrDelta(prev, snap.nodeHash);
         const e = irEventsFromDelta(d);
 
+        // #region agent log
+        try {
+          fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'switch-churn',hypothesisId:'H14',location:'use-ir-document.ts:parse',message:'IR recomputed from XMD',data:{xmdLen:String(xmd??'').length,added:d.added.length,changed:d.changed.length,removed:d.removed.length,topTypes:(nextIr.children??[]).slice(0,10).map((n:any)=>n?.type),gridCount:(nextIr.children??[]).filter((n:any)=>n?.type==='grid').length},timestamp:Date.now()})}).catch(()=>{});
+        } catch { /* ignore */ }
+        // #endregion agent log
+
         prevNodeHashRef.current = snap.nodeHash;
         setIr(nextIr);
         setDelta(d);

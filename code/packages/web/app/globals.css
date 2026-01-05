@@ -181,4 +181,35 @@ code {
   background-color: rgba(59, 130, 246, 0.8);
 }
 
+/* XMD structural markup highlighting (editor-only) */
+.cm-xmd-markup-token {
+  color: #9aa0a6 !important;
+  font-weight: 600;
+}
+
+/* If CodeMirror marks something as invalid/error (often red), keep XMD markup consistent. */
+.cm-xmd-markup-token.cm-invalid,
+.cm-xmd-markup-token .cm-invalid,
+.cm-xmd-markup-token.cm-error,
+.cm-xmd-markup-token .cm-error {
+  color: #9aa0a6 !important;
+}
+
+/* Figure toolbar visibility (use CSS hover so it works reliably inside grids/widgets) */
+.cm-embedded-figure-card:hover .cm-embedded-figure-toolbar {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+.cm-embedded-figure-toolbar:hover {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/* Extra safety: inline placement uses floats; keep toolbar on top */
+.cm-embedded-figure-toolbar {
+  z-index: 50;
+}
+
+
 

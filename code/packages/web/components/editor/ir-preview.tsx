@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { parseXmdToIr, renderIrToHtml, type DocumentNode } from '@zadoox/shared';
+import { renderIrToHtml, type DocumentNode } from '@zadoox/shared';
 import { MarkdownPreview } from './markdown-preview';
 
 interface IrPreviewProps {
@@ -18,9 +18,9 @@ interface IrPreviewProps {
 export function IrPreview({ docId, content, ir }: IrPreviewProps) {
   const htmlOverride = useMemo(() => {
     if (!content.trim()) return '';
-    const derived = ir ?? parseXmdToIr({ docId, xmd: content });
-    return renderIrToHtml(derived);
-  }, [docId, content, ir]);
+    if (!ir) return '';
+    return renderIrToHtml(ir);
+  }, [content, ir]);
 
   return <MarkdownPreview content={content} htmlOverride={htmlOverride} />;
 }

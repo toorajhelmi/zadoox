@@ -49,7 +49,37 @@ export async function authenticateUser(
       error,
     } = await supabaseAdmin.auth.getUser(token);
 
-    if (error || !user) {
+    if (error && !user) {
+      // Distinguish "token invalid" from "auth service unreachable" (local dev, DNS issues, offline).
+      const raw = String((error as { message?: unknown } | null)?.message ?? error ?? '').toLowerCase();
+      const isConnectivity =
+        raw.includes('fetch') ||
+        raw.includes('network') ||
+        raw.includes('enotfound') ||
+        raw.includes('eai_again') ||
+        raw.includes('timed out') ||
+        raw.includes('timeout') ||
+        raw.includes('name not resolved') ||
+        raw.includes('internet disconnected');
+      if (isConnectivity) {
+        return reply.status(503).send({
+          success: false,
+          error: {
+            code: 'AUTH_UNAVAILABLE',
+            message: 'Authentication service is unreachable. Check your internet connection and Supabase configuration.',
+            details: { reason: String((error as { message?: unknown } | null)?.message ?? error ?? '') },
+          },
+        });
+      }
+      return reply.status(401).send({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Invalid or expired token',
+        },
+      });
+    }
+    if (!user) {
       return reply.status(401).send({
         success: false,
         error: {

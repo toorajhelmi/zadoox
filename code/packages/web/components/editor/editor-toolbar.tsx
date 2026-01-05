@@ -7,7 +7,7 @@ import { api } from '@/lib/api/client';
 import type { Project } from '@zadoox/shared';
 
 type ViewMode = 'edit' | 'preview' | 'split' | 'ir';
-type EditFormat = 'markdown' | 'latex';
+type EditMode = 'markdown' | 'latex';
 
 interface EditorToolbarProps {
   projectId: string;
@@ -16,8 +16,8 @@ interface EditorToolbarProps {
   lastSaved: Date | null;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
-  editFormat: EditFormat;
-  onEditFormatChange: (format: EditFormat) => void;
+  editMode: EditMode;
+  onEditModeChange: (mode: EditMode) => void;
   canUndo?: boolean;
   canRedo?: boolean;
   onUndo?: () => void;
@@ -31,8 +31,8 @@ export function EditorToolbar({
   lastSaved: _lastSaved, 
   viewMode,
   onViewModeChange,
-  editFormat,
-  onEditFormatChange,
+  editMode,
+  onEditModeChange,
   canUndo = false,
   canRedo = false,
   onUndo,
@@ -175,29 +175,29 @@ export function EditorToolbar({
           </button>
         </div>
 
-        {/* Edit Format Toggle (Phase 12) */}
+        {/* Edit Mode Toggle (Phase 12) */}
         <div className="flex items-center gap-1 border-l border-vscode-border pl-4">
           <button
-            onClick={() => onEditFormatChange('markdown')}
+            onClick={() => onEditModeChange('markdown')}
             className={`px-3 py-1 text-sm rounded transition-colors ${
-              editFormat === 'markdown'
+              editMode === 'markdown'
                 ? 'bg-vscode-active text-vscode-text'
                 : 'text-vscode-text-secondary hover:text-vscode-text'
             }`}
             aria-label="Markdown edit mode"
-            title="Edit Markdown (XMD) (Cmd/Ctrl+Alt+M)"
+            title="Edit Markdown (XMD) (Cmd/Ctrl+Alt+Shift+M)"
           >
             MD
           </button>
           <button
-            onClick={() => onEditFormatChange('latex')}
+            onClick={() => onEditModeChange('latex')}
             className={`px-3 py-1 text-sm rounded transition-colors ${
-              editFormat === 'latex'
+              editMode === 'latex'
                 ? 'bg-vscode-active text-vscode-text'
                 : 'text-vscode-text-secondary hover:text-vscode-text'
             }`}
             aria-label="LaTeX edit mode"
-            title="Edit LaTeX (subset) (Cmd/Ctrl+Alt+L)"
+            title="Edit LaTeX (subset) (Cmd/Ctrl+Alt+Shift+L)"
           >
             LaTeX
           </button>

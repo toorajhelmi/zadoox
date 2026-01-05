@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { DashboardLayout, LoaderIcon } from '@/components/dashboard';
 import { api } from '@/lib/api/client';
 import type { Document, Project } from '@zadoox/shared';
+import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 
 type PublishTarget = 'pdf' | 'web';
 type PublishSource = 'markdown' | 'latex';
@@ -80,6 +81,11 @@ export default function ProjectPublishPage() {
         const defaultId = saved && sorted.some((d) => d.id === saved) ? saved : sorted[0]?.id || '';
         setSelectedDocumentId(defaultId);
       } catch (err: unknown) {
+        const status = typeof (err as any)?.status === 'number' ? (err as any).status : null;
+        if (status === 401) {
+          router.push('/auth/login');
+          return;
+        }
         setError(err instanceof Error ? err.message : 'Failed to load publishing data');
         console.error('Failed to load publish page:', err);
       } finally {
@@ -88,6 +94,7 @@ export default function ProjectPublishPage() {
     };
 
     if (projectId) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   const selectedDocument = useMemo(
@@ -200,9 +207,11 @@ export default function ProjectPublishPage() {
             <p className="text-[#969696] mb-4">{error || 'Project not found'}</p>
             <button
               onClick={() => router.push(`/dashboard/projects/${projectId}`)}
-              className="px-4 py-2 bg-[#007acc] hover:bg-[#1a8cd8] text-white rounded"
+              className="p-2 rounded hover:bg-[#3e3e42] text-[#cccccc] hover:text-white transition-colors inline-flex items-center justify-center"
+              aria-label="Back"
+              title="Back"
             >
-              Back to Project
+              <ArrowLeftIcon className="w-5 h-5" />
             </button>
           </div>
         </div>
@@ -215,25 +224,22 @@ export default function ProjectPublishPage() {
       <div className="h-full flex flex-col">
         <div className="px-6 py-4 border-b border-[#3e3e42] bg-[#252526]">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-semibold text-white mb-1">Publish</h1>
-              <p className="text-sm text-[#969696]">
-                {project.name} · Publish as PDF or Web
-              </p>
+            <div className="min-w-0 flex items-start gap-3">
+              <button
+                type="button"
+                onClick={() => router.push(`/dashboard/projects/${projectId}`)}
+                className="mt-0.5 p-2 rounded hover:bg-[#3e3e42] text-[#cccccc] hover:text-white transition-colors inline-flex items-center justify-center"
+                aria-label="Back"
+                title="Back"
+              >
+                <ArrowLeftIcon className="w-5 h-5" />
+              </button>
+              <div className="min-w-0">
+                <h1 className="text-xl font-semibold text-white mb-1 truncate">Publish</h1>
+                <p className="text-sm text-[#969696] truncate">{project.name} · Publish as PDF or Web</p>
+              </div>
             </div>
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => router.push(`/dashboard/projects/${projectId}`)}
-                className="px-4 py-2 bg-[#3e3e42] hover:bg-[#464647] text-white rounded text-sm font-medium transition-colors"
-              >
-                Back to Project
-              </button>
-              <button
-                onClick={() => router.push(`/dashboard/projects/${projectId}/settings`)}
-                className="px-4 py-2 bg-[#3e3e42] hover:bg-[#464647] text-white rounded text-sm font-medium transition-colors"
-              >
-                Settings
-              </button>
             </div>
           </div>
         </div>

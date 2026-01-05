@@ -20,6 +20,7 @@ import type { ResearchSource, DocumentStyle } from '@zadoox/shared';
 import type { InlineEditBlock, InlineEditOperation } from '@zadoox/shared';
 import type { QuickOption } from '@/lib/services/context-options';
 import { irToLatexDocument, irToXmd, parseLatexToIr, parseXmdToIr } from '@zadoox/shared';
+import { computeDocIrHash } from './ir-hash';
 import { applyInlineOperations, buildInlineBlocksAroundCursor } from './editor-layout-inline-edit';
 import { useEditorKeyboardShortcuts } from './editor-layout-shortcuts';
 import { useEditorFormatHandler } from './editor-layout-formatting';
@@ -29,10 +30,11 @@ import { useEditorCursorScreenPosition } from './editor-layout-cursor';
 import { useEditorSaveWithCitationsCleanup } from './editor-layout-save';
 import { useEditorVersionMetadata } from './editor-layout-versioning';
 import { useEditorHistoryAndChangeTracking } from './editor-layout-history';
-import { useEditorEditFormat } from './editor-layout-edit-format';
+import { useEditorEditMode } from './editor-layout-edit-mode';
 import { applyThinkModeGeneratedContentToXmd } from './editor-layout-think-apply';
 import { rollbackToVersion, selectVersionForViewing } from './editor-layout-version-actions';
 import { previewInsertAtCursor } from './editor-layout-inline-preview';
+import { ensureLatexPreambleForLatexContent } from './latex-preamble';
 
 interface EditorLayoutProps {
   projectId: string;
@@ -117,7 +119,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     enabled: Boolean(actualDocumentId || documentId),
   });
 
-  const { editFormat, setEditFormat, latexDraft, setLatexDraft, handleEditFormatChange } = useEditorEditFormat({
+  const { editMode, setEditMode, latexDraft, setLatexDraft, handleEditModeChange } = useEditorEditMode({
     actualDocumentId,
     documentId,
     content,
@@ -127,6 +129,11 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     updateContent,
   });
 
+  // IMPORTANT: Outline/preview should be driven from the canonical IR (derived from XMD).
+  // The LaTeX surface is just another edit mode; it must update IR (via LaTeX -> IR -> XMD),
+  // but we should not run a separate LaTeX->IR parse for outline, otherwise the outline can drift.
+  const sidebarIr = irState.ir;
+
   const currentTextStyle = (() => {
     const view = editorViewRef.current;
     if (!view) return 'paragraph' as const;
@@ -134,7 +141,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       const sel = view.state.selection.main;
       const line = view.state.doc.lineAt(sel.head).text;
       const trimmed = line.trimStart();
-      if (editFormat === 'latex') {
+      if (editMode === 'latex') {
         if (/^\\title\{/.test(trimmed)) return 'title' as const;
         if (/^\\section\{/.test(trimmed)) return 'heading1' as const;
         if (/^\\subsection\{/.test(trimmed)) return 'heading2' as const;
@@ -248,28 +255,42 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       // If selectedVersion === null, allow editing (fall through)
       // Mark this as user input before updating content
       isUserInputRef.current = true;
-      if (editFormat === 'markdown') {
-        updateContent(value);
-      } else {
-        // LaTeX edit surface -> LaTeX -> IR -> XMD (content)
-        setLatexDraft(value);
-        // Persist "last active format" and keep a current cached LaTeX string in metadata
-        // so a refresh reopens in LaTeX reliably.
-        const nextMeta = { ...(documentMetadata as any), lastEditedFormat: 'latex', latex: value };
-        setDocumentMetadata(nextMeta);
-        try {
-          const ir = parseLatexToIr({ docId: actualDocumentId || documentId, latex: value });
-          const nextXmd = irToXmd(ir);
-          updateContent(nextXmd);
-        } catch (err) {
-          // Never block typing; keep draft visible even if conversion fails.
-          console.error('Failed to parse LaTeX to IR:', err);
-        }
-      }
+      const handlers: Record<'markdown' | 'latex', () => void> = {
+        markdown: () => {
+          updateContent(value);
+        },
+        latex: () => {
+          // LaTeX edit surface -> LaTeX -> IR (canonical) -> XMD (derived content)
+          const ensured = ensureLatexPreambleForLatexContent(value);
+          const nextLatex = ensured.latex;
+          setLatexDraft(nextLatex);
+          try {
+            const nextIr = parseLatexToIr({ docId: actualDocumentId || documentId, latex: nextLatex });
+            const nextXmd = irToXmd(nextIr);
+            const nextIrHash = computeDocIrHash(nextIr);
+            const nextMeta = {
+              ...(documentMetadata as any),
+              lastEditedFormat: 'latex',
+              latex: nextLatex,
+              // Keep mapping: this LaTeX draft corresponds to this IR hash.
+              latexIrHash: nextIrHash,
+            };
+            setDocumentMetadata(nextMeta);
+            // Avoid churn: only update XMD if it actually changes.
+            if (nextXmd !== content) updateContent(nextXmd);
+          } catch (err) {
+            // Never block typing; keep draft visible even if conversion fails.
+            console.error('Failed to parse LaTeX to IR:', err);
+            const nextMeta = { ...(documentMetadata as any), lastEditedFormat: 'latex', latex: nextLatex };
+            setDocumentMetadata(nextMeta);
+          }
+        },
+      };
+      handlers[editMode === 'latex' ? 'latex' : 'markdown']();
 
       // Add to undo history (debounced to avoid too many history entries)
       // Only add if not in change tracking mode (change tracking handles its own history)
-      if (!changeTracking.isTracking && editFormat === 'markdown') {
+      if (!changeTracking.isTracking && editMode === 'markdown') {
         if (debounceTimeoutRef.current) {
           clearTimeout(debounceTimeoutRef.current);
         }
@@ -299,7 +320,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       }
 
       // Track undo/redo for LaTeX draft edits too (separate history from XMD).
-      if (!changeTracking.isTracking && editFormat === 'latex') {
+      if (!changeTracking.isTracking && editMode === 'latex') {
         if (latexDebounceTimeoutRef.current) {
           clearTimeout(latexDebounceTimeoutRef.current);
         }
@@ -327,13 +348,14 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       }
     },
     [
+      content,
       updateContent,
       selectedVersion,
       latestVersion,
       cursorPosition,
       undoRedo,
       changeTracking.isTracking,
-      editFormat,
+      editMode,
       actualDocumentId,
       documentId,
       documentMetadata,
@@ -357,11 +379,11 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     selectedVersion,
     latestVersion,
     changeTracking: { isTracking: changeTracking.isTracking, cancelTracking: changeTracking.cancelTracking },
-    editFormat,
+    editMode,
     undoRedo,
     latexUndoRedo,
     setViewMode,
-    handleEditFormatChange,
+    handleEditModeChange: handleEditModeChange,
     content,
     saveDocument,
     thinkPanelOpen,
@@ -378,7 +400,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     selectedVersion,
     latestVersion,
     cursorPosition,
-    editFormat,
+    editMode,
     handleContentChange,
     changeTracking: { isTracking: changeTracking.isTracking },
     undoRedo,
@@ -417,7 +439,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           isOpen={sidebarOpen}
           onToggle={() => setSidebarOpen(!sidebarOpen)}
           content={content}
-          ir={irState.ir}
+          ir={sidebarIr}
           projectName={projectName}
           documentId={actualDocumentId}
           lastSaved={lastSaved}
@@ -487,22 +509,22 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           lastSaved={lastSaved}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
-          editFormat={editFormat}
-          onEditFormatChange={handleEditFormatChange}
-          canUndo={editFormat === 'latex' ? latexUndoRedo.canUndo : undoRedo.canUndo}
-          canRedo={editFormat === 'latex' ? latexUndoRedo.canRedo : undoRedo.canRedo}
+          editMode={editMode}
+          onEditModeChange={handleEditModeChange}
+          canUndo={editMode === 'latex' ? latexUndoRedo.canUndo : undoRedo.canUndo}
+          canRedo={editMode === 'latex' ? latexUndoRedo.canRedo : undoRedo.canRedo}
           onUndo={() => {
             if (changeTracking.isTracking) {
               changeTracking.cancelTracking();
             }
-            if (editFormat === 'latex') latexUndoRedo.undo();
+            if (editMode === 'latex') latexUndoRedo.undo();
             else undoRedo.undo();
           }}
           onRedo={() => {
             if (changeTracking.isTracking) {
               changeTracking.cancelTracking();
             }
-            if (editFormat === 'latex') latexUndoRedo.redo();
+            if (editMode === 'latex') latexUndoRedo.redo();
             else undoRedo.redo();
           }}
         />
@@ -578,8 +600,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 <InlineAIChat
                   position={cursorScreenPosition}
                   documentId={actualDocumentId}
-                  editFormat={editFormat}
-                  content={editFormat === 'latex' ? latexDraft : content}
+                  editMode={editMode}
+                  content={editMode === 'latex' ? latexDraft : content}
                   cursorPosition={cursorPosition}
                   selection={currentSelectionRef.current}
                   scopeKind={currentSelectionRef.current?.text?.trim() ? 'selection' : 'cursor_paragraph'}
@@ -588,7 +610,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                     if (sel && sel.text && sel.text.trim().length > 0) return sel.text;
 
                     if (!cursorPosition) return '';
-                    if (editFormat === 'latex') {
+                    if (editMode === 'latex') {
                       const lines = latexDraft.split('\n');
                       const idx = Math.max(0, Math.min(cursorPosition.line - 1, Math.max(0, lines.length - 1)));
                       return (lines[idx] ?? '').trim();
@@ -611,7 +633,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                     setInlineAIChatOpen(false);
                   }}
                   onPreviewInlineEdit={async ({ prompt, mode, scopeStrategy = 'selection-or-prev-paragraph' }) => {
-                    if (editFormat === 'latex') {
+                    if (editMode === 'latex') {
                       // Inline edits are currently markdown/XMD-only. Keep LaTeX surface stable.
                       return { operations: [], previewText: '', newContent: latexDraft };
                     }
@@ -717,7 +739,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                   onPreviewInsertAtCursor={async ({ content: insertContent, placement = 'after' }) => {
                     return previewInsertAtCursor({
                       cursorPosition,
-                      editFormat,
+                      editMode,
                       latexDraft,
                       content,
                       insertContent,
@@ -725,7 +747,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                     });
                   }}
                   onApplyInlinePreview={async (preview) => {
-                    if (editFormat === 'latex') {
+                    if (editMode === 'latex') {
                       handleContentChange(preview.newContent);
                       setInlineAIChatOpen(false);
                       return;
@@ -808,7 +830,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 />
               )}
 
-              {editFormat === 'markdown' ? (
+              {editMode === 'markdown' ? (
                 <AIEnhancedEditor
                   value={pendingChangeContent?.new ?? content}
                   onChange={handleContentChange}
@@ -930,7 +952,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               }
             >
               <div className="h-full">
-                <IrPreview docId={actualDocumentId || documentId} content={content} ir={irState.ir} />
+                <IrPreview docId={actualDocumentId || documentId} content={content} ir={sidebarIr} />
               </div>
             </div>
           )}

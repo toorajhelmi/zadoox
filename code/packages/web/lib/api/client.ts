@@ -56,9 +56,16 @@ async function getAuthToken(): Promise<string | null> {
   try {
     const { createClient } = await import('@/lib/supabase/client');
     const supabase = createClient();
-    // Ensure session is refreshed if needed (mirrors middleware behavior).
-    await supabase.auth.getUser();
-    const { data: { session } } = await supabase.auth.getSession();
+    // Best-effort refresh: if this fails (offline), still try to use any cached session.
+    try {
+      // Mirrors middleware behavior; may hit the network.
+      await supabase.auth.getUser();
+    } catch {
+      // ignore
+    }
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
     return session?.access_token || null;
   } catch {
     return null;

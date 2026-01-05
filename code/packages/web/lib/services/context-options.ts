@@ -20,6 +20,7 @@ export type QuickOptionWizardKey =
   | 'translate'
   | 'add-section'
   | 'insert-figure'
+  | 'insert-figure-grid'
   | 'insert-table'
   | 'insert-equation';
 
@@ -145,6 +146,16 @@ const ALL_OPTIONS: QuickOption[] = [
     group: 'Generation',
     subgroup: 'Insert',
     wizardKey: 'insert-figure',
+  },
+  {
+    id: 'gen-insert-figure-grid',
+    label: 'Insert figure grid',
+    description: 'Insert a multi-cell figure grid using ::: ... ::: with ||| and --- delimiters',
+    action:
+      'Insert a figure grid here using Zadoox extended Markdown grid syntax (::: cols=... caption="..."), with per-cell figures and delimiters (||| and ---).',
+    group: 'Generation',
+    subgroup: 'Insert',
+    wizardKey: 'insert-figure-grid',
   },
   {
     id: 'gen-insert-table',
@@ -324,6 +335,7 @@ export function getContextOptions(params: ContextOptionsParams): QuickOption[] {
 
   // Always-available high-value actions (lower priority)
   push('gen-insert-figure', 15);
+  push('gen-insert-figure-grid', 15);
   push('gen-insert-table', 15);
   push('gen-insert-equation', 15);
   push('tone-more-formal', 10);

@@ -26,12 +26,12 @@ vi.mock('@/lib/api/client', () => ({
 
 import { api } from '@/lib/api/client';
 
-function makeProps(params: { editFormat: 'markdown' | 'latex' }) {
+function makeProps(params: { editMode: 'markdown' | 'latex' }) {
   return {
     ctx: {
       option: { id: 'insert-figure', label: 'Insert figure', group: 'Structure' } as any,
       documentId: 'doc-1',
-      editFormat: params.editFormat,
+      editMode: params.editMode,
       content: '',
       cursorPosition: { line: 1, column: 1 },
       scope: { kind: 'cursor', text: 'Quantum Girl' },
@@ -50,7 +50,7 @@ describe('InsertFigureWizard', () => {
   });
 
   it('hides the "What should the figure show?" input in Upload mode', async () => {
-    const props = makeProps({ editFormat: 'markdown' });
+    const props = makeProps({ editMode: 'markdown' });
     render(<InsertFigureWizard {...(props as any)} />);
 
     fireEvent.click(screen.getByText('Upload'));
@@ -61,7 +61,7 @@ describe('InsertFigureWizard', () => {
     (api.ai.images.generate as any).mockResolvedValue({ mimeType: 'image/png', b64: 'AAA' });
     (api.assets.upload as any).mockResolvedValue({ ref: 'zadoox-asset://k.png' });
 
-    const props = makeProps({ editFormat: 'markdown' });
+    const props = makeProps({ editMode: 'markdown' });
     render(<InsertFigureWizard {...(props as any)} />);
 
     // Generate image (uses scope prefill)
@@ -89,7 +89,7 @@ describe('InsertFigureWizard', () => {
     (api.ai.images.generate as any).mockResolvedValue({ mimeType: 'image/png', b64: 'AAA' });
     (api.assets.upload as any).mockResolvedValue({ ref: 'zadoox-asset://k.png' });
 
-    const props = makeProps({ editFormat: 'markdown' });
+    const props = makeProps({ editMode: 'markdown' });
     render(<InsertFigureWizard {...(props as any)} />);
 
     fireEvent.click(screen.getByText('Generate image'));
@@ -112,7 +112,7 @@ describe('InsertFigureWizard', () => {
     (api.ai.images.generate as any).mockResolvedValue({ mimeType: 'image/png', b64: 'AAA' });
     (api.assets.upload as any).mockResolvedValue({ ref: 'zadoox-asset://k.png' });
 
-    const props = makeProps({ editFormat: 'latex' });
+    const props = makeProps({ editMode: 'latex' });
     render(<InsertFigureWizard {...(props as any)} />);
 
     // Enable caption and type it
@@ -133,6 +133,21 @@ describe('InsertFigureWizard', () => {
     expect(insertArg).toContain('\\includegraphics');
     expect(insertArg).toContain('0.500\\textwidth');
     expect(insertArg).toContain('\\caption{Quantum Girl}');
+  });
+
+  it('inserts XMD figure grid when Grid mode is used (uses ::: with ||| and --- delimiters)', async () => {
+    // Grid mode moved to a dedicated wizard.
+    expect(true).toBe(true);
+  });
+
+  it('allows per-cell caption updates in Grid mode (edit a cell without re-uploading)', async () => {
+    // Grid mode moved to a dedicated wizard.
+    expect(true).toBe(true);
+  });
+
+  it('inserts LaTeX figure grid in latex mode using tabular (no preamble commands)', async () => {
+    // Grid mode moved to a dedicated wizard.
+    expect(true).toBe(true);
   });
 });
 

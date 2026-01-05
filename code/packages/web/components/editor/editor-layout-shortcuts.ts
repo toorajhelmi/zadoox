@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 
 export type ViewMode = 'edit' | 'preview' | 'split' | 'ir';
-export type EditFormat = 'markdown' | 'latex';
+export type EditMode = 'markdown' | 'latex';
 
 export function useEditorKeyboardShortcuts(opts: {
   // gating
@@ -12,13 +12,13 @@ export function useEditorKeyboardShortcuts(opts: {
   changeTracking: { isTracking: boolean; cancelTracking: () => void };
 
   // routing
-  editFormat: EditFormat;
+  editMode: EditMode;
   undoRedo: { undo: () => void; redo: () => void };
   latexUndoRedo: { undo: () => void; redo: () => void };
 
   // view/edit format switches
   setViewMode: (v: ViewMode) => void;
-  handleEditFormatChange: (next: EditFormat) => void | Promise<void>;
+  handleEditModeChange: (next: EditMode) => void | Promise<void>;
 
   // save
   content: string;
@@ -46,7 +46,7 @@ export function useEditorKeyboardShortcuts(opts: {
         if (opts.changeTracking.isTracking) {
           opts.changeTracking.cancelTracking();
         }
-        if (opts.editFormat === 'latex') opts.latexUndoRedo.undo();
+        if (opts.editMode === 'latex') opts.latexUndoRedo.undo();
         else opts.undoRedo.undo();
         return;
       }
@@ -57,7 +57,7 @@ export function useEditorKeyboardShortcuts(opts: {
         if (opts.changeTracking.isTracking) {
           opts.changeTracking.cancelTracking();
         }
-        if (opts.editFormat === 'latex') opts.latexUndoRedo.redo();
+        if (opts.editMode === 'latex') opts.latexUndoRedo.redo();
         else opts.undoRedo.redo();
         return;
       }
@@ -87,17 +87,18 @@ export function useEditorKeyboardShortcuts(opts: {
         }
       }
 
-      // Edit surface shortcuts: Cmd/Ctrl+Alt+M/L
-      if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey) {
+      // Edit surface shortcuts: Cmd/Ctrl+Alt+Shift+M/L
+      // (use Shift to reduce accidental triggers / collisions with other common shortcuts)
+      if ((e.ctrlKey || e.metaKey) && e.altKey && e.shiftKey) {
         const k = e.key.toLowerCase();
         if (k === 'm') {
           e.preventDefault();
-          void opts.handleEditFormatChange('markdown');
+          void opts.handleEditModeChange('markdown');
           return;
         }
         if (k === 'l') {
           e.preventDefault();
-          void opts.handleEditFormatChange('latex');
+          void opts.handleEditModeChange('latex');
           return;
         }
       }
