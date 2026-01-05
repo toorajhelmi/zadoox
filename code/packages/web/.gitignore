@@ -1,2 +1,6 @@
 .vercel
 .env*.local
+.next
+.next-dev
+.next-cache
+out
