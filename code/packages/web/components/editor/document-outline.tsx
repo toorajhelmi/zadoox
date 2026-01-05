@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { extractOutlineItemsFromIr, parseXmdToIr, type DocumentNode } from '@zadoox/shared';
+import { extractOutlineItemsFromIr, type DocumentNode } from '@zadoox/shared';
 import {
   ChevronRightIcon,
   DocumentTextIcon,
   PhotoIcon,
   FolderIcon,
+  Squares2X2Icon,
   ArrowsPointingInIcon,
   ArrowsPointingOutIcon,
 } from '@heroicons/react/24/outline';
@@ -23,8 +24,10 @@ interface DocumentOutlineProps {
 
 type HeadingItem = Extract<OutlineItem, { kind: 'heading' }>;
 type FigureItem = Extract<OutlineItem, { kind: 'figure' }>;
+type GridItem = Extract<OutlineItem, { kind: 'grid' }>;
 type OutlineNode =
   | { kind: 'heading_node'; item: HeadingItem; children: OutlineNode[] }
+  | { kind: 'grid_node'; item: GridItem; children: OutlineNode[] }
   | { kind: 'figure_node'; item: FigureItem };
 
 type AssetFile = { key: string; relPath: string };
@@ -94,6 +97,7 @@ function collectAssetFilesFromIr(ir: DocumentNode): AssetFile[] {
 function buildOutlineTree(items: OutlineItem[]): OutlineNode[] {
   const root: OutlineNode[] = [];
   const stack: Array<{ level: number; node: Extract<OutlineNode, { kind: 'heading_node' }> }> = [];
+  const gridById = new Map<string, Extract<OutlineNode, { kind: 'grid_node' }>>();
 
   for (const item of items) {
     if (item.kind === 'heading') {
@@ -115,10 +119,25 @@ function buildOutlineTree(items: OutlineItem[]): OutlineNode[] {
       continue;
     }
 
-    // Figure: attach under current heading if any, otherwise at root.
+    if (item.kind === 'grid') {
+      const gridNode: Extract<OutlineNode, { kind: 'grid_node' }> = { kind: 'grid_node', item, children: [] };
+      gridById.set(item.id, gridNode);
+      const parent = stack.length > 0 ? stack[stack.length - 1].node : null;
+      if (parent) parent.children.push(gridNode);
+      else root.push(gridNode);
+      continue;
+    }
+
+    // Figure: attach under parent grid if present; else under current heading.
     const figNode: OutlineNode = { kind: 'figure_node', item };
-    const parent = stack.length > 0 ? stack[stack.length - 1].node : null;
-    if (parent) parent.children.push(figNode);
+    const parentGridId = (item as FigureItem).parentId;
+    const gridParent = parentGridId ? gridById.get(parentGridId) : null;
+    if (gridParent) {
+      gridParent.children.push(figNode);
+      continue;
+    }
+    const parentHeading = stack.length > 0 ? stack[stack.length - 1].node : null;
+    if (parentHeading) parentHeading.children.push(figNode);
     else root.push(figNode);
   }
 
@@ -132,16 +151,22 @@ function collectCollapsibleHeadingIds(nodes: OutlineNode[]): string[] {
       if (n.children.length > 0) ids.push(n.item.id);
       ids.push(...collectCollapsibleHeadingIds(n.children));
     }
+    if (n.kind === 'grid_node') {
+      if (n.children.length > 0) ids.push(n.item.id);
+      ids.push(...collectCollapsibleHeadingIds(n.children));
+    }
   }
   return ids;
 }
 
 export function DocumentOutline({ content, ir, projectName }: DocumentOutlineProps) {
-  const derivedIr = useMemo(() => ir ?? parseXmdToIr({ docId: 'outline-doc', xmd: content }), [content, ir]);
+  // IMPORTANT: Outline must be driven from the canonical IR provided by the editor pipeline.
+  // Do not parse content here; that would create a second IR and can diverge across edit modes.
+  const derivedIr = ir ?? null;
 
   const items = useMemo(() => {
     // Phase 11: outline is IR-driven.
-    return extractOutlineItemsFromIr(derivedIr);
+    return derivedIr ? extractOutlineItemsFromIr(derivedIr) : [];
   }, [derivedIr]);
 
   // #region agent log
@@ -158,7 +183,7 @@ export function DocumentOutline({ content, ir, projectName }: DocumentOutlinePro
   const tree = useMemo(() => buildOutlineTree(outlineItems), [outlineItems]);
   const storageKey = useMemo(() => `zadoox:outline:collapsed:${derivedIr?.docId ?? 'unknown'}`, [derivedIr?.docId]);
   const collapsibleIds = useMemo(() => collectCollapsibleHeadingIds(tree), [tree]);
-  const assets = useMemo(() => collectAssetFilesFromIr(derivedIr), [derivedIr]);
+  const assets = useMemo(() => (derivedIr ? collectAssetFilesFromIr(derivedIr) : []), [derivedIr]);
 
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [projectCollapsed, setProjectCollapsed] = useState(false);
@@ -354,6 +379,50 @@ export function DocumentOutline({ content, ir, projectName }: DocumentOutlinePro
             </span>
             <span className="opacity-80 truncate">{item.text}</span>
           </a>
+        );
+      }
+
+      if (node.kind === 'grid_node') {
+        const pad = (parentHeadingLevel == null ? 0.5 : parentHeadingLevel * 0.75 + 0.5) + basePadRem;
+        const item = node.item;
+        const hasChildren = node.children.length > 0;
+        const isCollapsed = collapsedIds.has(item.id);
+        return (
+          <div key={`grid-${item.id}-${index}`}>
+            <div
+              className="flex items-center gap-2 py-1 px-2 text-sm hover:bg-vscode-active rounded transition-colors text-vscode-text-secondary hover:text-vscode-text"
+              style={{ paddingLeft: `${pad}rem` }}
+            >
+              {hasChildren ? (
+                <button
+                  type="button"
+                  aria-label={isCollapsed ? 'Expand grid' : 'Collapse grid'}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggleCollapsed(item.id);
+                  }}
+                  className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
+                >
+                  <ChevronRightIcon className={`w-4 h-4 transition-transform ${isCollapsed ? '' : 'rotate-90'}`} />
+                </button>
+              ) : (
+                <span className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+              )}
+
+              <a
+                href={`#${item.id}`}
+                onClick={(e) => handleHeadingClick(e, item.id)}
+                className="flex items-center gap-2 min-w-0"
+              >
+                <Squares2X2Icon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
+                <span className="truncate">{item.text}</span>
+              </a>
+            </div>
+            {hasChildren && !isCollapsed && (
+              <div className="space-y-1">{renderNodes(node.children, parentHeadingLevel, basePadRem + 0.75)}</div>
+            )}
+          </div>
         );
       }
 

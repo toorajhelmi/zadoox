@@ -421,21 +421,30 @@ function renderFigureGrid(grid: GridNode): string {
   else if (align === 'left') out.push('\\raggedright');
   else out.push('\\centering');
 
+  // IMPORTANT: Use a tabular to force stable row/column layout.
+  // This avoids edge cases where \hfill + paragraphing can stack subfigures vertically in some templates.
+  const colSpec = `@{}${'c'.repeat(cols)}@{}`;
+  out.push(`\\begin{tabular}{${colSpec}}`);
   for (let r = 0; r < rows.length; r++) {
     const row = rows[r] ?? [];
+    const cells: string[] = [];
     for (let c = 0; c < cols; c++) {
       const cell = row[c];
       const figs = (cell?.children ?? []).filter((n): n is FigureNode => n.type === 'figure');
       const fig = figs[0];
 
-      out.push(`\\begin{subfigure}[t]{${widthStr}}`);
-      out.push('\\centering');
-      if (fig) out.push(renderFigureInFigureGrid(fig));
-      out.push('\\end{subfigure}');
-      if (c < cols - 1) out.push('\\hfill');
+      const cellLines: string[] = [];
+      cellLines.push(`\\begin{subfigure}[t]{${widthStr}}`);
+      cellLines.push('\\centering');
+      if (fig) cellLines.push(renderFigureInFigureGrid(fig));
+      else cellLines.push('~');
+      cellLines.push('\\end{subfigure}');
+      cells.push(cellLines.join('\n'));
     }
-    if (r < rows.length - 1) out.push(`\\par\\vspace{${rowVspace}}`);
+    const rowSuffix = r < rows.length - 1 ? ` \\\\[${rowVspace}]` : '';
+    out.push(`${cells.join(' & ')}${rowSuffix}`);
   }
+  out.push('\\end{tabular}');
 
   const gridCaption = String(grid.caption ?? '').trim();
   if (gridCaption.length > 0) out.push(`\\caption{${escapeLatexText(gridCaption)}}`);

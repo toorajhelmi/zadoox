@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { DashboardLayout, LoaderIcon } from '@/components/dashboard';
 import { api } from '@/lib/api/client';
 import type { Project } from '@zadoox/shared';
+import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -80,11 +81,20 @@ export default function ProjectDetailPage() {
       <div className="h-full flex flex-col">
         <div className="px-6 py-4 border-b border-[#3e3e42] bg-[#252526]">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-semibold text-white mb-1">{project.name}</h1>
-              <p className="text-sm text-[#969696]">
-                {project.description || 'No description'}
-              </p>
+            <div className="min-w-0 flex items-start gap-3">
+              <button
+                type="button"
+                onClick={() => router.push('/dashboard/projects')}
+                className="mt-0.5 p-2 rounded hover:bg-[#3e3e42] text-[#cccccc] hover:text-white transition-colors"
+                aria-label="Back"
+                title="Back"
+              >
+                <ArrowLeftIcon className="w-5 h-5" />
+              </button>
+              <div className="min-w-0">
+                <h1 className="text-xl font-semibold text-white mb-1 truncate">{project.name}</h1>
+                <p className="text-sm text-[#969696] truncate">{project.description || 'No description'}</p>
+              </div>
             </div>
             <div className="flex items-center gap-3">
               <button
@@ -104,12 +114,6 @@ export default function ProjectDetailPage() {
                 className="px-4 py-2 bg-[#007acc] hover:bg-[#1a8cd8] text-white rounded text-sm font-medium transition-colors"
               >
                 Edit
-              </button>
-              <button
-                onClick={() => router.push('/dashboard/projects')}
-                className="px-4 py-2 text-sm text-[#cccccc] hover:text-white transition-colors"
-              >
-                ← Back
               </button>
             </div>
           </div>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 
 import PublishPreviewPage from './page';
 
@@ -83,7 +83,7 @@ describe('Publish preview page (PDF)', () => {
     expect(await screen.findByTitle('PDF preview')).toBeInTheDocument();
   });
 
-  it('Save icon triggers print() on iframe contentWindow (MD → PDF local)', async () => {
+  it('does not render a redundant "Save as PDF" button in the header (MD → PDF local)', async () => {
     hoisted.mockApi.publish.web.mockResolvedValueOnce({
       title: 'Doc One',
       html: '<!doctype html><html><body><div>PDF Preview</div></body></html>',
@@ -91,21 +91,8 @@ describe('Publish preview page (PDF)', () => {
 
     render(<PublishPreviewPage />);
 
-    const iframe = await screen.findByTitle('PDF preview');
-    const focus = vi.fn();
-    const print = vi.fn();
-    Object.defineProperty(iframe, 'contentWindow', {
-      value: { focus, print },
-      configurable: true,
-    });
-
-    const saveBtn = await screen.findByRole('button', { name: 'Save as PDF' });
-    expect(saveBtn).not.toBeDisabled();
-
-    fireEvent.click(saveBtn);
-
-    expect(focus).toHaveBeenCalled();
-    expect(print).toHaveBeenCalled();
+    expect(await screen.findByTitle('PDF preview')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save as PDF' })).toBeNull();
   });
 });
 

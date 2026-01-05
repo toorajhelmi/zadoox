@@ -264,7 +264,24 @@ export function extractHeadings(content: string): Heading[] {
 
 export type OutlineItem =
   | { kind: 'heading'; level: number; text: string; id: string }
-  | { kind: 'figure'; text: string; id: string; figureNumber: number; caption: string | null };
+  | {
+      kind: 'grid';
+      id: string;
+      text: string;
+      gridNumber: number;
+      caption: string | null;
+    }
+  | {
+      kind: 'figure';
+      text: string;
+      id: string;
+      figureNumber: number;
+      caption: string | null;
+      /**
+       * Optional parent outline id. Used to nest figures under a grid in the outline tree UI.
+       */
+      parentId?: string;
+    };
 
 function slugifyId(text: string): string {
   return text

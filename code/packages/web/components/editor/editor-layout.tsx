@@ -129,18 +129,10 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     updateContent,
   });
 
-  // Sidebar/outline should reflect the *active surface*.
-  // Note: `useIrDocument` tracks XMD only; when in LaTeX mode we derive IR from `latexDraft`.
-  const sidebarIr = useMemo(() => {
-    if (editMode === 'latex') {
-      const ir = parseLatexToIr({ docId: actualDocumentId || documentId, latex: latexDraft });
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'grid-insert',hypothesisId:'H3',location:'editor-layout.tsx:sidebarIr',message:'Derived sidebar IR in LaTeX mode',data:{editMode,latexLen:String(latexDraft??'').length,irTopTypes:(ir.children||[]).map((n:any)=>n.type),gridCount:(ir.children||[]).filter((n:any)=>n.type==='grid').length,figureCount:(ir.children||[]).filter((n:any)=>n.type==='figure').length},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion agent log
-      return ir;
-    }
-    return irState.ir;
-  }, [editMode, actualDocumentId, documentId, latexDraft, irState.ir]);
+  // IMPORTANT: Outline/preview should be driven from the canonical IR (derived from XMD).
+  // The LaTeX surface is just another edit mode; it must update IR (via LaTeX -> IR -> XMD),
+  // but we should not run a separate LaTeX->IR parse for outline, otherwise the outline can drift.
+  const sidebarIr = irState.ir;
 
   const currentTextStyle = (() => {
     const view = editorViewRef.current;
