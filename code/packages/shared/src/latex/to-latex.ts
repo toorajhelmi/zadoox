@@ -240,6 +240,26 @@ function renderNodes(nodes: IrNode[]): string {
       }
     }
 
+    // Special-case: inline grid wrapping (same caveats as inline figures).
+    if (n.type === 'grid') {
+      const next = nodes[i + 1];
+      const g = n as unknown as GridNode;
+      const placement = String(g.placement ?? '').trim().toLowerCase();
+      const align = String(g.align ?? '').trim().toLowerCase();
+      const canWrap =
+        placement === 'inline' &&
+        (align === 'left' || align === 'right') &&
+        next?.type === 'paragraph' &&
+        String((next as { text?: unknown }).text ?? '').trim().length > 0;
+      if (canWrap) {
+        const wrap = renderNode(n).trimEnd();
+        const para = renderNode(next).trimEnd();
+        out.push(`${wrap}\n${para}`.trimEnd());
+        i++;
+        continue;
+      }
+    }
+
     const s = renderNode(n);
     if (s.trim().length === 0) continue;
     out.push(s.trimEnd());
