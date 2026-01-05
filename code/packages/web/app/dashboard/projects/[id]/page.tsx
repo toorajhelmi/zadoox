@@ -24,6 +24,12 @@ export default function ProjectDetailPage() {
         const data = await api.projects.get(projectId);
         setProject(data);
       } catch (err: unknown) {
+        const status = typeof (err as any)?.status === 'number' ? (err as any).status : null;
+        if (status === 401) {
+          // Not logged in (or session expired) -> send user to login.
+          router.push('/auth/login');
+          return;
+        }
         setError(err instanceof Error ? err.message : 'Failed to load project');
         console.error('Failed to load project:', err);
       } finally {
@@ -34,6 +40,7 @@ export default function ProjectDetailPage() {
     if (projectId) {
       loadProject();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   const handleEdit = () => {

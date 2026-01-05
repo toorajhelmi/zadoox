@@ -81,6 +81,11 @@ export default function ProjectPublishPage() {
         const defaultId = saved && sorted.some((d) => d.id === saved) ? saved : sorted[0]?.id || '';
         setSelectedDocumentId(defaultId);
       } catch (err: unknown) {
+        const status = typeof (err as any)?.status === 'number' ? (err as any).status : null;
+        if (status === 401) {
+          router.push('/auth/login');
+          return;
+        }
         setError(err instanceof Error ? err.message : 'Failed to load publishing data');
         console.error('Failed to load publish page:', err);
       } finally {
@@ -89,6 +94,7 @@ export default function ProjectPublishPage() {
     };
 
     if (projectId) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   const selectedDocument = useMemo(
