@@ -28,16 +28,24 @@ const start = async () => {
     // Wrap validation errors (and any default Fastify errors) into our ApiResponse shape.
     // This prevents response-schema serialization failures and gives the client a consistent error format.
     server.setErrorHandler((err, _req, reply) => {
-      const anyErr = err as any;
-      const statusCode = typeof anyErr?.statusCode === 'number' ? anyErr.statusCode : 500;
+      type ErrLike = {
+        statusCode?: unknown;
+        code?: unknown;
+        message?: unknown;
+        validation?: unknown;
+        validationContext?: unknown;
+      };
+      const e = err as unknown as ErrLike;
+      const statusCode = typeof e.statusCode === 'number' ? e.statusCode : 500;
       const code =
-        anyErr?.code === 'FST_ERR_VALIDATION'
+        e.code === 'FST_ERR_VALIDATION'
           ? 'VALIDATION_ERROR'
-          : typeof anyErr?.code === 'string'
-            ? anyErr.code
+          : typeof e.code === 'string'
+            ? e.code
             : 'INTERNAL_ERROR';
-      const message = typeof anyErr?.message === 'string' && anyErr.message.trim().length > 0 ? anyErr.message : 'Request failed';
-      const details = anyErr?.validation || anyErr?.validationContext ? { validation: anyErr.validation, validationContext: anyErr.validationContext } : undefined;
+      const message = typeof e.message === 'string' && e.message.trim().length > 0 ? e.message : 'Request failed';
+      const details =
+        e.validation || e.validationContext ? { validation: e.validation, validationContext: e.validationContext } : undefined;
       reply.status(statusCode).send({ success: false, error: { code, message, details } });
     });
 

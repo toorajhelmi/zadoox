@@ -4,6 +4,7 @@
 
 import { FastifyInstance } from 'fastify';
 import { AIService } from '../../services/ai/ai-service.js';
+import type { AIModel } from '../../services/ai/ai-service.js';
 import { authenticateUser, AuthenticatedRequest } from '../../middleware/auth.js';
 import {
   AIAnalysisRequest,
@@ -14,7 +15,6 @@ import {
   AISuggestResponse,
   AIModelInfo,
   ApiResponse,
-  ComponentEditRequest,
   ComponentEditResponse,
 } from '@zadoox/shared';
 import { schemas, security } from '../../config/schemas.js';
@@ -1109,39 +1109,51 @@ ${message.trim()}`
     },
     async (request: AuthenticatedRequest, reply) => {
       try {
-        // Treat body as untyped at runtime; Fastify schema validates shape.
+        // Treat body as unknown at runtime; Fastify schema validates shape.
         // This avoids tight coupling to shared types during iterative API evolution.
-        const body = (request.body || {}) as any;
-        const { kind, prompt, source, capabilities, context, model } = body;
+        const rawBody: unknown = request.body;
+        const body: Record<string, unknown> =
+          rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody) ? (rawBody as Record<string, unknown>) : {};
+        const kind = body.kind;
+        const prompt = body.prompt;
+        const source = body.source;
+        const capabilities = body.capabilities;
+        const context = body.context;
+        const model = body.model;
 
-        if (!prompt || String(prompt).trim().length === 0) {
+        const promptStr = typeof prompt === 'string' ? prompt : String(prompt ?? '');
+        if (promptStr.trim().length === 0) {
           const response: ApiResponse<null> = {
             success: false,
             error: { code: 'VALIDATION_ERROR', message: 'Prompt is required' },
           };
           return reply.status(400).send(response);
         }
-        if (!source || String(source).trim().length === 0) {
+        const sourceStr = typeof source === 'string' ? source : String(source ?? '');
+        if (sourceStr.trim().length === 0) {
           const response: ApiResponse<null> = {
             success: false,
             error: { code: 'VALIDATION_ERROR', message: 'Source is required' },
           };
           return reply.status(400).send(response);
         }
-        if (!kind || String(kind).trim().length === 0) {
+        const kindStr = typeof kind === 'string' ? kind : String(kind ?? '');
+        if (kindStr.trim().length === 0) {
           const response: ApiResponse<null> = {
             success: false,
             error: { code: 'VALIDATION_ERROR', message: 'Kind is required' },
           };
           return reply.status(400).send(response);
         }
+        const modelStr = typeof model === 'string' ? model : undefined;
+        const modelVal: AIModel | undefined = modelStr === 'openai' || modelStr === 'auto' ? modelStr : undefined;
 
         const service = getAIService();
+        const ctxObj: Record<string, unknown> =
+          context && typeof context === 'object' && !Array.isArray(context) ? (context as Record<string, unknown>) : {};
         const mergedContext =
-          context && typeof context === 'object'
-            ? { ...(context as any), source, capabilities }
-            : { source, capabilities };
-        const rawJson = await service.generateComponentEditPlan(prompt, { kind, context: mergedContext }, model);
+          Object.keys(ctxObj).length > 0 ? { ...ctxObj, source: sourceStr, capabilities } : { source: sourceStr, capabilities };
+        const rawJson = await service.generateComponentEditPlan(promptStr, { kind: kindStr, context: mergedContext }, modelVal);
 
         let payloadRaw: unknown;
         try {
@@ -1170,22 +1182,33 @@ ${message.trim()}`
         ]);
 
         const parsed = responseSchema.safeParse(payloadRaw);
-        const result = parsed.success
-          ? parsed.data
-          : ({
-              type: 'clarify',
-              question: 'I could not produce a safe component update. What exactly should change?',
-              // Frontend derives suggestions from capabilities (adapter/IR-defined). Keep backend generic.
-              suggestions: [],
-            } as const);
+        const fallbackResult: { type: 'clarify'; question: string; suggestions: string[] } = {
+          type: 'clarify',
+          question: 'I could not produce a safe component update. What exactly should change?',
+          // Frontend derives suggestions from capabilities (adapter/IR-defined). Keep backend generic.
+          suggestions: [],
+        };
+        const result = parsed.success ? parsed.data : fallbackResult;
 
-        const modelInfo = service.getModelInfo(model || 'openai');
+        const modelInfo = service.getModelInfo(modelVal || 'openai');
+        const data: ComponentEditResponse =
+          result.type === 'clarify'
+            ? {
+                type: 'clarify',
+                question: result.question,
+                suggestions: result.suggestions,
+                model: modelInfo?.id || 'unknown',
+              }
+            : {
+                type: 'update',
+                updatedXmd: result.updatedXmd,
+                summary: result.summary,
+                confirmationQuestion: result.confirmationQuestion,
+                model: modelInfo?.id || 'unknown',
+              };
         const response: ApiResponse<ComponentEditResponse> = {
           success: true,
-          data: {
-            ...(result as any),
-            model: modelInfo?.id || 'unknown',
-          } as any,
+          data,
         };
         return reply.send(response);
       } catch (error: unknown) {
