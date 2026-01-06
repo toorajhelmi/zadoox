@@ -1,10 +1,20 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import { v1Routes } from './routes/v1/index.js';
 import { swaggerConfig, swaggerUiConfig } from './config/swagger.js';
+
+// Load env from the backend package directory (not process.cwd()) so `.env` edits take effect
+// as long as the backend is restarted, regardless of where you run `pnpm dev` from.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const backendRoot = path.resolve(__dirname, '..');
+dotenv.config({ path: path.join(backendRoot, '.env') });
+dotenv.config({ path: path.join(backendRoot, '.env.local'), override: true });
 
 const server = Fastify({
   logger: true,
@@ -15,6 +25,30 @@ const server = Fastify({
 
 const start = async () => {
   try {
+    // Wrap validation errors (and any default Fastify errors) into our ApiResponse shape.
+    // This prevents response-schema serialization failures and gives the client a consistent error format.
+    server.setErrorHandler((err, _req, reply) => {
+      type ErrLike = {
+        statusCode?: unknown;
+        code?: unknown;
+        message?: unknown;
+        validation?: unknown;
+        validationContext?: unknown;
+      };
+      const e = err as unknown as ErrLike;
+      const statusCode = typeof e.statusCode === 'number' ? e.statusCode : 500;
+      const code =
+        e.code === 'FST_ERR_VALIDATION'
+          ? 'VALIDATION_ERROR'
+          : typeof e.code === 'string'
+            ? e.code
+            : 'INTERNAL_ERROR';
+      const message = typeof e.message === 'string' && e.message.trim().length > 0 ? e.message : 'Request failed';
+      const details =
+        e.validation || e.validationContext ? { validation: e.validation, validationContext: e.validationContext } : undefined;
+      reply.status(statusCode).send({ success: false, error: { code, message, details } });
+    });
+
     // Register CORS plugin
     await server.register(cors, {
       origin: true, // Allow all origins in development (restrict in production)

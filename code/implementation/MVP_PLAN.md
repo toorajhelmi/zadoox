@@ -784,12 +784,19 @@ This phase implements undo/redo functionality for document editing, allowing use
 
 - [ ] Extended Markdown support
 - [ ] Placeholder support ({REF}, {CH})
-- [ ] Image upload/insertion
+- [x] Image upload/insertion
 - [x] Grid elements (XMD/IR `:::` grid block + IR→LaTeX rendering)
 - [ ] **Fix**: inline-placement element toolbars (figure toolbars inside grids not reliably showing in `placement="inline"`; stabilize hover/visibility)
 - [ ] Table creation/editing
 - [ ] Basic formatting toolbar
 - [ ] Find/replace
+- [ ] Edit component with AI
+  - [ ] **Checkpoint (MVP)**: Component AI edit
+    - [ ] Inputs: send the component source in the active mode (**XMD** for Markdown mode, **LaTeX** for LaTeX mode)
+    - [ ] Output contract: model returns **updated source** (same mode) + a **user-friendly description** of what changed
+    - [ ] UX: show description alongside a preview + **Apply / Discard**
+    - [ ] XMD safety: instruct model to **only update existing field values** in the provided XMD (no structure/ID changes)
+    - [ ] LaTeX safety: after receiving updated LaTeX, attempt to parse/map to IR; if parsing fails, show a warning that applying will not support continuation in Markdown/XMD mode
 - [ ] AI suggestion UI component
 - [ ] Inline suggestions (accept with Tab)
 
@@ -797,6 +804,11 @@ This phase implements undo/redo functionality for document editing, allowing use
 - AI features in UI
 - Inline suggestions working
 - AI toolbar functional
+
+**Note (non‑MVP direction)**:
+- Component edits should evolve to an **IR-first** workflow where we send an IR subtree (and optionally adjacent nodes) plus a per-node **capabilities schema** (allowed fields/values).
+- Provide a canonical, model-friendly representation (e.g. **CHTML**) with stable IDs; ask the model to return **typed ops** (e.g. `{id, field, value}`) rather than rewriting source text.
+- Compile ops deterministically back into **XMD/LaTeX** and validate/guardrail unsupported edits (ask clarification instead of guessing).
 
 ---
 

@@ -228,6 +228,18 @@ export class AIService {
   }
 
   /**
+   * Generate a component-scoped edit response (clarify or update) as JSON string.
+   */
+  async generateComponentEditPlan(
+    prompt: string,
+    params: { kind: string; context?: unknown },
+    model?: AIModel
+  ): Promise<string> {
+    const provider = this.getProvider(model);
+    return provider.generateComponentEditPlan(prompt, params);
+  }
+
+  /**
    * Generate an image from a prompt (base64).
    */
   async generateImage(

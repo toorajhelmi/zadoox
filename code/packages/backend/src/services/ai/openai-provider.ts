@@ -562,6 +562,64 @@ ${JSON.stringify(params.blocks, null, 2)}`;
     return response.choices[0]?.message?.content?.trim() || '{"operations":[]}';
   }
 
+  async generateComponentEditPlan(
+    prompt: string,
+    params: {
+      kind: string;
+      context?: unknown;
+    }
+  ): Promise<string> {
+    const systemPrompt = `You are a component editor for Zadoox.
+
+Return ONLY a single JSON object (no markdown, no prose).
+
+You must return exactly one of:
+
+1) Clarification (when the request cannot be represented with the provided capabilities):
+{"type":"clarify","question":"...","suggestions":["..."]}
+
+2) Update (when you can apply a valid change):
+{"type":"update","updatedXmd":"<updated component XMD>","summary":"<what changed>","confirmationQuestion":"Apply these changes?"}
+
+Rules (generic):
+- Only edit the provided component source.
+- Only change fields/values that are allowed by CAPABILITIES_JSON.
+- Respect any constraints in CAPABILITIES_JSON (e.g. allowRemove/allowAdd/allowReorder).
+- Preserve stable identifiers/labels if present (e.g. "#fig:...") unless explicitly asked to change/remove them.
+- Do NOT change media URLs/src unless CAPABILITIES_JSON explicitly allows it.
+- Keep the component syntactically valid in XMD.
+- If you return type="clarify", your suggestions MUST be derived from CAPABILITIES_JSON (only offer supported changes).
+
+Output requirements:
+- updatedXmd must be ONLY the updated component source (no extra text).
+- If CAPABILITIES_JSON.output is present, updatedXmd MUST conform to it (it defines the required output shape/constraints).
+- If you cannot produce an updatedXmd that conforms to CAPABILITIES_JSON, return type="clarify" instead.
+- summary must be a user-friendly, specific description of what you changed.`;
+
+    const userPrompt = `COMPONENT_KIND: ${params.kind}
+
+USER_REQUEST:
+${prompt}
+
+CONTEXT_JSON:
+${JSON.stringify(params.context ?? {}, null, 2)}`;
+
+    const response = await this.client.chat.completions.create({
+      model: this.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.1,
+    });
+
+    return (
+      response.choices[0]?.message?.content?.trim() ||
+      '{"type":"clarify","question":"What should I change?","suggestions":[]}'
+    );
+  }
+
   async generateImage(
     prompt: string,
     options?: {

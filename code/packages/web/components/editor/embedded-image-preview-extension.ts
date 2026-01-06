@@ -2,6 +2,15 @@ import { StateEffect, StateField } from '@codemirror/state';
 import { Decoration, type DecorationSet, WidgetType, EditorView } from '@codemirror/view';
 import { api } from '@/lib/api/client';
 import { createClient } from '@/lib/supabase/client';
+import { createAiIconEl } from '@/components/icons';
+import { finalizeComponentModelUpdate } from './component-ai-pipeline';
+import {
+  buildComponentContext,
+  buildComponentCapabilities,
+  buildClarifySuggestions,
+  type ComponentEditResult,
+} from './component-ai-adapters/index';
+import type { EmbeddedComponentKind } from './component-ai-adapters/types';
 
 function makeToolbarSeparator(): HTMLDivElement {
   const sep = document.createElement('div');
@@ -12,7 +21,8 @@ function makeToolbarSeparator(): HTMLDivElement {
   return sep;
 }
 
-function makeToolbarPromptArea(params: {
+function makeInlineComponentChatArea(params: {
+  kind: EmbeddedComponentKind;
   ariaLabel: string;
   placeholder: string;
   rows?: number;
@@ -20,13 +30,36 @@ function makeToolbarPromptArea(params: {
   minWidthPx?: number;
   maxWidthPx?: number;
   heightPx?: number;
+  onPinChange?: (pinned: boolean) => void;
+  onClose?: () => void;
+  getOriginal: () => { from: number; to: number; text: string };
+  applyReplacement: (replacement: string) => void;
 }): HTMLDivElement {
   const wrap = document.createElement('div');
   wrap.style.display = 'flex';
-  wrap.style.alignItems = 'flex-start';
+  wrap.style.flexDirection = 'column';
   wrap.style.gap = '6px';
   wrap.style.width = '100%';
   wrap.style.maxWidth = '100%';
+
+  // Inject a tiny progress animation once (for the inline AI progress bar).
+  if (typeof document !== 'undefined' && !document.getElementById('zadoox-ai-progress-style')) {
+    const st = document.createElement('style');
+    st.id = 'zadoox-ai-progress-style';
+    st.textContent =
+      '@keyframes zadooxAiIndeterminate{0%{transform:translateX(-60%);}100%{transform:translateX(140%);}}';
+    document.head.appendChild(st);
+  }
+
+  const topRow = document.createElement('div');
+  topRow.style.display = 'flex';
+  // Keep controls vertically aligned even as the textarea auto-grows.
+  topRow.style.alignItems = 'center';
+  topRow.style.gap = '6px';
+  topRow.style.width = '100%';
+  topRow.style.maxWidth = '100%';
+
+  const aiIcon = createAiIconEl({ title: 'AI', sizePx: 28 });
 
   const prompt = document.createElement('textarea');
   prompt.placeholder = params.placeholder;
@@ -46,7 +79,9 @@ function makeToolbarPromptArea(params: {
   prompt.style.width = 'auto';
   prompt.style.maxWidth = '100%';
   prompt.style.height = `${heightPx}px`;
-  prompt.style.resize = 'vertical';
+  // No manual resize; it will auto-grow with wrapped lines.
+  prompt.style.resize = 'none';
+  prompt.style.overflowY = 'hidden';
   prompt.style.background = '#0b0b0c';
   prompt.style.color = '#e5e7eb';
   prompt.style.border = '1px solid rgba(255,255,255,0.12)';
@@ -57,13 +92,13 @@ function makeToolbarPromptArea(params: {
 
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.setAttribute('aria-label', 'Send prompt (coming soon)');
-  btn.title = 'Send prompt (coming soon)';
+  btn.setAttribute('aria-label', 'Send prompt');
+  btn.title = 'Send (Ctrl/Cmd+Enter)';
   btn.className =
     'w-7 h-7 flex items-center justify-center rounded border border-vscode-border transition-colors ' +
-    'bg-transparent text-vscode-text-secondary';
+    'bg-transparent text-vscode-text-secondary hover:text-vscode-text hover:bg-vscode-buttonHoverBg';
   btn.disabled = true;
-  btn.style.opacity = '0.5';
+  btn.style.opacity = '0.45';
   btn.style.cursor = 'not-allowed';
   btn.style.flexShrink = '0';
   btn.innerHTML =
@@ -71,8 +106,377 @@ function makeToolbarPromptArea(params: {
     '<path d="M2.5 8L14 2.5 10.5 14 8.4 9.6 2.5 8z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>' +
     '</svg>';
 
-  wrap.appendChild(prompt);
-  wrap.appendChild(btn);
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.setAttribute('aria-label', 'Close prompt');
+  closeBtn.title = 'Close';
+  closeBtn.className =
+    'w-7 h-7 flex items-center justify-center rounded border border-vscode-border transition-colors ' +
+    'bg-transparent text-vscode-text-secondary hover:text-vscode-text hover:bg-vscode-buttonHoverBg';
+  closeBtn.style.flexShrink = '0';
+  closeBtn.innerHTML =
+    '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+    '<path d="M4 4l8 8M12 4L4 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+    '</svg>';
+
+  const chatWrap = document.createElement('div');
+  chatWrap.style.display = 'none';
+  chatWrap.style.borderTop = '1px solid rgba(255,255,255,0.08)';
+  chatWrap.style.paddingTop = '6px';
+
+  const progressBar = document.createElement('div');
+  progressBar.style.display = 'none';
+  progressBar.style.height = '2px';
+  progressBar.style.borderRadius = '999px';
+  progressBar.style.background = 'rgba(59,130,246,0.18)';
+  progressBar.style.overflow = 'hidden';
+  const progressInner = document.createElement('div');
+  progressInner.style.height = '100%';
+  progressInner.style.width = '40%';
+  progressInner.style.background = 'rgba(59,130,246,0.85)';
+  progressInner.style.borderRadius = '999px';
+  progressInner.style.animation = 'zadooxAiIndeterminate 1.0s linear infinite';
+  progressBar.appendChild(progressInner);
+
+  const messagesEl = document.createElement('div');
+  messagesEl.style.maxHeight = '140px';
+  messagesEl.style.overflow = 'auto';
+  messagesEl.style.display = 'flex';
+  messagesEl.style.flexDirection = 'column';
+  messagesEl.style.gap = '6px';
+
+  const suggestionsEl = document.createElement('div');
+  suggestionsEl.style.display = 'none';
+  suggestionsEl.style.flexWrap = 'wrap';
+  suggestionsEl.style.gap = '6px';
+  suggestionsEl.style.marginTop = '6px';
+
+  const previewLabel = document.createElement('div');
+  previewLabel.textContent = 'Preview';
+  previewLabel.style.fontSize = '11px';
+  previewLabel.style.color = '#9aa0a6';
+  previewLabel.style.marginTop = '8px';
+  previewLabel.style.display = 'none';
+
+  const previewEl = document.createElement('pre');
+  previewEl.style.display = 'none';
+  previewEl.style.whiteSpace = 'pre-wrap';
+  previewEl.style.fontSize = '11px';
+  previewEl.style.lineHeight = '1.35';
+  previewEl.style.background = 'rgba(0,0,0,0.25)';
+  previewEl.style.border = '1px solid rgba(255,255,255,0.10)';
+  previewEl.style.borderRadius = '8px';
+  previewEl.style.padding = '8px';
+  previewEl.style.maxHeight = '120px';
+  previewEl.style.overflow = 'auto';
+  previewEl.style.color = '#e5e7eb';
+
+  const actionsRow = document.createElement('div');
+  actionsRow.style.display = 'none';
+  actionsRow.style.gap = '8px';
+  actionsRow.style.marginTop = '8px';
+
+  const btnApply = document.createElement('button');
+  btnApply.type = 'button';
+  btnApply.textContent = 'Apply';
+  btnApply.className =
+    'px-2 py-1 text-xs rounded border border-transparent bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+  btnApply.disabled = true;
+
+  const btnDiscard = document.createElement('button');
+  btnDiscard.type = 'button';
+  btnDiscard.textContent = 'Discard';
+  btnDiscard.className =
+    'px-2 py-1 text-xs rounded border border-vscode-border bg-vscode-buttonBg text-vscode-text hover:bg-vscode-buttonHoverBg transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+  btnDiscard.disabled = true;
+
+  actionsRow.appendChild(btnApply);
+  actionsRow.appendChild(btnDiscard);
+
+  chatWrap.appendChild(messagesEl);
+  chatWrap.appendChild(suggestionsEl);
+  chatWrap.appendChild(previewLabel);
+  chatWrap.appendChild(previewEl);
+  chatWrap.appendChild(actionsRow);
+
+  topRow.appendChild(aiIcon);
+  topRow.appendChild(prompt);
+  topRow.appendChild(btn);
+  topRow.appendChild(closeBtn);
+
+  wrap.appendChild(progressBar);
+  wrap.appendChild(topRow);
+  wrap.appendChild(chatWrap);
+
+  let busy = false;
+  let pendingReplacement: string | null = null;
+  let lastSuggestions: string[] = [];
+  const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+
+  const setPinned = () => {
+    const hasText = prompt.value.trim().length > 0;
+    const focused = document.activeElement === prompt;
+    const hasChat = messages.length > 0 || Boolean(pendingReplacement);
+    params.onPinChange?.(hasText || focused || hasChat);
+  };
+
+  const renderMessages = () => {
+    messagesEl.innerHTML = '';
+    for (const m of messages) {
+      const row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.justifyContent = m.role === 'user' ? 'flex-end' : 'flex-start';
+      const bubble = document.createElement('div');
+      bubble.textContent = m.content;
+      bubble.style.maxWidth = '90%';
+      bubble.style.padding = '6px 8px';
+      bubble.style.borderRadius = '10px';
+      bubble.style.border = '1px solid rgba(255,255,255,0.10)';
+      bubble.style.background = m.role === 'user' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.20)';
+      bubble.style.color = '#e5e7eb';
+      bubble.style.fontSize = '12px';
+      bubble.style.whiteSpace = 'pre-wrap';
+      row.appendChild(bubble);
+      messagesEl.appendChild(row);
+    }
+    if (messages.length > 0) {
+      chatWrap.style.display = 'block';
+      // Scroll to bottom on new messages
+      requestAnimationFrame(() => {
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      });
+    }
+  };
+
+  const renderSuggestions = (suggestions: string[]) => {
+    lastSuggestions = suggestions;
+    suggestionsEl.innerHTML = '';
+    if (!suggestions || suggestions.length === 0) {
+      suggestionsEl.style.display = 'none';
+      return;
+    }
+    suggestionsEl.style.display = 'flex';
+    for (const s of suggestions) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = s;
+      b.className = 'px-2 py-1 text-xs rounded border border-vscode-border bg-vscode-buttonBg text-vscode-text hover:bg-vscode-buttonHoverBg transition-colors';
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (busy) return;
+        prompt.value = s;
+        syncButtonState();
+        setPinned();
+        autoGrowPrompt();
+        prompt.focus();
+      });
+      suggestionsEl.appendChild(b);
+    }
+  };
+
+  const renderPreview = (replacement: string | null) => {
+    pendingReplacement = replacement;
+    if (!replacement) {
+      previewLabel.style.display = 'none';
+      previewEl.style.display = 'none';
+      actionsRow.style.display = 'none';
+      btnApply.disabled = true;
+      btnDiscard.disabled = true;
+      previewEl.textContent = '';
+      return;
+    }
+    previewLabel.style.display = 'block';
+    previewEl.style.display = 'block';
+    actionsRow.style.display = 'flex';
+    btnApply.disabled = false;
+    btnDiscard.disabled = false;
+    previewEl.textContent = replacement;
+  };
+
+  const syncButtonState = () => {
+    const ok = !busy && prompt.value.trim().length > 0;
+    btn.disabled = !ok;
+    btn.style.opacity = ok ? '1' : '0.45';
+    btn.style.cursor = ok ? 'pointer' : 'not-allowed';
+  };
+
+  const setBusy = (v: boolean) => {
+    busy = v;
+    syncButtonState();
+    btnApply.disabled = v || !pendingReplacement;
+    btnDiscard.disabled = v || !pendingReplacement;
+    prompt.style.opacity = v ? '0.8' : '1';
+    prompt.disabled = v;
+    progressBar.style.display = v ? 'block' : 'none';
+  };
+
+  const autoGrowPrompt = () => {
+    // Basic autosize: grow until a max, then allow scrolling.
+    const maxH = 120;
+    prompt.style.height = '0px';
+    const next = Math.min(prompt.scrollHeight || heightPx, maxH);
+    prompt.style.height = `${Math.max(heightPx, next)}px`;
+    prompt.style.overflowY = (prompt.scrollHeight || 0) > maxH ? 'auto' : 'hidden';
+  };
+
+  const clearAll = () => {
+    prompt.value = '';
+    messages.length = 0;
+    lastSuggestions = [];
+    renderMessages();
+    renderSuggestions([]);
+    renderPreview(null);
+    chatWrap.style.display = 'none';
+    setBusy(false);
+    syncButtonState();
+    setPinned();
+    autoGrowPrompt();
+  };
+
+  const appendMsg = (role: 'user' | 'assistant', content: string) => {
+    messages.push({ role, content });
+    renderMessages();
+    setPinned();
+  };
+
+  const handleSend = async () => {
+    const userPrompt = prompt.value.trim();
+    if (!userPrompt || busy) return;
+    renderSuggestions([]);
+    renderPreview(null);
+    appendMsg('user', userPrompt);
+    prompt.value = '';
+    syncButtonState();
+    setPinned();
+
+    setBusy(true);
+    try {
+      const { text: original } = params.getOriginal();
+
+      const context = buildComponentContext({
+        kind: params.kind,
+        original,
+        conversation: messages.slice(-8),
+      });
+
+      const capabilities = buildComponentCapabilities(params.kind);
+      const res = (await api.ai.component.edit({
+        kind: params.kind,
+        prompt: userPrompt,
+        source: original,
+        capabilities,
+        context,
+        model: 'auto',
+      })) as unknown as ComponentEditResult;
+
+      if (!res || typeof res !== 'object' || (res as any).type !== 'clarify' && (res as any).type !== 'update') {
+        console.warn('Component edit: invalid response payload', { res });
+        appendMsg('assistant', 'I couldn’t get a valid response. Try again.');
+        return;
+      }
+
+      if (res.type === 'clarify') {
+        appendMsg('assistant', res.question || 'Can you clarify?');
+        // Suggestions must come from capabilities (adapter/IR-defined), not free-form model output.
+        renderSuggestions(buildClarifySuggestions(params.kind, capabilities));
+        return;
+      }
+
+      const finalized = finalizeComponentModelUpdate({
+        kind: params.kind,
+        editMode: 'markdown',
+        original,
+        updatedXmdRaw: String(res.updatedXmd || ''),
+      });
+      if (!finalized.ok) {
+        appendMsg('assistant', finalized.message);
+        renderSuggestions(finalized.suggestions);
+        return;
+      }
+      const replacement = finalized.replacement;
+
+      renderPreview(replacement);
+      appendMsg('assistant', finalized.summary || res.summary || 'Here’s a preview of the change I’m proposing.');
+      appendMsg('assistant', res.confirmationQuestion || 'If it looks right, click Apply to confirm.');
+    } catch (err) {
+      appendMsg('assistant', 'Sorry — something went wrong generating that edit.');
+      console.error(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Keep key events inside the widget (avoid CodeMirror shortcuts).
+  prompt.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    // Ctrl/Cmd+Enter sends, Enter inserts newline.
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      void handleSend();
+    }
+  });
+  prompt.addEventListener('input', () => {
+    syncButtonState();
+    setPinned();
+    autoGrowPrompt();
+  });
+  prompt.addEventListener('focus', () => setPinned());
+  prompt.addEventListener('blur', () => setPinned());
+
+  btn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void handleSend();
+  });
+
+  closeBtn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  closeBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    clearAll();
+    params.onClose?.();
+  });
+
+  btnApply.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  btnApply.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!pendingReplacement) return;
+    params.applyReplacement(pendingReplacement);
+    // Conclude chat: close/clear
+    clearAll();
+    params.onClose?.();
+  });
+
+  btnDiscard.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  btnDiscard.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    renderPreview(null);
+    appendMsg('assistant', 'Okay — discarded. Tell me what you’d like instead.');
+  });
+
+  // Initial state
+  syncButtonState();
+  setPinned();
   return wrap;
 }
 
@@ -657,29 +1061,16 @@ class FigureCardWidget extends WidgetType {
       hoverBar.appendChild(btnBlock);
     }
 
-    // Group: prompt/chat (UI only for now) – allow wrapping to next line if too wide.
-    hoverBar.appendChild(makeToolbarSeparator());
-    hoverBar.appendChild(
-      makeToolbarPromptArea({
-        ariaLabel: 'Figure edit prompt',
-        placeholder: 'Describe what you want…',
-        rows: 2,
-        widthPx: this.opts?.inGrid ? 220 : 280,
-        minWidthPx: 160,
-        maxWidthPx: this.opts?.inGrid ? 260 : 420,
-        heightPx: 44,
-      })
-    );
-    wrap.appendChild(hoverBar);
-
     // Hover behavior is handled by CSS (see globals.css).
     // Add a JS fallback that toggles opacity; this is especially important for inline placement
     // where floats + CodeMirror inline widgets can behave inconsistently with CSS :hover alone.
+    let pinned = false;
     const show = () => {
       hoverBar.style.opacity = '1';
       hoverBar.style.pointerEvents = 'auto';
     };
     const hide = () => {
+      if (pinned) return;
       hoverBar.style.opacity = '0';
       hoverBar.style.pointerEvents = 'none';
     };
@@ -687,6 +1078,35 @@ class FigureCardWidget extends WidgetType {
     wrap.addEventListener('pointerleave', hide);
     hoverBar.addEventListener('pointerenter', show);
     hoverBar.addEventListener('pointerleave', hide);
+
+    // Group: prompt/chat (inline, multi-turn)
+    hoverBar.appendChild(makeToolbarSeparator());
+    hoverBar.appendChild(
+      makeInlineComponentChatArea({
+        kind: 'figure',
+        ariaLabel: 'Figure edit prompt',
+        placeholder: 'Describe what you want…',
+        rows: 2,
+        widthPx: this.opts?.inGrid ? 220 : 280,
+        minWidthPx: 160,
+        maxWidthPx: this.opts?.inGrid ? 260 : 420,
+        heightPx: 44,
+        onPinChange: (v) => {
+          pinned = Boolean(v);
+          if (pinned) show();
+          else hide();
+        },
+        onClose: () => {
+          pinned = false;
+          hide();
+        },
+        getOriginal: () => ({ from: this.from, to: this.to, text: view.state.doc.sliceString(this.from, this.to) }),
+        applyReplacement: (replacement) => {
+          view.dispatch({ changes: { from: this.from, to: this.to, insert: replacement } });
+        },
+      })
+    );
+    wrap.appendChild(hoverBar);
 
     const buttonClass =
       'px-2 py-1 text-xs rounded border border-vscode-border bg-vscode-buttonBg text-vscode-text ' +
@@ -1196,10 +1616,27 @@ class FigureGridWidget extends WidgetType {
     hoverBar.appendChild(btnMarginM);
     hoverBar.appendChild(btnMarginL);
 
-    // Group: prompt/chat (UI only) – will naturally wrap to next line if toolbar gets too wide.
+    let pinned = false;
+    const show = () => {
+      hoverBar.style.visibility = 'visible';
+      hoverBar.style.pointerEvents = 'auto';
+    };
+    const hide = () => {
+      if (pinned) return;
+      hoverBar.style.visibility = 'hidden';
+      hoverBar.style.pointerEvents = 'none';
+    };
+    hide();
+    outer.addEventListener('pointerenter', show);
+    outer.addEventListener('pointerleave', hide);
+    hoverBar.addEventListener('pointerenter', show);
+    hoverBar.addEventListener('pointerleave', hide);
+
+    // Group: prompt/chat (inline, multi-turn) – will naturally wrap to next line if toolbar gets too wide.
     hoverBar.appendChild(makeSep());
     hoverBar.appendChild(
-      makeToolbarPromptArea({
+      makeInlineComponentChatArea({
+        kind: 'grid',
         ariaLabel: 'Grid edit prompt',
         placeholder: 'Describe what you want…',
         rows: 2,
@@ -1207,12 +1644,22 @@ class FigureGridWidget extends WidgetType {
         minWidthPx: 220,
         maxWidthPx: 560,
         heightPx: 44,
+        onPinChange: (v) => {
+          pinned = Boolean(v);
+          if (pinned) show();
+          else hide();
+        },
+        onClose: () => {
+          pinned = false;
+          hide();
+        },
+        getOriginal: () => ({ from: this.blockFrom, to: this.blockTo, text: view.state.doc.sliceString(this.blockFrom, this.blockTo) }),
+        applyReplacement: (replacement) => {
+          view.dispatch({ changes: { from: this.blockFrom, to: this.blockTo, insert: replacement } });
+        },
       })
     );
     outer.appendChild(hoverBar);
-
-    outer.addEventListener('mouseenter', () => { hoverBar.style.visibility = 'visible'; });
-    outer.addEventListener('mouseleave', () => { hoverBar.style.visibility = 'hidden'; });
 
     const cap = String(this.gridCaption ?? '').trim();
     if (cap.length > 0) {

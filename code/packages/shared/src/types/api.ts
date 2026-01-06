@@ -285,6 +285,45 @@ export interface InlineEditResponse {
   model?: string;
 }
 
+// Component-scoped AI edit types (used by /ai/component/edit)
+export type ComponentEditKind = 'figure' | 'grid';
+
+export interface ComponentEditRequest {
+  kind: ComponentEditKind;
+  prompt: string;
+  /**
+   * The component source in the active editor mode.
+   * For Phase 10 MVP, this is XMD (Markdown mode) content for the component.
+   */
+  source: string;
+  /**
+   * Component-provided capabilities schema (allowed fields/values/constraints).
+   * This is passed to the model prompt to avoid hard-coding component rules.
+   */
+  capabilities?: unknown;
+  /**
+   * Component context payload (structured data about the component + what's inside it).
+   * Treated as opaque by the API types; the server passes it to the model prompt.
+   */
+  context?: unknown;
+  model?: AIModel;
+}
+
+export type ComponentEditResponse =
+  | {
+      type: 'clarify';
+      question: string;
+      suggestions?: string[];
+      model?: string;
+    }
+  | {
+      type: 'update';
+      updatedXmd: string;
+      summary: string;
+      confirmationQuestion?: string;
+      model?: string;
+    };
+
 // AI Image Generation types
 export interface AIImageGenerateRequest {
   prompt: string;
