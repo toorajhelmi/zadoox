@@ -83,7 +83,7 @@ describe('Publish preview page (PDF)', () => {
     expect(await screen.findByTitle('PDF preview')).toBeInTheDocument();
   });
 
-  it('does not render a redundant "Save as PDF" button in the header (MD → PDF local)', async () => {
+  it('renders "Save as PDF" button in the header (MD → browser print dialog)', async () => {
     hoisted.mockApi.publish.web.mockResolvedValueOnce({
       title: 'Doc One',
       html: '<!doctype html><html><body><div>PDF Preview</div></body></html>',
@@ -92,7 +92,7 @@ describe('Publish preview page (PDF)', () => {
     render(<PublishPreviewPage />);
 
     expect(await screen.findByTitle('PDF preview')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Save as PDF' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save as PDF' })).toBeInTheDocument();
   });
 });
 

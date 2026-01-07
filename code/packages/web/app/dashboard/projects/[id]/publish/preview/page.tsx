@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { DashboardLayout, LoaderIcon } from '@/components/dashboard';
 import { api } from '@/lib/api/client';
-import { ArchiveBoxArrowDownIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
+import { ArchiveBoxArrowDownIcon, ArrowDownTrayIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { createClient } from '@/lib/supabase/client';
 
 type PublishSource = 'markdown' | 'latex';
@@ -235,6 +235,37 @@ export default function PublishPreviewPage() {
                   <ArchiveBoxArrowDownIcon className="w-5 h-5" />
                 </button>
               )}
+
+              <button
+                onClick={() => {
+                  // LaTeX: download generated PDF. MD/XMD: open browser print dialog (Save as PDF).
+                  if (source === 'latex') {
+                    if (!pdfUrl) return;
+                    const a = document.createElement('a');
+                    a.href = pdfUrl;
+                    a.download = pdfFilename || `${title || 'document'}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    return;
+                  }
+
+                  const w = iframeRef.current?.contentWindow;
+                  if (!w) return;
+                  try {
+                    w.focus();
+                    w.print();
+                  } catch {
+                    // noop
+                  }
+                }}
+                className="p-2 bg-[#3e3e42] hover:bg-[#464647] text-white rounded transition-colors inline-flex items-center justify-center"
+                title="Save as PDF"
+                aria-label="Save as PDF"
+                disabled={loading || (source === 'latex' ? !pdfUrl : !html)}
+              >
+                <ArrowDownTrayIcon className="w-5 h-5" />
+              </button>
             </div>
           </div>
         </div>
