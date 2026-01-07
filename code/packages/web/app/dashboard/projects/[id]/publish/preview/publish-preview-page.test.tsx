@@ -134,6 +134,9 @@ describe('Publish preview page (PDF) - LaTeX source', () => {
 
     // Ensure we did NOT go through HTML preview pipeline for LaTeX.
     expect(hoisted.mockApi.publish.web).not.toHaveBeenCalled();
+
+    // For LaTeX, we rely on the embedded PDF viewer controls (no extra "Save as PDF" button).
+    expect(screen.queryByRole('button', { name: 'Save as PDF' })).not.toBeInTheDocument();
   });
 });
 

@@ -254,35 +254,26 @@ export default function PublishPreviewPage() {
                   </button>
                 )}
 
-                <button
-                  onClick={() => {
-                    // LaTeX: download generated PDF. MD/XMD: open browser print dialog (Save as PDF).
-                    if (source === 'latex') {
-                      if (!pdfUrl) return;
-                      const a = document.createElement('a');
-                      a.href = pdfUrl;
-                      a.download = pdfFilename || `${title || 'document'}.pdf`;
-                      document.body.appendChild(a);
-                      a.click();
-                      a.remove();
-                      return;
-                    }
-
-                    const w = iframeRef.current?.contentWindow;
-                    if (!w) return;
-                    try {
-                      w.focus();
-                      w.print();
-                    } catch {
-                      // noop
-                    }
-                  }}
-                  className="p-2 bg-[#3e3e42] hover:bg-[#464647] text-white rounded transition-colors inline-flex items-center justify-center"
-                  title="Save as PDF"
-                  aria-label="Save as PDF"
-                >
-                  <ArrowDownTrayIcon className="w-5 h-5" />
-                </button>
+                {/* For LaTeX, the embedded PDF viewer already offers download/print controls. */}
+                {source !== 'latex' && (
+                  <button
+                    onClick={() => {
+                      const w = iframeRef.current?.contentWindow;
+                      if (!w) return;
+                      try {
+                        w.focus();
+                        w.print();
+                      } catch {
+                        // noop
+                      }
+                    }}
+                    className="p-2 bg-[#3e3e42] hover:bg-[#464647] text-white rounded transition-colors inline-flex items-center justify-center"
+                    title="Save as PDF"
+                    aria-label="Save as PDF"
+                  >
+                    <ArrowDownTrayIcon className="w-5 h-5" />
+                  </button>
+                )}
               </div>
             )}
           </div>
