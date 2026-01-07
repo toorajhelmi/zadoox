@@ -99,6 +99,21 @@ export function renderMarkdownToHtml(content: string): string {
       const align = parseAttr(attrs, 'align'); // left|center|right
       const width = parseAttr(attrs, 'width'); // e.g. 50% or 320px
       const placement = parseAttr(attrs, 'placement'); // inline|block
+      const borderStyleRaw = parseAttr(attrs, 'borderStyle'); // solid|dotted|dashed
+      const borderColorRaw = parseAttr(attrs, 'borderColor'); // prefer hex
+      const borderWidthRaw = parseAttr(attrs, 'borderWidth'); // integer px
+
+      const borderStyle =
+        String(borderStyleRaw || '').trim().toLowerCase() === 'dotted'
+          ? 'dotted'
+          : String(borderStyleRaw || '').trim().toLowerCase() === 'dashed'
+            ? 'dashed'
+            : 'solid';
+      const borderColor = String(borderColorRaw || '').trim();
+      const borderWidthNum = (() => {
+        const n = Number(String(borderWidthRaw || '').trim());
+        return Number.isFinite(n) ? Math.round(n) : NaN;
+      })();
 
       const imgStyleParts: string[] = [];
       // Block vs inline sizing:
@@ -131,6 +146,22 @@ export function renderMarkdownToHtml(content: string): string {
         innerStyleParts.push('max-width:100%');
         if (width) innerStyleParts.push(`width:${width}`);
         // Alignment handled by wrapper's text-align in block mode.
+      }
+
+      // Border styling: applies to the figure-inner wrapper so it surrounds image+caption.
+      const hasBorderAttr = Boolean(
+        (borderStyleRaw && String(borderStyleRaw).trim().length > 0) ||
+          (borderColorRaw && String(borderColorRaw).trim().length > 0) ||
+          (borderWidthRaw && String(borderWidthRaw).trim().length > 0)
+      );
+      if (hasBorderAttr) {
+        if (Number.isFinite(borderWidthNum) && borderWidthNum === 0) {
+          innerStyleParts.push('border:none');
+        } else {
+          const w = Number.isFinite(borderWidthNum) && borderWidthNum > 0 ? borderWidthNum : 1;
+          const c = borderColor || 'rgba(255,255,255,0.10)';
+          innerStyleParts.push(`border:${w}px ${borderStyle} ${c}`);
+        }
       }
       const innerStyle = ` style="${innerStyleParts.join(';')}"`;
 

@@ -1,4 +1,4 @@
-export type ComponentAIKind = 'figure' | 'grid';
+export type ComponentAIKind = 'figure' | 'grid' | 'table';
 
 export type ComponentAIEditDetail = {
   kind: ComponentAIKind;
@@ -96,6 +96,12 @@ export function detectClarificationNeeded(input: { kind: ComponentAIKind; prompt
       return {
         question: 'Sure — what should change on this figure?',
         suggestions: ['Improve caption', 'Add/adjust description (desc=)', 'Change width', 'Change alignment', 'Change placement'],
+      };
+    }
+    if (input.kind === 'table') {
+      return {
+        question: 'Sure — what should change on this table?',
+        suggestions: ['Change caption', 'Change label', 'Change border style', 'Change border color', 'Change border width'],
       };
     }
     return {
@@ -390,15 +396,35 @@ export function validateComponentReplacement(input: { kind: ComponentAIKind; edi
     return { ok: true };
   }
 
-  // grid
   const hasOpen = /^\s*:::\s+/m.test(replacement);
   const hasClose = /^(?:\s*:::\s*)$/m.test(replacement) || /:::\s*$/.test(replacement.trimEnd());
-  const hasCols = /^\s*:::\s+.*\bcols\s*=\s*\d+/im.test(replacement);
-  if (!hasOpen || !hasClose || !hasCols) {
-    return { ok: false, message: 'That output doesn’t look like a valid XMD grid block.' };
+  if (!hasOpen || !hasClose) {
+    return { ok: false, message: 'That output doesn’t look like a valid fenced XMD block.' };
   }
   // Don’t allow completely empty blocks.
-  if (replacement.trim().length < 6) return { ok: false, message: 'AI returned an empty grid.' };
+  if (replacement.trim().length < 6) return { ok: false, message: 'AI returned an empty component.' };
+
+  if (input.kind === 'table') {
+    // Table blocks must NOT be grids (no cols=) and should have a valid colSpec line.
+    const hasCols = /^\s*:::\s+.*\bcols\s*=\s*\d+/im.test(replacement);
+    if (hasCols) return { ok: false, message: 'That output looks like a grid (cols=...), not a table.' };
+    // Find first non-empty line after the opening header line.
+    const lines = replacement.split('\n');
+    const headerIdx = lines.findIndex((l) => l.trim().startsWith(':::'));
+    const body = headerIdx >= 0 ? lines.slice(headerIdx + 1) : lines;
+    const firstNonEmpty = body.find((l) => String(l ?? '').trim().length > 0) ?? '';
+    const colSpec = String(firstNonEmpty ?? '').trim();
+    if (!/^\|[|LCRlcr]+\|\s*$/.test(colSpec) || !/[LCRlcr]/.test(colSpec)) {
+      return { ok: false, message: 'That output doesn’t look like a valid XMD table block (missing/invalid colSpec).' };
+    }
+    return { ok: true };
+  }
+
+  // grid
+  const hasCols = /^\s*:::\s+.*\bcols\s*=\s*\d+/im.test(replacement);
+  if (!hasCols) {
+    return { ok: false, message: 'That output doesn’t look like a valid XMD grid block.' };
+  }
 
   // Structural safety: preserve the same images (src) and preserve any existing figure IDs.
   const figRe = /!\[([^\]]*)\]\(([^)\s]+)\)\s*(\{[^}]*\})?/g;

@@ -21,6 +21,270 @@ function makeToolbarSeparator(): HTMLDivElement {
   return sep;
 }
 
+type ToolbarMenuItem = { label: string; svg?: string; selected?: boolean; onSelect: () => void };
+
+const toolbarKeepVisibleUntilByKey = new Map<string, number>();
+
+function bumpToolbarKeepVisible(key: string, ms = 1200): void {
+  toolbarKeepVisibleUntilByKey.set(key, Date.now() + ms);
+}
+
+function shouldToolbarStartVisible(key: string): boolean {
+  return Date.now() < (toolbarKeepVisibleUntilByKey.get(key) ?? 0);
+}
+
+function createToolbarShell(params: {
+  outer: HTMLElement;
+  keepOpenKey: string;
+  className: string;
+  top: string;
+  right?: string;
+  left?: string;
+  zIndex: string;
+  showMode?: 'visibility' | 'opacity';
+  hideDelayMs?: number;
+  /**
+   * Extra CSS styles to apply to the toolbar container.
+   * Use either camelCase (e.g. maxWidth) or kebab-case (e.g. max-width).
+   */
+  style?: Record<string, string>;
+}): {
+  bar: HTMLDivElement;
+  makeIconBtn: (opts: { label: string; svg: string; selected?: boolean }) => HTMLButtonElement;
+  makeSep: () => HTMLDivElement;
+  makeDropdownGroup: (p: { label: string; currentBtn: HTMLButtonElement; items: ToolbarMenuItem[]; customBody?: (c: HTMLDivElement) => void }) => HTMLDivElement;
+  setPinned: (pinned: boolean) => void;
+  show: () => void;
+  hideSoon: () => void;
+} {
+  const showMode = params.showMode ?? 'visibility';
+  const hideDelayMs = params.hideDelayMs ?? 220;
+
+  const hoverBar = document.createElement('div');
+  hoverBar.className = params.className;
+  hoverBar.style.position = 'absolute';
+  hoverBar.style.top = params.top;
+  if (params.right) hoverBar.style.right = params.right;
+  if (params.left) hoverBar.style.left = params.left;
+  hoverBar.style.display = 'flex';
+  hoverBar.style.gap = '6px';
+  hoverBar.style.padding = '6px';
+  hoverBar.style.borderRadius = '8px';
+  hoverBar.style.border = '1px solid rgba(255,255,255,0.10)';
+  hoverBar.style.background = 'rgba(20,20,22,0.9)';
+  hoverBar.style.backdropFilter = 'blur(6px)';
+  hoverBar.style.zIndex = params.zIndex;
+  hoverBar.style.alignItems = 'center';
+  hoverBar.style.flexWrap = 'wrap';
+  hoverBar.style.justifyContent = 'flex-end';
+  hoverBar.style.flexDirection = 'row';
+  hoverBar.style.whiteSpace = 'normal';
+  hoverBar.style.fontSize = '11px';
+  hoverBar.style.color = '#cfcfcf';
+  for (const [k, v] of Object.entries(params.style ?? {})) {
+    if (typeof v !== 'string' || v.trim().length === 0) continue;
+    const cssName = k.includes('-') ? k : k.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+    hoverBar.style.setProperty(cssName, v);
+  }
+
+  // Keep open across widget recreation (doc edits).
+  const bumpKeepVisible = (ms = 1200) => bumpToolbarKeepVisible(params.keepOpenKey, ms);
+  hoverBar.addEventListener('pointerdown', () => bumpKeepVisible(), true);
+  hoverBar.addEventListener('pointermove', () => bumpKeepVisible(), true);
+
+  // Dropdown menu plumbing.
+  let anyMenuOpen = false;
+  const closeMenuFns: Array<() => void> = [];
+  const closeAllMenus = () => {
+    for (const fn of closeMenuFns) fn();
+    anyMenuOpen = false;
+  };
+
+  const makeIconBtn = (opts: { label: string; svg: string; selected?: boolean }) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-label', opts.label);
+    b.title = opts.label;
+    const selected = Boolean(opts.selected);
+    b.className =
+      'w-7 h-7 flex items-center justify-center rounded border border-vscode-border transition-colors ' +
+      (selected
+        ? 'bg-vscode-active text-vscode-text'
+        : 'bg-transparent text-vscode-text-secondary hover:text-vscode-text hover:bg-vscode-buttonHoverBg');
+    const span = document.createElement('span');
+    span.innerHTML = opts.svg;
+    b.appendChild(span);
+    return b;
+  };
+
+  const makeDropdownGroup = (p: {
+    label: string;
+    currentBtn: HTMLButtonElement;
+    items: ToolbarMenuItem[];
+    customBody?: (c: HTMLDivElement) => void;
+  }) => {
+    const wrap = document.createElement('div');
+    wrap.style.position = 'relative';
+    wrap.style.display = 'inline-flex';
+    wrap.style.alignItems = 'center';
+
+    const menu = document.createElement('div');
+    menu.style.position = 'absolute';
+    menu.style.top = '36px';
+    menu.style.right = '0';
+    menu.style.zIndex = '10';
+    menu.style.display = 'none';
+    menu.style.flexDirection = 'column';
+    menu.style.gap = '4px';
+    menu.style.padding = '6px';
+    menu.style.borderRadius = '10px';
+    menu.style.border = '1px solid rgba(255,255,255,0.10)';
+    menu.style.background = 'rgba(20,20,22,0.96)';
+    menu.style.backdropFilter = 'blur(6px)';
+    menu.style.minWidth = '180px';
+
+    const title = document.createElement('div');
+    title.textContent = p.label;
+    title.style.fontSize = '11px';
+    title.style.color = '#9aa0a6';
+    title.style.marginBottom = '2px';
+    menu.appendChild(title);
+
+    const mkRow = (it: ToolbarMenuItem) => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className =
+        'flex items-center gap-2 w-full rounded border border-vscode-border px-2 py-1 text-xs transition-colors ' +
+        (it.selected
+          ? 'bg-vscode-active text-vscode-text'
+          : 'bg-transparent text-vscode-text-secondary hover:text-vscode-text hover:bg-vscode-buttonHoverBg');
+      if (it.svg) {
+        const s = document.createElement('span');
+        s.innerHTML = it.svg;
+        row.appendChild(s);
+      }
+      const t = document.createElement('span');
+      t.textContent = it.label;
+      row.appendChild(t);
+      row.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        bumpKeepVisible();
+        it.onSelect();
+        menu.style.display = 'none';
+        anyMenuOpen = false;
+      });
+      return row;
+    };
+
+    if (p.customBody) {
+      const body = document.createElement('div');
+      p.customBody(body);
+      menu.appendChild(body);
+    } else {
+      for (const it of p.items) menu.appendChild(mkRow(it));
+    }
+
+    const close = () => {
+      menu.style.display = 'none';
+    };
+    closeMenuFns.push(close);
+
+    p.currentBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      bumpKeepVisible();
+      const isOpen = menu.style.display === 'flex';
+      closeAllMenus();
+      if (!isOpen) {
+        menu.style.display = 'flex';
+        anyMenuOpen = true;
+      }
+    });
+
+    menu.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      bumpKeepVisible();
+    });
+    params.outer.addEventListener('pointerdown', (e) => {
+      const t = e.target as Node | null;
+      if (!t) return;
+      if (wrap.contains(t)) return;
+      closeAllMenus();
+    });
+
+    wrap.appendChild(p.currentBtn);
+    wrap.appendChild(menu);
+    return wrap;
+  };
+
+  // Hover/pin behavior.
+  let pinned = false;
+  let hideTimer: number | null = null;
+
+  const show = () => {
+    if (hideTimer !== null) {
+      window.clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+    if (showMode === 'opacity') {
+      hoverBar.style.opacity = '1';
+      hoverBar.style.pointerEvents = 'auto';
+    } else {
+      hoverBar.style.visibility = 'visible';
+      hoverBar.style.pointerEvents = 'auto';
+    }
+  };
+
+  const hideSoon = () => {
+    if (pinned) return;
+    if (hideTimer !== null) window.clearTimeout(hideTimer);
+    hideTimer = window.setTimeout(() => {
+      if (pinned) return;
+      if (anyMenuOpen) return;
+      if (showMode === 'opacity') {
+        hoverBar.style.opacity = '0';
+        hoverBar.style.pointerEvents = 'none';
+      } else {
+        hoverBar.style.visibility = 'hidden';
+        hoverBar.style.pointerEvents = 'none';
+      }
+      hideTimer = null;
+    }, hideDelayMs);
+  };
+
+  const startVisible = shouldToolbarStartVisible(params.keepOpenKey);
+  if (showMode === 'opacity') {
+    hoverBar.style.transition = 'opacity 120ms ease';
+    hoverBar.style.opacity = startVisible ? '1' : '0';
+    hoverBar.style.pointerEvents = startVisible ? 'auto' : 'none';
+  } else {
+    hoverBar.style.visibility = startVisible ? 'visible' : 'hidden';
+    hoverBar.style.pointerEvents = startVisible ? 'auto' : 'none';
+  }
+
+  params.outer.addEventListener('pointerenter', show);
+  params.outer.addEventListener('pointermove', show);
+  params.outer.addEventListener('pointerleave', hideSoon);
+  hoverBar.addEventListener('pointerenter', show);
+  hoverBar.addEventListener('pointerleave', hideSoon);
+
+  return {
+    bar: hoverBar,
+    makeIconBtn,
+    makeSep: makeToolbarSeparator,
+    makeDropdownGroup,
+    setPinned: (p) => {
+      pinned = Boolean(p);
+      if (pinned) show();
+      else hideSoon();
+    },
+    show,
+    hideSoon,
+  };
+}
+
 function makeInlineComponentChatArea(params: {
   kind: EmbeddedComponentKind;
   ariaLabel: string;
@@ -533,6 +797,21 @@ type GridBlock = {
 };
 
 type TableBlock = { from: number; to: number; header: string[]; rows: string[][] };
+    type TableRule = 'none' | 'single' | 'double';
+    type TableAlign = 'left' | 'center' | 'right';
+    type TableBorderStyle = 'solid' | 'dotted' | 'dashed';
+    type XmdTableBlock = {
+      from: number;
+      to: number;
+      header: string[];
+      rows: string[][];
+      caption: string | null;
+      label: string | null;
+      colAlign: TableAlign[];
+      vRules: TableRule[]; // cols+1
+      hRules: TableRule[]; // totalRows+1
+      style: { borderStyle: TableBorderStyle; borderColor: string; borderWidthPx: number } | null;
+    };
 
 function parseAttrValue(attrs: string, key: string): string | null {
   const re = new RegExp(`${key}="([^"]*)"`);
@@ -626,6 +905,39 @@ class FigureCardWidget extends WidgetType {
     const align = baseAttrs ? parseAttrValue(baseAttrs, 'align') : null; // left|center|right
     const width = baseAttrs ? parseAttrValue(baseAttrs, 'width') : null; // e.g. 50% or 320px
     const placement = baseAttrs ? parseAttrValue(baseAttrs, 'placement') : null; // inline|block
+    const borderStyleRaw = baseAttrs ? parseAttrValue(baseAttrs, 'borderStyle') : null; // solid|dotted|dashed
+    const borderColorRaw = baseAttrs ? parseAttrValue(baseAttrs, 'borderColor') : null; // any CSS color (prefer hex)
+    const borderWidthRaw = baseAttrs ? parseAttrValue(baseAttrs, 'borderWidth') : null; // integer px
+    const borderStyle =
+      (borderStyleRaw || '').trim().toLowerCase() === 'dotted'
+        ? 'dotted'
+        : (borderStyleRaw || '').trim().toLowerCase() === 'dashed'
+          ? 'dashed'
+          : 'solid';
+    const borderColor = (borderColorRaw || '').trim();
+    const borderWidthNum = (() => {
+      const n = Number(String(borderWidthRaw || '').trim());
+      return Number.isFinite(n) ? Math.round(n) : NaN;
+    })();
+
+    // Apply border props to the figure card container (so it matches user expectations and preview).
+    // If the user sets any border-related attribute, override the default card border.
+    {
+      const hasBorderAttr = Boolean(
+        (borderStyleRaw && borderStyleRaw.trim().length > 0) ||
+          (borderColorRaw && borderColorRaw.trim().length > 0) ||
+          (borderWidthRaw && String(borderWidthRaw).trim().length > 0)
+      );
+      if (hasBorderAttr) {
+        if (Number.isFinite(borderWidthNum) && borderWidthNum === 0) {
+          wrap.style.border = 'none';
+        } else {
+          const w = Number.isFinite(borderWidthNum) && borderWidthNum > 0 ? borderWidthNum : 1;
+          const c = borderColor || 'rgba(255,255,255,0.10)';
+          wrap.style.border = `${w}px ${borderStyle} ${c}`;
+        }
+      }
+    }
 
     // Keep the editor stable: we don't do true text-wrapping inline layout inside CodeMirror.
     // But we *do*:
@@ -636,8 +948,8 @@ class FigureCardWidget extends WidgetType {
         wrap.style.width = width;
         wrap.style.maxWidth = width;
       }
-      wrap.style.outline = '1px dashed rgba(120, 170, 255, 0.55)';
-      wrap.style.outlineOffset = '3px';
+      // Do not add extra "inline placement hint" outlines.
+      // Figures should only show borders the user explicitly sets (borderStyle/borderColor/borderWidth).
 
       // Align the whole card within the editor (best-effort).
       // We don't do true inline wrapping inside CodeMirror, but alignment should still match preview intent.
@@ -692,7 +1004,17 @@ class FigureCardWidget extends WidgetType {
     }
     img.style.height = 'auto';
     img.style.borderRadius = '6px';
-    img.style.border = '1px solid rgba(255,255,255,0.10)';
+    // Image border: only show a subtle default border when the user has not set a figure border.
+    const userBorderSet = Boolean(
+      (borderStyleRaw && borderStyleRaw.trim().length > 0) ||
+        (borderColorRaw && borderColorRaw.trim().length > 0) ||
+        (borderWidthRaw && String(borderWidthRaw).trim().length > 0)
+    );
+    if (userBorderSet) {
+      img.style.border = 'none';
+    } else {
+      img.style.border = '1px solid rgba(255,255,255,0.10)';
+    }
     if (align === 'center') img.style.margin = '0 auto';
     if (align === 'right') img.style.marginLeft = 'auto';
     if (align === 'left') img.style.marginRight = 'auto';
@@ -731,31 +1053,7 @@ class FigureCardWidget extends WidgetType {
       }
     }
 
-    if (placement === 'inline') {
-      // Inline-wrap hint: subtle side fades indicating text will flow around the figure in preview.
-      const leftHint = document.createElement('div');
-      leftHint.style.position = 'absolute';
-      leftHint.style.left = '-10px';
-      leftHint.style.top = '0';
-      leftHint.style.bottom = '0';
-      leftHint.style.width = '10px';
-      leftHint.style.borderRadius = '8px 0 0 8px';
-      leftHint.style.background =
-        'linear-gradient(to left, rgba(120,170,255,0.18), rgba(120,170,255,0.00))';
-
-      const rightHint = document.createElement('div');
-      rightHint.style.position = 'absolute';
-      rightHint.style.right = '-10px';
-      rightHint.style.top = '0';
-      rightHint.style.bottom = '0';
-      rightHint.style.width = '10px';
-      rightHint.style.borderRadius = '0 8px 8px 0';
-      rightHint.style.background =
-        'linear-gradient(to right, rgba(120,170,255,0.18), rgba(120,170,255,0.00))';
-
-      wrap.appendChild(leftHint);
-      wrap.appendChild(rightHint);
-    }
+    // Note: we intentionally avoid extra inline-wrap hint visuals (side fades).
 
     // Inner wrapper so caption width follows the image width (even when no explicit width attr exists).
     // This prevents "caption centered across full page" when image is smaller than the editor width.
@@ -821,66 +1119,43 @@ class FigureCardWidget extends WidgetType {
     wrap.appendChild(inner);
 
     // Hover toolbar (quick controls)
-    const hoverBar = document.createElement('div');
-    hoverBar.className = 'cm-embedded-figure-toolbar';
-    hoverBar.style.position = 'absolute';
-    hoverBar.style.top = '8px';
-    hoverBar.style.right = '8px';
-    hoverBar.style.display = 'flex';
-    hoverBar.style.gap = '6px';
-    hoverBar.style.padding = '6px';
-    hoverBar.style.borderRadius = '8px';
-    hoverBar.style.border = '1px solid rgba(255,255,255,0.10)';
-    hoverBar.style.background = 'rgba(20,20,22,0.9)';
-    hoverBar.style.backdropFilter = 'blur(6px)';
-    hoverBar.style.zIndex = '20';
-    hoverBar.style.alignItems = 'center';
-    // Linear toolbar that wraps only if it becomes too wide.
-    hoverBar.style.flexWrap = 'wrap';
-    hoverBar.style.justifyContent = 'flex-end';
-    hoverBar.style.fontSize = '11px';
-    hoverBar.style.color = '#cfcfcf';
-    hoverBar.style.flexDirection = 'row';
-    // Use opacity instead of visibility for reliability inside nested widgets/grids.
-    hoverBar.style.opacity = '0';
-    hoverBar.style.pointerEvents = 'none';
-    hoverBar.style.transition = 'opacity 120ms ease';
-
-    // Inside grid cells, the parent container uses overflow:hidden, so the default fixed-width hover bar
-    // can be clipped. Keep it within the card bounds.
-    if (this.opts?.inGrid) {
-      hoverBar.style.left = '6px';
-      hoverBar.style.right = '6px';
-      hoverBar.style.width = 'auto';
-      hoverBar.style.maxWidth = 'calc(100% - 12px)';
-    } else {
-      hoverBar.style.maxWidth = '560px';
-    }
-
-    const makeIconBtn = (opts: { label: string; svg: string; selected?: boolean }) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.setAttribute('aria-label', opts.label);
-      b.title = opts.label;
-      const selected = Boolean(opts.selected);
-      b.className =
-        'w-7 h-7 flex items-center justify-center rounded border border-vscode-border transition-colors ' +
-        (selected
-          ? 'bg-vscode-active text-vscode-text'
-          : 'bg-transparent text-vscode-text-secondary hover:text-vscode-text hover:bg-vscode-buttonHoverBg');
-      const span = document.createElement('span');
-      span.innerHTML = opts.svg;
-      b.appendChild(span);
-      return b;
-    };
+    const figToolbar = createToolbarShell({
+      outer: wrap,
+      keepOpenKey: `figure:${this.from}:${this.to}`,
+      className: 'cm-embedded-figure-toolbar',
+      top: '8px',
+      right: '8px',
+      zIndex: '20',
+      showMode: 'opacity',
+      hideDelayMs: 120,
+      style: {
+        // Inside grid cells, the parent container can clip. Keep it within the card bounds.
+        ...(this.opts?.inGrid
+          ? { left: '6px', right: '6px', width: 'auto', maxWidth: 'calc(100% - 12px)' }
+          : { maxWidth: '560px' }),
+      },
+    });
+    const hoverBar = figToolbar.bar;
+    const makeIconBtn = figToolbar.makeIconBtn;
+    const makeDropdownGroup = figToolbar.makeDropdownGroup;
 
     // No row helper: we build one linear toolbar with separators.
 
-    const applyAttrUpdate = (updates: { align?: string | null; width?: string | null; placement?: string | null; desc?: string | null; caption?: string | null; src?: string | null }) => {
+    const applyAttrUpdate = (updates: {
+      align?: string | null;
+      width?: string | null;
+      placement?: string | null;
+      desc?: string | null;
+      caption?: string | null;
+      src?: string | null;
+      borderStyle?: string | null;
+      borderColor?: string | null;
+      borderWidth?: number | null;
+    }) => {
       const currentCaption = (updates.caption ?? this.alt ?? '').trim();
       const currentDesc = updates.desc ?? this.desc ?? '';
       const currentSrc = updates.src ?? this.rawUrl;
-      const cleaned = stripAttrKeys(baseAttrs, ['align', 'width', 'placement', 'desc']);
+      const cleaned = stripAttrKeys(baseAttrs, ['align', 'width', 'placement', 'desc', 'borderStyle', 'borderColor', 'borderWidth']);
       let nextAttrs = cleaned;
       if (updates.align !== undefined) nextAttrs = upsertAttr(nextAttrs, 'align', updates.align);
       else if (align) nextAttrs = upsertAttr(nextAttrs, 'align', align);
@@ -888,6 +1163,13 @@ class FigureCardWidget extends WidgetType {
       else if (width) nextAttrs = upsertAttr(nextAttrs, 'width', width);
       if (updates.placement !== undefined) nextAttrs = upsertAttr(nextAttrs, 'placement', updates.placement);
       else if (placement) nextAttrs = upsertAttr(nextAttrs, 'placement', placement);
+      if (updates.borderStyle !== undefined) nextAttrs = upsertAttr(nextAttrs, 'borderStyle', updates.borderStyle);
+      else if (borderStyleRaw) nextAttrs = upsertAttr(nextAttrs, 'borderStyle', borderStyleRaw);
+      if (updates.borderColor !== undefined) nextAttrs = upsertAttr(nextAttrs, 'borderColor', updates.borderColor);
+      else if (borderColorRaw) nextAttrs = upsertAttr(nextAttrs, 'borderColor', borderColorRaw);
+      if (updates.borderWidth !== undefined)
+        nextAttrs = upsertAttr(nextAttrs, 'borderWidth', updates.borderWidth === null ? null : String(Math.max(0, Math.round(updates.borderWidth))));
+      else if (borderWidthRaw) nextAttrs = upsertAttr(nextAttrs, 'borderWidth', borderWidthRaw);
       if (currentDesc && currentDesc.trim().length > 0) nextAttrs = upsertAttr(nextAttrs, 'desc', currentDesc);
 
       const attrBlock = nextAttrs.trim().length > 0 ? `{${nextAttrs.trim()}}` : '';
@@ -951,6 +1233,36 @@ class FigureCardWidget extends WidgetType {
         '<path d="M6 4L3 8l3 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
         '<path d="M10 4l3 4-3 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
         '</svg>',
+      borderSolid:
+        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+        '<rect x="3" y="3" width="10" height="10" stroke="currentColor" stroke-width="1.5"/>' +
+        '</svg>',
+      borderDotted:
+        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+        '<rect x="3" y="3" width="10" height="10" stroke="currentColor" stroke-width="1.5" stroke-dasharray="1.5 2"/>' +
+        '</svg>',
+      borderDashed:
+        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+        '<rect x="3" y="3" width="10" height="10" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 2"/>' +
+        '</svg>',
+      borderNone:
+        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+        '<rect x="3" y="3" width="10" height="10" stroke="currentColor" stroke-width="1.5"/>' +
+        '<path d="M4 12L12 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '</svg>',
+      borderColor:
+        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+        '<path d="M3 13l1.2-4.2L11.7 1.3c.5-.5 1.3-.5 1.8 0l1.2 1.2c.5.5.5 1.3 0 1.8L7.2 11.8 3 13z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>' +
+        '<path d="M10.9 2.1l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '</svg>',
+      borderWidth:
+        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+        '<path d="M8 1v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M6.3 3.8L8 5.5l1.7-1.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<rect x="2.5" y="7" width="11" height="2" fill="currentColor"/>' +
+        '<path d="M8 15v-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M6.3 12.2L8 10.5l1.7 1.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '</svg>',
     };
 
     const currentPlacement = placement === 'inline' ? 'inline' : 'block';
@@ -962,36 +1274,18 @@ class FigureCardWidget extends WidgetType {
     const isAiGenerated = /\bgen\s*=\s*"ai"\b/i.test(baseAttrs) || /\borigin\s*=\s*"ai"\b/i.test(baseAttrs);
     const btnRegenIcon = isAiGenerated ? makeIconBtn({ label: 'Regenerate', svg: icon.regen }) : null;
     const btnTrashIcon = makeIconBtn({ label: 'Delete', svg: icon.trash });
-    const btnShowXmdIcon = makeIconBtn({ label: 'Show XMD', svg: icon.code });
-    btnShowXmdIcon.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      view.dispatch({ effects: toggleRenderForRange.of({ from: this.from, to: this.to }) });
-    });
 
-    const btnLeft = makeIconBtn({ label: 'Align left', svg: icon.alignLeft, selected: currentAlign === 'left' });
-    const btnCenter = makeIconBtn({ label: 'Align center', svg: icon.alignCenter, selected: currentAlign === 'center' });
-    const btnRight = makeIconBtn({ label: 'Align right', svg: icon.alignRight, selected: currentAlign === 'right' });
-    btnLeft.addEventListener('pointerdown', (e) => {
-      e.preventDefault(); e.stopPropagation();
-      applyAttrUpdate({ align: 'left' });
+    // Compact group buttons (show current selection; click to open menu)
+    const alignGroupBtn = makeIconBtn({
+      label: 'Align',
+      svg: currentAlign === 'center' ? icon.alignCenter : currentAlign === 'right' ? icon.alignRight : icon.alignLeft,
+      selected: true,
     });
-    btnCenter.addEventListener('pointerdown', (e) => {
-      e.preventDefault(); e.stopPropagation();
-      applyAttrUpdate({ align: 'center' });
+    const sizeGroupBtn = makeIconBtn({
+      label: 'Size',
+      svg: currentPct === 33 ? icon.sizeS : currentPct === 100 ? icon.sizeL : icon.sizeM,
+      selected: true,
     });
-    btnRight.addEventListener('pointerdown', (e) => {
-      e.preventDefault(); e.stopPropagation();
-      applyAttrUpdate({ align: 'right' });
-    });
-
-    const btnS = makeIconBtn({ label: 'Size small (33%)', svg: icon.sizeS, selected: currentPct === 33 });
-    const btnM = makeIconBtn({ label: 'Size medium (50%)', svg: icon.sizeM, selected: currentPct === 50 });
-    const btnL = makeIconBtn({ label: 'Size large (100%)', svg: icon.sizeL, selected: currentPct === 100 });
-    // Use pointerdown so the first interaction applies immediately (click can be eaten by focus/hover transitions).
-    btnS.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '33%' }); });
-    btnM.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '50%' }); });
-    btnL.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ width: '100%' }); });
 
     const iconMinus =
       '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
@@ -1027,57 +1321,179 @@ class FigureCardWidget extends WidgetType {
       stepWidth(stepPct);
     });
 
-    const btnInline = makeIconBtn({ label: 'Placement inline', svg: icon.inline, selected: currentPlacement === 'inline' });
-    const btnBlock = makeIconBtn({ label: 'Placement block', svg: icon.block, selected: currentPlacement === 'block' });
-    btnInline.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ placement: 'inline' }); });
-    btnBlock.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); applyAttrUpdate({ placement: 'block' }); });
+    const placementGroupBtn = makeIconBtn({
+      label: 'Placement',
+      svg: currentPlacement === 'inline' ? icon.inline : icon.block,
+      selected: true,
+    });
+
+    const curBw = Number.isFinite(borderWidthNum) && borderWidthNum >= 0 ? borderWidthNum : 1;
+    const curBs = borderStyle;
+    const borderStyleGroupBtn = makeIconBtn({
+      label: 'Border style',
+      svg: curBw === 0 ? icon.borderNone : curBs === 'dotted' ? icon.borderDotted : curBs === 'dashed' ? icon.borderDashed : icon.borderSolid,
+      selected: true,
+    });
+    const borderWidthGroupBtn = makeIconBtn({ label: `Border width (${curBw}px)`, svg: icon.borderWidth, selected: true });
+    const borderColorGroupBtn = makeIconBtn({ label: 'Border color', svg: icon.borderColor, selected: true });
 
     // Group: actions
     hoverBar.appendChild(btnEditIcon);
-    hoverBar.appendChild(btnShowXmdIcon);
     if (btnRegenIcon) hoverBar.appendChild(btnRegenIcon);
     hoverBar.appendChild(btnTrashIcon);
     hoverBar.appendChild(makeToolbarSeparator());
 
-    // Group: align (optional)
+    // Group: align (optional) – compact dropdown
     if (!this.opts?.hideAlign) {
-      hoverBar.appendChild(btnLeft);
-      hoverBar.appendChild(btnCenter);
-      hoverBar.appendChild(btnRight);
+      hoverBar.appendChild(
+        makeDropdownGroup({
+          label: 'Align',
+          currentBtn: alignGroupBtn,
+          items: [
+            { label: 'Left', svg: icon.alignLeft, selected: currentAlign === 'left', onSelect: () => applyAttrUpdate({ align: 'left' }) },
+            { label: 'Center', svg: icon.alignCenter, selected: currentAlign === 'center', onSelect: () => applyAttrUpdate({ align: 'center' }) },
+            { label: 'Right', svg: icon.alignRight, selected: currentAlign === 'right', onSelect: () => applyAttrUpdate({ align: 'right' }) },
+          ],
+        })
+      );
       hoverBar.appendChild(makeToolbarSeparator());
     }
 
-    // Group: size
-    hoverBar.appendChild(btnSmaller);
-    hoverBar.appendChild(btnS);
-    hoverBar.appendChild(btnM);
-    hoverBar.appendChild(btnL);
-    hoverBar.appendChild(btnLarger);
+    // Group: size – compact dropdown (includes +/-)
+    hoverBar.appendChild(
+      makeDropdownGroup({
+        label: 'Size',
+        currentBtn: sizeGroupBtn,
+        items: [
+          { label: 'Smaller (-10%)', svg: iconMinus, selected: false, onSelect: () => stepWidth(-stepPct) },
+          { label: '33%', svg: icon.sizeS, selected: currentPct === 33, onSelect: () => applyAttrUpdate({ width: '33%' }) },
+          { label: '50%', svg: icon.sizeM, selected: currentPct === 50, onSelect: () => applyAttrUpdate({ width: '50%' }) },
+          { label: '100%', svg: icon.sizeL, selected: currentPct === 100, onSelect: () => applyAttrUpdate({ width: '100%' }) },
+          { label: 'Larger (+10%)', svg: iconPlus, selected: false, onSelect: () => stepWidth(stepPct) },
+        ],
+      })
+    );
 
-    // Group: placement (optional)
+    // Group: placement (optional) – compact dropdown
     if (!this.opts?.hidePlacement) {
       hoverBar.appendChild(makeToolbarSeparator());
-      hoverBar.appendChild(btnInline);
-      hoverBar.appendChild(btnBlock);
+      hoverBar.appendChild(
+        makeDropdownGroup({
+          label: 'Placement',
+          currentBtn: placementGroupBtn,
+          items: [
+            { label: 'Inline', svg: icon.inline, selected: currentPlacement === 'inline', onSelect: () => applyAttrUpdate({ placement: 'inline' }) },
+            { label: 'Block', svg: icon.block, selected: currentPlacement === 'block', onSelect: () => applyAttrUpdate({ placement: 'block' }) },
+          ],
+        })
+      );
     }
 
-    // Hover behavior is handled by CSS (see globals.css).
-    // Add a JS fallback that toggles opacity; this is especially important for inline placement
-    // where floats + CodeMirror inline widgets can behave inconsistently with CSS :hover alone.
-    let pinned = false;
-    const show = () => {
-      hoverBar.style.opacity = '1';
-      hoverBar.style.pointerEvents = 'auto';
-    };
-    const hide = () => {
-      if (pinned) return;
-      hoverBar.style.opacity = '0';
-      hoverBar.style.pointerEvents = 'none';
-    };
-    wrap.addEventListener('pointerenter', show);
-    wrap.addEventListener('pointerleave', hide);
-    hoverBar.addEventListener('pointerenter', show);
-    hoverBar.addEventListener('pointerleave', hide);
+    // Group: border (style/width/color)
+    hoverBar.appendChild(makeToolbarSeparator());
+    hoverBar.appendChild(
+      makeDropdownGroup({
+        label: 'Border style',
+        currentBtn: borderStyleGroupBtn,
+        items: [
+          { label: 'None', svg: icon.borderNone, selected: curBw === 0, onSelect: () => applyAttrUpdate({ borderWidth: 0 }) },
+          { label: 'Solid', svg: icon.borderSolid, selected: curBw > 0 && curBs === 'solid', onSelect: () => applyAttrUpdate({ borderStyle: 'solid', borderWidth: Math.max(1, curBw || 1) }) },
+          { label: 'Dotted', svg: icon.borderDotted, selected: curBw > 0 && curBs === 'dotted', onSelect: () => applyAttrUpdate({ borderStyle: 'dotted', borderWidth: Math.max(1, curBw || 1) }) },
+          { label: 'Dashed', svg: icon.borderDashed, selected: curBw > 0 && curBs === 'dashed', onSelect: () => applyAttrUpdate({ borderStyle: 'dashed', borderWidth: Math.max(1, curBw || 1) }) },
+        ],
+      })
+    );
+    hoverBar.appendChild(
+      makeDropdownGroup({
+        label: 'Border width',
+        currentBtn: borderWidthGroupBtn,
+        items: Array.from({ length: 9 }).map((_, i) => ({
+          label: i === 0 ? '0 (none)' : `${i}px`,
+          svg: icon.borderWidth,
+          selected: curBw === i,
+          onSelect: () => applyAttrUpdate({ borderWidth: i }),
+        })),
+      })
+    );
+    hoverBar.appendChild(
+      makeDropdownGroup({
+        label: 'Border color',
+        currentBtn: borderColorGroupBtn,
+        items: [],
+        customBody: (container) => {
+          container.style.display = 'flex';
+          container.style.flexDirection = 'column';
+          container.style.gap = '6px';
+
+          const row = document.createElement('div');
+          row.style.display = 'flex';
+          row.style.alignItems = 'center';
+          row.style.gap = '8px';
+          row.style.padding = '6px';
+          row.style.borderRadius = '8px';
+          row.style.border = '1px solid rgba(255,255,255,0.10)';
+          row.style.background = 'rgba(0,0,0,0.12)';
+
+          const isHex = (s: string) => /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(s);
+
+          const colorInput = document.createElement('input');
+          colorInput.type = 'color';
+          const currentHex = String(borderColor || '').trim();
+          colorInput.value = isHex(currentHex) ? currentHex : '#6b7280';
+          colorInput.style.width = '30px';
+          colorInput.style.height = '22px';
+          colorInput.style.border = 'none';
+          colorInput.style.background = 'transparent';
+          colorInput.style.padding = '0';
+
+          const textInput = document.createElement('input');
+          textInput.type = 'text';
+          textInput.value = isHex(currentHex) ? currentHex.toLowerCase() : String(colorInput.value || '').trim().toLowerCase();
+          textInput.placeholder = '#rrggbb';
+          textInput.style.flex = '1';
+          textInput.style.fontSize = '11px';
+          textInput.style.background = 'transparent';
+          textInput.style.border = 'none';
+          textInput.style.outline = 'none';
+          textInput.style.color = '#cfcfcf';
+
+          const normalizeColor = (raw: string): string | null => {
+            const s = String(raw || '').trim();
+            if (!s) return null;
+            const withHash = s.startsWith('#') ? s : `#${s}`;
+            if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(withHash)) return withHash.toLowerCase();
+            return s;
+          };
+
+          const apply = () => {
+            const next = normalizeColor(textInput.value);
+            applyAttrUpdate({ borderColor: next });
+            if (next) colorInput.value = next;
+          };
+
+          colorInput.addEventListener('input', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const v = String(colorInput.value || '').trim();
+            textInput.value = v;
+            applyAttrUpdate({ borderColor: normalizeColor(v) });
+          });
+          textInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              e.stopPropagation();
+              apply();
+              textInput.blur();
+            }
+          });
+          textInput.addEventListener('blur', () => apply());
+
+          row.appendChild(colorInput);
+          row.appendChild(textInput);
+          container.appendChild(row);
+        },
+      })
+    );
 
     // Group: prompt/chat (inline, multi-turn)
     hoverBar.appendChild(makeToolbarSeparator());
@@ -1092,13 +1508,10 @@ class FigureCardWidget extends WidgetType {
         maxWidthPx: this.opts?.inGrid ? 260 : 420,
         heightPx: 44,
         onPinChange: (v) => {
-          pinned = Boolean(v);
-          if (pinned) show();
-          else hide();
+          figToolbar.setPinned(Boolean(v));
         },
         onClose: () => {
-          pinned = false;
-          hide();
+          figToolbar.setPinned(false);
         },
         getOriginal: () => ({ from: this.from, to: this.to, text: view.state.doc.sliceString(this.from, this.to) }),
         applyReplacement: (replacement) => {
@@ -1107,6 +1520,26 @@ class FigureCardWidget extends WidgetType {
       })
     );
     wrap.appendChild(hoverBar);
+
+    // Always-visible "Show XMD" toggle (top-left), unless we're inside a grid cell (grid has its own toggle).
+    if (!this.opts?.inGrid) {
+      const btnShowXmd = document.createElement('button');
+      btnShowXmd.type = 'button';
+      btnShowXmd.textContent = 'Show XMD';
+      btnShowXmd.className =
+        'text-xs px-2 py-1 rounded border border-vscode-border bg-vscode-buttonBg text-vscode-text ' +
+        'hover:bg-vscode-buttonHoverBg transition-colors';
+      btnShowXmd.style.position = 'absolute';
+      btnShowXmd.style.top = '8px';
+      btnShowXmd.style.left = '8px';
+      btnShowXmd.style.zIndex = '25';
+      btnShowXmd.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        view.dispatch({ effects: toggleRenderForRange.of({ from: this.from, to: this.to }) });
+      });
+      wrap.appendChild(btnShowXmd);
+    }
 
     const buttonClass =
       'px-2 py-1 text-xs rounded border border-vscode-border bg-vscode-buttonBg text-vscode-text ' +
@@ -1312,6 +1745,7 @@ class FigureGridWidget extends WidgetType {
     private readonly gridCaption: string | null,
     private readonly headerFrom: number,
     private readonly headerTo: number,
+    private readonly headerText: string,
     private readonly blockFrom: number,
     private readonly blockTo: number,
     private readonly cells: Array<
@@ -1332,6 +1766,7 @@ class FigureGridWidget extends WidgetType {
 
   eq(other: FigureGridWidget): boolean {
     if (this.cols !== other.cols) return false;
+    if (this.headerText !== other.headerText) return false;
     if (this.cells.length !== other.cells.length) return false;
     for (let i = 0; i < this.cells.length; i++) {
       const a = this.cells[i];
@@ -1361,8 +1796,12 @@ class FigureGridWidget extends WidgetType {
   toDOM(view: EditorView): HTMLElement {
     const outer = document.createElement('div');
     outer.className = 'cm-embedded-figure-grid';
+
+    // Keep the toolbar open across re-renders triggered by selecting an option (which updates the header).
+    // Without this, the widget is recreated and the toolbar "autocloses" even if the mouse is still over it.
+    // (Module-level so it survives widget recreation.)
     const spacing = (() => {
-      const currentHeader = view.state.doc.sliceString(this.headerFrom, this.headerTo);
+      const currentHeader = this.headerText;
       const m = (/\bmargin\s*=\s*"(small|medium|large)"/i.exec(currentHeader)?.[1] || 'medium').toLowerCase();
       // Note: multiple nested paddings/margins contribute to perceived "spacing":
       // - outer margin + padding
@@ -1378,10 +1817,38 @@ class FigureGridWidget extends WidgetType {
     })();
 
     outer.style.margin = `${spacing.outerMargin}px 0`;
-    outer.style.padding = `${spacing.pad}px`;
-    outer.style.border = '1px solid rgba(255,255,255,0.10)';
-    outer.style.borderRadius = '10px';
-    outer.style.background = 'rgba(0,0,0,0.10)';
+    // Grid border styling (optional): allow table-like attrs on the grid header.
+    // When border attrs are provided, we render borders in a "table-like" collapsed way (like preview),
+    // avoiding doubled inner strokes from adjacent div borders.
+    const gridBorderInfo = (() => {
+      try {
+        const h = this.headerText;
+        const styleMatch = /\bborderStyle\s*=\s*"(solid|dotted|dashed)"/i.exec(h);
+        const colorMatch = /\bborderColor\s*=\s*"([^"]*)"/i.exec(h);
+        const widthMatch = /\bborderWidth\s*=\s*"(\d+)"/i.exec(h);
+        const styleRaw = (styleMatch?.[1] || '').toLowerCase();
+        const borderStyle = styleRaw === 'dotted' ? 'dotted' : styleRaw === 'dashed' ? 'dashed' : 'solid';
+        const color = (colorMatch?.[1] || '').trim();
+        const widthRaw = (widthMatch?.[1] || '').trim();
+        const width = widthRaw ? Number(widthRaw) : NaN;
+        const explicitlySet = Boolean(styleMatch || colorMatch || widthMatch);
+        if (Number.isFinite(width) && width === 0) return { enabled: false, css: 'none', w: 0, style: borderStyle, color: color || '' };
+        const w = Number.isFinite(width) && width > 0 ? Math.round(width) : 1;
+        const c = color || 'rgba(255,255,255,0.10)';
+        const css = `${w}px ${borderStyle} ${c}`;
+        // If user set any border-related attribute, treat as "border mode" even if width omitted.
+        // This makes the editor match preview's table-like feel.
+        return { enabled: explicitlySet, css, w, style: borderStyle, color: c };
+      } catch {
+        return { enabled: false, css: '1px solid rgba(255,255,255,0.10)', w: 1, style: 'solid' as const, color: 'rgba(255,255,255,0.10)' };
+      }
+    })();
+    // In borderMode, don't add an extra rounded outer frame; let the cell borders form the table outline (like preview).
+    const borderMode = gridBorderInfo.enabled && gridBorderInfo.css !== 'none';
+    outer.style.padding = borderMode ? '0px' : `${spacing.pad}px`;
+    outer.style.border = borderMode ? 'none' : gridBorderInfo.css;
+    outer.style.borderRadius = borderMode ? '0px' : '10px';
+    outer.style.background = borderMode ? 'transparent' : 'rgba(0,0,0,0.10)';
     outer.style.position = 'relative';
 
     // Grid-level alignment should align the *grid block*.
@@ -1418,27 +1885,66 @@ class FigureGridWidget extends WidgetType {
       // ignore
     }
 
-    const parseGridHeader = (s: string): { cols: number; caption: string | null; align: 'left' | 'center' | 'right' | null; placement: 'block' | 'inline' | null; margin: 'small' | 'medium' | 'large' | null } => {
+    const parseGridHeader = (s: string): {
+      cols: number;
+      caption: string | null;
+      label: string | null;
+      borderStyle: 'solid' | 'dotted' | 'dashed' | null;
+      borderColor: string | null;
+      borderWidth: number | null;
+      align: 'left' | 'center' | 'right' | null;
+      placement: 'block' | 'inline' | null;
+      margin: 'small' | 'medium' | 'large' | null;
+    } => {
       const txt = String(s ?? '').trim();
       const colsMatch = /\bcols\s*=\s*(\d+)\b/i.exec(txt);
       const cols = colsMatch ? Number(colsMatch[1]) : 0;
       const capMatch = /\bcaption\s*=\s*"([^"]*)"/i.exec(txt);
       const caption = capMatch ? String(capMatch[1] ?? '').trim() : null;
+      const labelMatch = /\blabel\s*=\s*"([^"]*)"/i.exec(txt);
+      const label = labelMatch ? String(labelMatch[1] ?? '').trim() : null;
+      const borderStyleMatch = /\bborderStyle\s*=\s*"(solid|dotted|dashed)"/i.exec(txt);
+      const borderStyle = (borderStyleMatch ? (String(borderStyleMatch[1]) as any) : null) as
+        | 'solid'
+        | 'dotted'
+        | 'dashed'
+        | null;
+      const borderColorMatch = /\bborderColor\s*=\s*"([^"]*)"/i.exec(txt);
+      const borderColor = borderColorMatch ? String(borderColorMatch[1] ?? '').trim() : null;
+      const borderWidthMatch = /\bborderWidth\s*=\s*"(\d+)"/i.exec(txt);
+      const borderWidth = borderWidthMatch ? Number(borderWidthMatch[1]) : null;
       const alignMatch = /\balign\s*=\s*"(left|center|right)"/i.exec(txt);
       const align = (alignMatch ? (String(alignMatch[1]) as any) : null) as 'left' | 'center' | 'right' | null;
       const placeMatch = /\bplacement\s*=\s*"(block|inline)"/i.exec(txt);
       const placement = (placeMatch ? (String(placeMatch[1]) as any) : null) as 'block' | 'inline' | null;
       const marginMatch = /\bmargin\s*=\s*"(small|medium|large)"/i.exec(txt);
       const margin = (marginMatch ? (String(marginMatch[1]) as any) : null) as 'small' | 'medium' | 'large' | null;
-      return { cols, caption, align, placement, margin };
+      return { cols, caption, label, borderStyle, borderColor, borderWidth: Number.isFinite(borderWidth) ? borderWidth : null, align, placement, margin };
     };
 
-    const buildGridHeader = (attrs: { cols: number; caption: string | null; align: 'left' | 'center' | 'right' | null; placement: 'block' | 'inline' | null; margin: 'small' | 'medium' | 'large' | null }): string => {
+    const buildGridHeader = (attrs: {
+      cols: number;
+      caption: string | null;
+      label: string | null;
+      borderStyle: 'solid' | 'dotted' | 'dashed' | null;
+      borderColor: string | null;
+      borderWidth: number | null;
+      align: 'left' | 'center' | 'right' | null;
+      placement: 'block' | 'inline' | null;
+      margin: 'small' | 'medium' | 'large' | null;
+    }): string => {
       const parts: string[] = [];
       const cols = Number.isFinite(attrs.cols) && attrs.cols > 0 ? attrs.cols : Math.max(1, this.cols);
       parts.push(`cols=${cols}`);
       const cap = String(attrs.caption ?? '').trim();
       if (cap.length > 0) parts.push(`caption="${cap.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').trim()}"`);
+      const label = String(attrs.label ?? '').trim();
+      if (label.length > 0) parts.push(`label="${label.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').trim()}"`);
+      if (attrs.borderStyle) parts.push(`borderStyle="${attrs.borderStyle}"`);
+      const bc = String(attrs.borderColor ?? '').trim();
+      if (bc.length > 0) parts.push(`borderColor="${bc.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').trim()}"`);
+      // Allow borderWidth="0" to mean "no border" explicitly.
+      if (Number.isFinite(attrs.borderWidth) && (attrs.borderWidth as number) >= 0) parts.push(`borderWidth="${Math.round(attrs.borderWidth as number)}"`);
       if (attrs.align) parts.push(`align="${attrs.align}"`);
       if (attrs.placement) parts.push(`placement="${attrs.placement}"`);
       if (attrs.margin) parts.push(`margin="${attrs.margin}"`);
@@ -1446,7 +1952,16 @@ class FigureGridWidget extends WidgetType {
     };
 
     const updateGridHeader = (
-      updates: Partial<{ caption: string | null; align: 'left' | 'center' | 'right' | null; placement: 'block' | 'inline' | null; margin: 'small' | 'medium' | 'large' | null }>
+      updates: Partial<{
+        caption: string | null;
+        label: string | null;
+        borderStyle: 'solid' | 'dotted' | 'dashed' | null;
+        borderColor: string | null;
+        borderWidth: number | null;
+        align: 'left' | 'center' | 'right' | null;
+        placement: 'block' | 'inline' | null;
+        margin: 'small' | 'medium' | 'large' | null;
+      }>
     ) => {
       try {
         const currentHeader = view.state.doc.sliceString(this.headerFrom, this.headerTo);
@@ -1454,6 +1969,10 @@ class FigureGridWidget extends WidgetType {
         const next = buildGridHeader({
           cols: parsed.cols || this.cols,
           caption: updates.caption !== undefined ? updates.caption : parsed.caption,
+          label: updates.label !== undefined ? updates.label : parsed.label,
+          borderStyle: updates.borderStyle !== undefined ? updates.borderStyle : parsed.borderStyle,
+          borderColor: updates.borderColor !== undefined ? updates.borderColor : parsed.borderColor,
+          borderWidth: updates.borderWidth !== undefined ? updates.borderWidth : parsed.borderWidth,
           align: updates.align !== undefined ? updates.align : parsed.align,
           placement: updates.placement !== undefined ? updates.placement : parsed.placement,
           margin: updates.margin !== undefined ? updates.margin : parsed.margin,
@@ -1465,45 +1984,26 @@ class FigureGridWidget extends WidgetType {
     };
 
     // Grid-level hover toolbar: alignment + placement + edit caption.
-    const hoverBar = document.createElement('div');
-    hoverBar.className = 'cm-embedded-grid-toolbar';
-    hoverBar.style.position = 'absolute';
-    hoverBar.style.top = '8px';
-    hoverBar.style.right = '8px';
-    hoverBar.style.display = 'flex';
-    hoverBar.style.gap = '6px';
-    hoverBar.style.padding = '6px';
-    hoverBar.style.borderRadius = '8px';
-    hoverBar.style.border = '1px solid rgba(255,255,255,0.10)';
-    hoverBar.style.background = 'rgba(20,20,22,0.9)';
-    hoverBar.style.backdropFilter = 'blur(6px)';
-    hoverBar.style.zIndex = '3';
+    const toolbar = createToolbarShell({
+      outer,
+      keepOpenKey: `grid:${this.blockFrom}:${this.blockTo}`,
+      className: 'cm-embedded-grid-toolbar',
+      // Keep the hover toolbar below the always-visible "Show XMD" button area.
+      top: '44px',
+      right: '8px',
+      zIndex: '4',
+      showMode: 'visibility',
+      style: {
     // Linear toolbar that wraps only if it becomes too wide.
-    hoverBar.style.flexDirection = 'row';
-    hoverBar.style.alignItems = 'center';
-    hoverBar.style.flexWrap = 'wrap';
-    hoverBar.style.justifyContent = 'flex-end';
-    hoverBar.style.whiteSpace = 'normal';
-    hoverBar.style.visibility = 'hidden';
-
-    const makeIconBtn = (opts: { label: string; svg: string; selected?: boolean }) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.setAttribute('aria-label', opts.label);
-      b.title = opts.label;
-      const selected = Boolean(opts.selected);
-      b.className =
-        'w-7 h-7 flex items-center justify-center rounded border border-vscode-border transition-colors ' +
-        (selected
-          ? 'bg-vscode-active text-vscode-text'
-          : 'bg-transparent text-vscode-text-secondary hover:text-vscode-text hover:bg-vscode-buttonHoverBg');
-      const span = document.createElement('span');
-      span.innerHTML = opts.svg;
-      b.appendChild(span);
-      return b;
-    };
-
-    const makeSep = makeToolbarSeparator;
+        flexDirection: 'row',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        justifyContent: 'flex-end',
+      },
+    });
+    const hoverBar = toolbar.bar;
+    const makeIconBtn = toolbar.makeIconBtn;
+    const makeSep = toolbar.makeSep;
 
     const icon = {
       edit:
@@ -1538,20 +2038,92 @@ class FigureGridWidget extends WidgetType {
         '<path d="M6 4L3 8l3 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
         '<path d="M10 4l3 4-3 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
         '</svg>',
+      borderSolid:
+        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+        '<rect x="3" y="3" width="10" height="10" stroke="currentColor" stroke-width="1.5"/>' +
+        '</svg>',
+      borderDotted:
+        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+        '<rect x="3" y="3" width="10" height="10" stroke="currentColor" stroke-width="1.5" stroke-dasharray="1.5 2"/>' +
+        '</svg>',
+      borderDashed:
+        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+        '<rect x="3" y="3" width="10" height="10" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 2"/>' +
+        '</svg>',
+      borderColor:
+        // Pencil icon (border color)
+        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+        '<path d="M3 13l1.2-4.2L11.7 1.3c.5-.5 1.3-.5 1.8 0l1.2 1.2c.5.5.5 1.3 0 1.8L7.2 11.8 3 13z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>' +
+        '<path d="M10.9 2.1l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M4.1 8.9l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M6.1 10.1l4.9-4.9" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.55"/>' +
+        '</svg>',
+      borderWidth:
+        // Border thickness icon (arrows squeezing a bar)
+        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+        '<path d="M8 1v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M6.3 3.8L8 5.5l1.7-1.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<rect x="2.5" y="7" width="11" height="2" fill="currentColor"/>' +
+        '<path d="M8 15v-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M6.3 12.2L8 10.5l1.7 1.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '</svg>',
+      borderNone:
+        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+        '<rect x="3" y="3" width="10" height="10" stroke="currentColor" stroke-width="1.5"/>' +
+        '<path d="M4 12L12 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '</svg>',
       marginS:
         '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-        '<rect x="2.5" y="2.5" width="11" height="11" stroke="currentColor" stroke-width="1.5"/>' +
-        '<rect x="5" y="5" width="6" height="6" stroke="currentColor" stroke-width="1.5"/>' +
+        '<defs>' +
+        '<mask id="m-s"><rect x="0" y="0" width="16" height="16" fill="white"/><rect x="4.5" y="4.5" width="7" height="7" fill="black"/></mask>' +
+        '</defs>' +
+        '<g mask="url(#m-s)">' +
+        // diagonal hatch
+        '<path d="M-2 4L4 -2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M-2 8L8 -2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M-2 12L12 -2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M-2 16L16 -2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M2 16L16 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M6 16L16 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M10 16L16 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M14 16L16 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '</g>' +
+        // inner "content" box
+        '<rect x="4.5" y="4.5" width="7" height="7" stroke="currentColor" stroke-width="1.4"/>' +
         '</svg>',
       marginM:
         '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-        '<rect x="2.5" y="2.5" width="11" height="11" stroke="currentColor" stroke-width="1.5"/>' +
-        '<rect x="4.25" y="4.25" width="7.5" height="7.5" stroke="currentColor" stroke-width="1.5"/>' +
+        '<defs>' +
+        '<mask id="m-m"><rect x="0" y="0" width="16" height="16" fill="white"/><rect x="5.5" y="5.5" width="5" height="5" fill="black"/></mask>' +
+        '</defs>' +
+        '<g mask="url(#m-m)">' +
+        '<path d="M-2 4L4 -2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M-2 8L8 -2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M-2 12L12 -2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M-2 16L16 -2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M2 16L16 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M6 16L16 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M10 16L16 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M14 16L16 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '</g>' +
+        '<rect x="5.5" y="5.5" width="5" height="5" stroke="currentColor" stroke-width="1.8"/>' +
         '</svg>',
       marginL:
         '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-        '<rect x="2.5" y="2.5" width="11" height="11" stroke="currentColor" stroke-width="1.5"/>' +
-        '<rect x="3.25" y="3.25" width="9.5" height="9.5" stroke="currentColor" stroke-width="1.5"/>' +
+        '<defs>' +
+        '<mask id="m-l"><rect x="0" y="0" width="16" height="16" fill="white"/><rect x="6.5" y="6.5" width="3" height="3" fill="black"/></mask>' +
+        '</defs>' +
+        '<g mask="url(#m-l)">' +
+        '<path d="M-2 4L4 -2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M-2 8L8 -2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M-2 12L12 -2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M-2 16L16 -2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M2 16L16 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M6 16L16 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M10 16L16 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M14 16L16 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '</g>' +
+        '<rect x="6.5" y="6.5" width="3" height="3" stroke="currentColor" stroke-width="2.2"/>' +
         '</svg>',
     };
 
@@ -1562,18 +2134,97 @@ class FigureGridWidget extends WidgetType {
     const currentMargin = parsed.margin ?? 'medium';
 
     const btnEdit = makeIconBtn({ label: 'Edit grid caption', svg: icon.edit });
-    const btnShowXmd = makeIconBtn({ label: 'Show XMD', svg: icon.code });
-    btnShowXmd.addEventListener('pointerdown', (e) => {
+    // In Cursor/Next sandbox environments, window.prompt() is not supported.
+    // Use an inline editor popover instead.
+    let inlineEditorEl: HTMLDivElement | null = null;
+    const openInlineEditor = (opts: { title: string; initial: string; placeholder: string; onApply: (value: string) => void }) => {
+      try {
+        if (inlineEditorEl) {
+          inlineEditorEl.remove();
+          inlineEditorEl = null;
+        }
+        const panel = document.createElement('div');
+        inlineEditorEl = panel;
+        panel.style.position = 'absolute';
+        panel.style.left = '8px';
+        panel.style.top = '44px';
+        panel.style.zIndex = '5';
+        panel.style.padding = '8px';
+        panel.style.borderRadius = '10px';
+        panel.style.border = '1px solid rgba(255,255,255,0.10)';
+        panel.style.background = 'rgba(20,20,22,0.96)';
+        panel.style.backdropFilter = 'blur(6px)';
+        panel.style.display = 'flex';
+        panel.style.flexDirection = 'column';
+        panel.style.gap = '6px';
+        panel.style.minWidth = '260px';
+        panel.style.maxWidth = '520px';
+
+        const title = document.createElement('div');
+        title.textContent = opts.title;
+        title.style.fontSize = '11px';
+        title.style.color = '#9aa0a6';
+        panel.appendChild(title);
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = opts.initial ?? '';
+        input.placeholder = opts.placeholder;
+        input.className = 'bg-vscode-editorWidgetBg border border-vscode-border rounded px-2 py-1 text-xs text-vscode-text';
+        input.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Escape') {
+            ev.preventDefault();
+            panel.remove();
+            inlineEditorEl = null;
+            return;
+          }
+          if (ev.key === 'Enter') {
+            ev.preventDefault();
+            opts.onApply(String(input.value ?? '').trim());
+            panel.remove();
+            inlineEditorEl = null;
+            return;
+          }
+        });
+        panel.appendChild(input);
+
+        const hint = document.createElement('div');
+        hint.textContent = 'Enter to apply • Esc to cancel';
+        hint.style.fontSize = '11px';
+        hint.style.color = '#6b7280';
+        panel.appendChild(hint);
+
+        // Prevent CodeMirror interactions.
+        panel.addEventListener('pointerdown', (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+        });
+
+        outer.appendChild(panel);
+        // Focus next tick so DOM is attached.
+        setTimeout(() => {
+          try {
+            input.focus();
+            input.select();
+          } catch {
+            // ignore
+          }
+        }, 0);
+      } catch {
+        // ignore
+      }
+    };
+
+    btnEdit.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      view.dispatch({ effects: toggleRenderForRange.of({ from: this.blockFrom, to: this.blockTo }) });
-    });
-    btnEdit.addEventListener('pointerdown', (e) => {
-      e.preventDefault(); e.stopPropagation();
       const cur = parseGridHeader(view.state.doc.sliceString(this.headerFrom, this.headerTo));
-      const next = window.prompt('Grid caption', cur.caption ?? '');
-      if (next === null) return;
-      updateGridHeader({ caption: String(next).trim() || null });
+      openInlineEditor({
+        title: 'Grid caption',
+        initial: cur.caption ?? '',
+        placeholder: 'Caption (optional)',
+        onApply: (v) => updateGridHeader({ caption: v || null }),
+      });
     });
 
     const btnLeft = makeIconBtn({ label: 'Grid align left', svg: icon.alignLeft, selected: currentAlign === 'left' });
@@ -1595,42 +2246,218 @@ class FigureGridWidget extends WidgetType {
     btnMarginM.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); updateGridHeader({ margin: 'medium' }); });
     btnMarginL.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); updateGridHeader({ margin: 'large' }); });
 
+    // Border controls (style + color + width)
+    const curBorderStyle = parsed.borderStyle ?? 'solid';
+    const curBorderWidth =
+      Number.isFinite(parsed.borderWidth) && (parsed.borderWidth as number) >= 0 ? (parsed.borderWidth as number) : 1;
+    const btnBorderSolid = makeIconBtn({ label: 'Border: solid', svg: icon.borderSolid, selected: curBorderStyle === 'solid' });
+    const btnBorderDotted = makeIconBtn({ label: 'Border: dotted', svg: icon.borderDotted, selected: curBorderStyle === 'dotted' });
+    const btnBorderDashed = makeIconBtn({ label: 'Border: dashed', svg: icon.borderDashed, selected: curBorderStyle === 'dashed' });
+    btnBorderSolid.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); updateGridHeader({ borderStyle: 'solid' }); });
+    btnBorderDotted.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); updateGridHeader({ borderStyle: 'dotted' }); });
+    btnBorderDashed.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); updateGridHeader({ borderStyle: 'dashed' }); });
+
+    const btnBorderNone = makeIconBtn({ label: 'No border', svg: icon.borderNone, selected: curBorderWidth === 0 });
+    btnBorderNone.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      updateGridHeader({ borderWidth: 0 });
+    });
+
+    const iconMinus =
+      '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+      '<path d="M3.5 8h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+      '</svg>';
+    const iconPlus =
+      '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+      '<path d="M8 3.5v9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+      '<path d="M3.5 8h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+      '</svg>';
+    const btnBorderWLess = makeIconBtn({ label: `Border width - (now ${curBorderWidth}px)`, svg: iconMinus });
+    const btnBorderWMore = makeIconBtn({ label: `Border width + (now ${curBorderWidth}px)`, svg: iconPlus });
+    const clampW = (n: number) => Math.max(0, Math.min(8, Math.round(n)));
+    btnBorderWLess.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const cur = parseGridHeader(view.state.doc.sliceString(this.headerFrom, this.headerTo));
+      const w = Number.isFinite(cur.borderWidth) && (cur.borderWidth as number) >= 0 ? (cur.borderWidth as number) : 1;
+      updateGridHeader({ borderWidth: clampW(w - 1) });
+    });
+    btnBorderWMore.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const cur = parseGridHeader(view.state.doc.sliceString(this.headerFrom, this.headerTo));
+      const w = Number.isFinite(cur.borderWidth) && (cur.borderWidth as number) >= 0 ? (cur.borderWidth as number) : 1;
+      updateGridHeader({ borderWidth: clampW(w + 1) });
+    });
+
+    const makeDropdownGroup = toolbar.makeDropdownGroup;
+
+    const alignGroupBtn = makeIconBtn({
+      label: 'Align',
+      svg: currentAlign === 'center' ? icon.alignCenter : currentAlign === 'right' ? icon.alignRight : icon.alignLeft,
+      selected: true,
+    });
+    const placementGroupBtn = makeIconBtn({
+      label: 'Placement',
+      svg: currentPlacement === 'inline' ? icon.inline : icon.block,
+      selected: true,
+    });
+    const marginGroupBtn = makeIconBtn({
+      label: 'Margin',
+      svg: currentMargin === 'small' ? icon.marginS : currentMargin === 'large' ? icon.marginL : icon.marginM,
+      selected: true,
+    });
+    const borderStyleGroupBtn = makeIconBtn({
+      label: 'Border style',
+      svg: curBorderWidth === 0 ? icon.borderNone : curBorderStyle === 'dotted' ? icon.borderDotted : curBorderStyle === 'dashed' ? icon.borderDashed : icon.borderSolid,
+      selected: true,
+    });
+    const borderWidthGroupBtn = makeIconBtn({ label: `Border width (${curBorderWidth}px)`, svg: icon.borderWidth, selected: true });
+    const borderColorGroupBtn = makeIconBtn({ label: 'Border color', svg: icon.borderColor, selected: true });
+
     // Group: basic
     hoverBar.appendChild(btnEdit);
-    hoverBar.appendChild(btnShowXmd);
     hoverBar.appendChild(makeSep());
-
-    // Group: align
-    hoverBar.appendChild(btnLeft);
-    hoverBar.appendChild(btnCenter);
-    hoverBar.appendChild(btnRight);
+    hoverBar.appendChild(
+      makeDropdownGroup({
+        label: 'Align',
+        currentBtn: alignGroupBtn,
+        items: [
+          { label: 'Left', svg: icon.alignLeft, selected: currentAlign === 'left', onSelect: () => updateGridHeader({ align: 'left' }) },
+          { label: 'Center', svg: icon.alignCenter, selected: currentAlign === 'center', onSelect: () => updateGridHeader({ align: 'center' }) },
+          { label: 'Right', svg: icon.alignRight, selected: currentAlign === 'right', onSelect: () => updateGridHeader({ align: 'right' }) },
+        ],
+      })
+    );
+    hoverBar.appendChild(
+      makeDropdownGroup({
+        label: 'Placement',
+        currentBtn: placementGroupBtn,
+        items: [
+          { label: 'Inline', svg: icon.inline, selected: currentPlacement === 'inline', onSelect: () => updateGridHeader({ placement: 'inline' }) },
+          { label: 'Block', svg: icon.block, selected: currentPlacement === 'block', onSelect: () => updateGridHeader({ placement: 'block' }) },
+        ],
+      })
+    );
+    hoverBar.appendChild(
+      makeDropdownGroup({
+        label: 'Margin',
+        currentBtn: marginGroupBtn,
+        items: [
+          { label: 'Small', svg: icon.marginS, selected: currentMargin === 'small', onSelect: () => updateGridHeader({ margin: 'small' }) },
+          { label: 'Medium', svg: icon.marginM, selected: currentMargin === 'medium', onSelect: () => updateGridHeader({ margin: 'medium' }) },
+          { label: 'Large', svg: icon.marginL, selected: currentMargin === 'large', onSelect: () => updateGridHeader({ margin: 'large' }) },
+        ],
+      })
+    );
     hoverBar.appendChild(makeSep());
+    hoverBar.appendChild(
+      makeDropdownGroup({
+        label: 'Border style',
+        currentBtn: borderStyleGroupBtn,
+        items: [
+          { label: 'None', svg: icon.borderNone, selected: curBorderWidth === 0, onSelect: () => updateGridHeader({ borderWidth: 0 }) },
+          { label: 'Solid', svg: icon.borderSolid, selected: curBorderWidth > 0 && curBorderStyle === 'solid', onSelect: () => updateGridHeader({ borderStyle: 'solid', borderWidth: Math.max(1, curBorderWidth || 1) }) },
+          { label: 'Dotted', svg: icon.borderDotted, selected: curBorderWidth > 0 && curBorderStyle === 'dotted', onSelect: () => updateGridHeader({ borderStyle: 'dotted', borderWidth: Math.max(1, curBorderWidth || 1) }) },
+          { label: 'Dashed', svg: icon.borderDashed, selected: curBorderWidth > 0 && curBorderStyle === 'dashed', onSelect: () => updateGridHeader({ borderStyle: 'dashed', borderWidth: Math.max(1, curBorderWidth || 1) }) },
+        ],
+      })
+    );
+    hoverBar.appendChild(
+      makeDropdownGroup({
+        label: 'Border width',
+        currentBtn: borderWidthGroupBtn,
+        items: Array.from({ length: 9 }).map((_, i) => ({
+          label: i === 0 ? '0 (none)' : `${i}px`,
+          svg: icon.borderWidth,
+          selected: curBorderWidth === i,
+          onSelect: () => updateGridHeader({ borderWidth: i }),
+        })),
+      })
+    );
+    hoverBar.appendChild(
+      makeDropdownGroup({
+        label: 'Border color',
+        currentBtn: borderColorGroupBtn,
+        items: [],
+        customBody: (container) => {
+          container.style.display = 'flex';
+          container.style.flexDirection = 'column';
+          container.style.gap = '6px';
+          const cur = parseGridHeader(view.state.doc.sliceString(this.headerFrom, this.headerTo));
 
-    // Group: placement
-    hoverBar.appendChild(btnInline);
-    hoverBar.appendChild(btnBlock);
-    hoverBar.appendChild(makeSep());
+          const row = document.createElement('div');
+          row.style.display = 'flex';
+          row.style.alignItems = 'center';
+          row.style.gap = '8px';
+          row.style.padding = '6px';
+          row.style.borderRadius = '8px';
+          row.style.border = '1px solid rgba(255,255,255,0.10)';
+          row.style.background = 'rgba(0,0,0,0.12)';
 
-    // Group: margin preset
-    hoverBar.appendChild(btnMarginS);
-    hoverBar.appendChild(btnMarginM);
-    hoverBar.appendChild(btnMarginL);
+          const isHex = (s: string) => /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(s);
 
-    let pinned = false;
-    const show = () => {
-      hoverBar.style.visibility = 'visible';
-      hoverBar.style.pointerEvents = 'auto';
-    };
-    const hide = () => {
-      if (pinned) return;
-      hoverBar.style.visibility = 'hidden';
-      hoverBar.style.pointerEvents = 'none';
-    };
-    hide();
-    outer.addEventListener('pointerenter', show);
-    outer.addEventListener('pointerleave', hide);
-    hoverBar.addEventListener('pointerenter', show);
-    hoverBar.addEventListener('pointerleave', hide);
+          const colorInput = document.createElement('input');
+          colorInput.type = 'color';
+          const currentHex = (cur.borderColor || '').trim();
+          colorInput.value = isHex(currentHex) ? currentHex : '#6b7280';
+          colorInput.style.width = '30px';
+          colorInput.style.height = '22px';
+          colorInput.style.border = 'none';
+          colorInput.style.background = 'transparent';
+          colorInput.style.padding = '0';
+
+          const textInput = document.createElement('input');
+          textInput.type = 'text';
+          // Default to HEX so users can just type/paste.
+          // If the existing borderColor isn't a hex value, use the current palette color.
+          textInput.value = isHex(currentHex) ? currentHex.toLowerCase() : String(colorInput.value || '').trim().toLowerCase();
+          textInput.placeholder = '#rrggbb';
+          textInput.style.flex = '1';
+          textInput.style.fontSize = '11px';
+          textInput.style.background = 'transparent';
+          textInput.style.border = 'none';
+          textInput.style.outline = 'none';
+          textInput.style.color = '#cfcfcf';
+
+          const normalizeColor = (raw: string): string | null => {
+            const s = String(raw || '').trim();
+            if (!s) return null;
+            // Accept hex (with or without '#') and normalize it; otherwise keep any CSS color string (e.g. "gray", "rgb(...)").
+            const withHash = s.startsWith('#') ? s : `#${s}`;
+            if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(withHash)) return withHash.toLowerCase();
+            return s;
+          };
+          const apply = () => {
+            const next = normalizeColor(textInput.value);
+            updateGridHeader({ borderColor: next });
+            if (next) colorInput.value = next;
+          };
+
+          colorInput.addEventListener('input', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const v = String(colorInput.value || '').trim();
+            textInput.value = v;
+            updateGridHeader({ borderColor: normalizeColor(v) });
+          });
+          textInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              e.stopPropagation();
+              apply();
+              textInput.blur();
+            }
+          });
+          textInput.addEventListener('blur', () => apply());
+
+          row.appendChild(colorInput);
+          row.appendChild(textInput);
+          container.appendChild(row);
+        },
+      })
+    );
+
+    // Show/hide behavior comes from the shared toolbar shell.
 
     // Group: prompt/chat (inline, multi-turn) – will naturally wrap to next line if toolbar gets too wide.
     hoverBar.appendChild(makeSep());
@@ -1645,13 +2472,10 @@ class FigureGridWidget extends WidgetType {
         maxWidthPx: 560,
         heightPx: 44,
         onPinChange: (v) => {
-          pinned = Boolean(v);
-          if (pinned) show();
-          else hide();
+          toolbar.setPinned(Boolean(v));
         },
         onClose: () => {
-          pinned = false;
-          hide();
+          toolbar.setPinned(false);
         },
         getOriginal: () => ({ from: this.blockFrom, to: this.blockTo, text: view.state.doc.sliceString(this.blockFrom, this.blockTo) }),
         applyReplacement: (replacement) => {
@@ -1661,34 +2485,51 @@ class FigureGridWidget extends WidgetType {
     );
     outer.appendChild(hoverBar);
 
+    // Always-visible "Show XMD" button (top-left). Keep it even though we also provide a toolbar toggle
+    // so the user always has a stable, discoverable switch.
+    const btnShowXmdFixed = document.createElement('button');
+    btnShowXmdFixed.type = 'button';
+    btnShowXmdFixed.textContent = 'Show XMD';
+    btnShowXmdFixed.className =
+      'text-xs px-2 py-1 rounded border border-vscode-border bg-vscode-buttonBg text-vscode-text ' +
+      'hover:bg-vscode-buttonHoverBg transition-colors';
+    btnShowXmdFixed.style.position = 'absolute';
+    btnShowXmdFixed.style.top = '8px';
+    btnShowXmdFixed.style.left = '8px';
+    btnShowXmdFixed.style.zIndex = '6';
+    btnShowXmdFixed.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      view.dispatch({ effects: toggleRenderForRange.of({ from: this.blockFrom, to: this.blockTo }) });
+    });
+    outer.appendChild(btnShowXmdFixed);
+
     const cap = String(this.gridCaption ?? '').trim();
     if (cap.length > 0) {
       const capEl = document.createElement('div');
       capEl.textContent = cap;
+      // Keep caption from sitting under the top-left button / toolbar strip.
+      capEl.style.marginTop = '26px';
       capEl.style.marginBottom = `${spacing.capMb}px`;
       capEl.style.fontSize = '12px';
       capEl.style.color = '#9aa0a6';
       capEl.style.fontStyle = 'italic';
       capEl.style.textAlign = 'center';
       outer.appendChild(capEl);
+    } else {
+      // Even without caption, reserve a small top strip so content doesn't sit under the button.
+      const spacer = document.createElement('div');
+      spacer.style.height = '26px';
+      outer.appendChild(spacer);
     }
 
-    // Inline placement hint (editor limitation: no true text wrapping around widgets in CodeMirror).
-    try {
-      const h = view.state.doc.sliceString(this.headerFrom, this.headerTo);
-      const p = (/\bplacement\s*=\s*"(block|inline)"/i.exec(h)?.[1] || 'block').toLowerCase();
-      if (p === 'inline') {
-        outer.style.outline = '1px dashed rgba(120, 170, 255, 0.55)';
-        outer.style.outlineOffset = '3px';
-      }
-    } catch {
-      // ignore
-    }
+    // Note: we intentionally avoid any extra "placement hint" outlines here.
+    // The grid should only show borders the user explicitly sets (borderStyle/borderColor/borderWidth).
 
     const gridWrap = document.createElement('div');
     const placementNow = (() => {
       try {
-        const h = view.state.doc.sliceString(this.headerFrom, this.headerTo);
+        const h = this.headerText;
         return (/\bplacement\s*=\s*"(block|inline)"/i.exec(h)?.[1] || 'block').toLowerCase();
       } catch {
         return 'block';
@@ -1720,14 +2561,34 @@ class FigureGridWidget extends WidgetType {
       grid.style.width = '100%';
       grid.style.gridTemplateColumns = `repeat(${Math.max(1, this.cols)}, minmax(220px, 1fr))`;
     }
-    grid.style.gap = `${spacing.gap}px`;
+    // In borderMode, remove gaps so borders read like a collapsed table (preview).
+    grid.style.gap = borderMode ? '0px' : `${spacing.gap}px`;
 
     for (let i = 0; i < this.cells.length; i++) {
       const cell = document.createElement('div');
-      cell.style.border = '1px solid rgba(255,255,255,0.08)';
+      if (borderMode) {
+        // Table-like borders without doubled inner strokes:
+        // draw only top+left for all cells, plus right for last column and bottom for last row.
+        const cols = Math.max(1, this.cols);
+        const rows = Math.max(1, Math.ceil(this.cells.length / cols));
+        const r = Math.floor(i / cols);
+        const c = i % cols;
+        const b = gridBorderInfo.css;
+        cell.style.border = 'none';
+        cell.style.borderLeft = b;
+        cell.style.borderTop = b;
+        if (c === cols - 1) cell.style.borderRight = b;
+        if (r === rows - 1) cell.style.borderBottom = b;
+        cell.style.borderRadius = '0px';
+        // Match preview-ish padding
+        cell.style.padding = '6px 10px';
+        cell.style.background = 'transparent';
+      } else {
+        cell.style.border = gridBorderInfo.css.replace('0.10', '0.08'); // slightly lighter default if using rgba defaults
       cell.style.borderRadius = '8px';
       cell.style.padding = `${spacing.cellPad}px`;
       cell.style.background = 'rgba(0,0,0,0.12)';
+      }
       // Allow nested figure toolbars (which are absolutely positioned) to extend beyond the cell box.
       // Otherwise the toolbar can be clipped and appear "not showing".
       cell.style.overflow = 'visible';
@@ -1974,7 +2835,17 @@ export function embeddedImagePreviewExtension() {
       return blocks;
     };
 
-    if (!text.includes('data:image/') && !text.includes('zadoox-asset://')) {
+    // IMPORTANT:
+    // This extension started as an "embedded image preview" extension, but it now also renders
+    // grids and tables. Don't early-exit unless we truly have nothing to do.
+    const maybeHasEmbeddables =
+      text.includes('data:image/') ||
+      text.includes('zadoox-asset://') ||
+      text.includes(':::') ||
+      text.includes('|L') ||
+      text.includes('|C') ||
+      text.includes('|R');
+    if (!maybeHasEmbeddables) {
       return Decoration.none;
     }
 
@@ -2031,6 +2902,209 @@ export function embeddedImagePreviewExtension() {
     const gridBlocks = parseGridBlocks(text);
     const isInGrid = (pos: number) => gridBlocks.some((g) => pos >= g.from && pos < g.to);
 
+    const parseFenceBlocks = (raw: string): Array<{ from: number; to: number }> => {
+      const blocks: Array<{ from: number; to: number }> = [];
+      const startRe = /^:::\s*(.*?)$/gm;
+      let m: RegExpExecArray | null;
+      while ((m = startRe.exec(raw))) {
+        const start = m.index;
+        const closeRe = /^(?:\s*:::\s*$|.*?:::\s*$)/gm;
+        closeRe.lastIndex = startRe.lastIndex;
+        let close = closeRe.exec(raw);
+        while (close) {
+          const line = String(close[0] ?? '');
+          const t = line.trim();
+          const isOpening = t.startsWith(':::') && t !== ':::';
+          if (!isOpening) break;
+          close = closeRe.exec(raw);
+        }
+        if (!close) continue;
+        const end = close.index + close[0].length;
+        blocks.push({ from: start, to: Math.min(end, doc.length) });
+        startRe.lastIndex = end;
+      }
+      return blocks;
+    };
+
+    // Any ::: ... ::: fenced directive should be treated as an atomic "surface":
+    // either the entire block is rendered by its own widget (grid/table), or nothing inside is rendered.
+    // This prevents partially-rendered/mixed states when the fence is malformed or toggled to show XMD.
+    const fenceBlocks = parseFenceBlocks(text);
+    const isInFence = (pos: number) => fenceBlocks.some((b) => pos >= b.from && pos < b.to);
+
+    const parseTableRuleLine = (line: string): TableRule | null => {
+      const t = String(line ?? '').trim();
+      if (t === '.') return 'none';
+      if (t === '-') return 'single';
+      if (t === '=') return 'double';
+      return null;
+    };
+
+    const parseTableColSpec = (line: string): { colAlign: TableAlign[]; vRules: TableRule[] } | null => {
+      const raw = String(line ?? '').trim();
+      if (!raw) return null;
+      if (!/^[|LCRlcr]+$/.test(raw)) return null;
+      const colAlign: TableAlign[] = [];
+      const vRules: TableRule[] = [];
+      let i = 0;
+      const readBars = (): TableRule => {
+        let count = 0;
+        while (i < raw.length && raw[i] === '|') {
+          count++;
+          i++;
+        }
+        if (count >= 2) return 'double';
+        if (count === 1) return 'single';
+        return 'none';
+      };
+      vRules.push(readBars());
+      while (i < raw.length) {
+        const ch = raw[i]!;
+        const letter = ch.toUpperCase();
+        if (letter !== 'L' && letter !== 'C' && letter !== 'R') return null;
+        colAlign.push(letter === 'L' ? 'left' : letter === 'C' ? 'center' : 'right');
+        i++;
+        vRules.push(readBars());
+      }
+      if (colAlign.length === 0) return null;
+      while (vRules.length < colAlign.length + 1) vRules.push('none');
+      if (vRules.length > colAlign.length + 1) vRules.length = colAlign.length + 1;
+      return { colAlign, vRules };
+    };
+
+    const parseXmdTableBlocks = (raw: string): XmdTableBlock[] => {
+      const blocks: XmdTableBlock[] = [];
+      const startRe = /^:::\s*(.*?)$/gm;
+      let m: RegExpExecArray | null;
+      while ((m = startRe.exec(raw))) {
+        const header = String(m[1] || '').trim();
+        // Don't treat grids as tables (grids must have cols=...).
+        if (/\bcols\s*=\s*\d+\b/.test(header) || /\bcolumns\s*=\s*\d+\b/.test(header)) continue;
+
+        // Find the closing ::: after this header.
+        const start = m.index;
+        const closeRe = /^(?:\s*:::\s*$|.*?:::\s*$)/gm;
+        closeRe.lastIndex = startRe.lastIndex;
+        let close = closeRe.exec(raw);
+        while (close) {
+          const line = String(close[0] ?? '');
+          const t = line.trim();
+          const isOpening = t.startsWith(':::') && t !== ':::';
+          if (!isOpening) break;
+          close = closeRe.exec(raw);
+        }
+        if (!close) continue;
+        const end = close.index + close[0].length;
+
+        const inner = raw.slice(startRe.lastIndex, close.index);
+        const innerLines = inner.split('\n').map((l) => String(l ?? ''));
+        let idx = 0;
+        while (idx < innerLines.length && innerLines[idx]!.trim().length === 0) idx++;
+        const colSpecLine = idx < innerLines.length ? innerLines[idx]! : '';
+        const colSpec = parseTableColSpec(colSpecLine);
+        if (!colSpec) {
+          // Not a table; likely another directive.
+          startRe.lastIndex = end;
+          continue;
+        }
+        idx++;
+
+        const parseAttr = (key: string): string | null => {
+          const re = new RegExp(`\\b${key}\\s*=\\s*\"([^\"]*)\"`, 'i');
+          const mm = re.exec(header);
+          return mm ? String(mm[1] ?? '') : null;
+        };
+        const caption = parseAttr('caption');
+        const label = parseAttr('label');
+        const borderStyleRaw = (parseAttr('borderStyle') || '').trim().toLowerCase();
+        const borderStyle: TableBorderStyle =
+          borderStyleRaw === 'dotted' ? 'dotted' : borderStyleRaw === 'dashed' ? 'dashed' : 'solid';
+        const borderColor = (parseAttr('borderColor') || '').trim();
+        const borderWidthRaw = (parseAttr('borderWidth') || '').trim();
+        const borderWidthPx = borderWidthRaw ? Number(borderWidthRaw) : NaN;
+        const style =
+          borderColor || (Number.isFinite(borderWidthPx) && borderWidthPx > 0) || borderStyleRaw
+            ? {
+                borderStyle,
+                borderColor: borderColor || 'rgba(255,255,255,0.16)',
+                borderWidthPx: Number.isFinite(borderWidthPx) && borderWidthPx > 0 ? Math.round(borderWidthPx) : 1,
+              }
+            : null;
+
+        let pendingRule: TableRule = 'none';
+        let topRule: TableRule = 'none';
+        const beforeRowRules: Record<number, TableRule> = {};
+        let headerRow: string[] | null = null;
+        const rows: string[][] = [];
+        let sawSep = false;
+
+        const applyPendingToNextRow = (rowIndex: number) => {
+          if (rowIndex === 0) topRule = pendingRule;
+          else beforeRowRules[rowIndex] = pendingRule;
+          pendingRule = 'none';
+        };
+
+        for (; idx < innerLines.length; idx++) {
+          const ln = innerLines[idx]!;
+          if (ln.trim().length === 0) continue;
+          const rule = parseTableRuleLine(ln);
+          if (rule) {
+            pendingRule = rule;
+            continue;
+          }
+          const row = parsePipeRow(ln);
+          if (!row) continue;
+          if (headerRow && !sawSep && isSeparatorRow(ln)) {
+            sawSep = true;
+            continue;
+          }
+          if (!headerRow) {
+            headerRow = row;
+            applyPendingToNextRow(0);
+            continue;
+          }
+          const rowIndex = 1 + rows.length;
+          applyPendingToNextRow(rowIndex);
+          rows.push(row);
+        }
+        const bottomRule = pendingRule;
+
+        if (!headerRow) {
+          startRe.lastIndex = end;
+          continue;
+        }
+
+        const cols = headerRow.length;
+        const totalRows = 1 + rows.length;
+        const hRules: TableRule[] = Array.from({ length: totalRows + 1 }).map(() => 'none');
+        hRules[0] = topRule;
+        for (const [k, v] of Object.entries(beforeRowRules)) {
+          const n = Number(k);
+          if (Number.isFinite(n) && n >= 1 && n <= totalRows) hRules[n] = v;
+        }
+        hRules[totalRows] = bottomRule;
+
+        blocks.push({
+          from: start,
+          to: Math.min(end, doc.length),
+          caption: caption ? caption.trim() : null,
+          label: label ? label.trim() : null,
+          header: headerRow,
+          rows,
+          colAlign: colSpec.colAlign,
+          vRules: colSpec.vRules,
+          hRules,
+          style,
+        });
+
+        startRe.lastIndex = end;
+      }
+      return blocks;
+    };
+
+    const xmdTableBlocks = parseXmdTableBlocks(text);
+    const isInXmdTable = (pos: number) => xmdTableBlocks.some((t) => pos >= t.from && pos < t.to);
+
     // Capture optional attribute block after the image.
     // Supports:
     // - data:image/...;base64,...
@@ -2039,9 +3113,404 @@ export function embeddedImagePreviewExtension() {
       /!\[([^\]]*)\]\(((?:data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+)|(?:zadoox-asset:\/\/[^)\s]+))\)\s*(\{(?:\{REF\}|\{CH\}|[^}])*\})?/g;
 
     const decos: Array<import('@codemirror/state').Range<Decoration>> = [];
-    // Render pipe-tables as a single widget (with per-element toggle).
-    // We do this before figures so figures inside a table won't be replaced unexpectedly.
-    const tableBlocks = parseTableBlocks();
+    // Render XMD table blocks as a single widget (with per-element toggle) so they are never "mixed"
+    // (i.e. inner pipe-table rendered while fences remain as text).
+    class XmdTableWidget extends WidgetType {
+      constructor(private readonly block: XmdTableBlock) {
+        super();
+      }
+      eq(other: XmdTableWidget): boolean {
+        return (
+          this.block.from === other.block.from &&
+          this.block.to === other.block.to &&
+          JSON.stringify(this.block.header) === JSON.stringify(other.block.header) &&
+          JSON.stringify(this.block.rows) === JSON.stringify(other.block.rows) &&
+          JSON.stringify(this.block.colAlign) === JSON.stringify(other.block.colAlign) &&
+          JSON.stringify(this.block.vRules) === JSON.stringify(other.block.vRules) &&
+          JSON.stringify(this.block.hRules) === JSON.stringify(other.block.hRules) &&
+          JSON.stringify(this.block.style) === JSON.stringify(other.block.style) &&
+          this.block.caption === other.block.caption
+        );
+      }
+      ignoreEvent(): boolean {
+        return true;
+      }
+      toDOM(view: EditorView): HTMLElement {
+        const outer = document.createElement('div');
+        outer.className = 'cm-embedded-xmd-table';
+        outer.style.position = 'relative';
+        outer.style.margin = '8px 0';
+        outer.style.padding = '8px';
+        outer.style.border = '1px solid rgba(255,255,255,0.08)';
+        outer.style.borderRadius = '8px';
+        outer.style.background = 'rgba(0,0,0,0.12)';
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = 'Show XMD';
+        btn.className =
+          'text-xs px-2 py-1 rounded border border-vscode-border bg-vscode-buttonBg text-vscode-text ' +
+          'hover:bg-vscode-buttonHoverBg transition-colors';
+        btn.style.position = 'absolute';
+        btn.style.top = '8px';
+        btn.style.left = '8px';
+        btn.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          view.dispatch({ effects: toggleRenderForRange.of({ from: this.block.from, to: this.block.to }) });
+        });
+        outer.appendChild(btn);
+
+        // Table hover toolbar (same shell as grid/figure, but table-specific options)
+        const tableToolbar = createToolbarShell({
+          outer,
+          keepOpenKey: `table:${this.block.from}:${this.block.to}`,
+          className: 'cm-embedded-table-toolbar',
+          top: '8px',
+          right: '8px',
+          zIndex: '6',
+          showMode: 'visibility',
+          style: {
+            maxWidth: '560px',
+          },
+        });
+
+        const tIcon = {
+          borderSolid:
+            '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+            '<rect x="3" y="3" width="10" height="10" stroke="currentColor" stroke-width="1.5"/>' +
+            '</svg>',
+          borderDotted:
+            '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+            '<rect x="3" y="3" width="10" height="10" stroke="currentColor" stroke-width="1.5" stroke-dasharray="1.5 2"/>' +
+            '</svg>',
+          borderDashed:
+            '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+            '<rect x="3" y="3" width="10" height="10" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 2"/>' +
+            '</svg>',
+          borderNone:
+            '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+            '<rect x="3" y="3" width="10" height="10" stroke="currentColor" stroke-width="1.5"/>' +
+            '<path d="M4 12L12 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+            '</svg>',
+          borderColor:
+            '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+            '<path d="M3 13l1.2-4.2L11.7 1.3c.5-.5 1.3-.5 1.8 0l1.2 1.2c.5.5.5 1.3 0 1.8L7.2 11.8 3 13z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>' +
+            '<path d="M10.9 2.1l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+            '</svg>',
+          borderWidth:
+            '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+            '<path d="M8 1v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+            '<path d="M6.3 3.8L8 5.5l1.7-1.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+            '<rect x="2.5" y="7" width="11" height="2" fill="currentColor"/>' +
+            '<path d="M8 15v-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+            '<path d="M6.3 12.2L8 10.5l1.7 1.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+            '</svg>',
+        };
+
+        const getHeaderLine = () => {
+          const line = view.state.doc.lineAt(this.block.from);
+          return { from: line.from, to: line.to, text: view.state.doc.sliceString(line.from, line.to) };
+        };
+
+        const parseHeaderAttr = (headerText: string, key: string): string | null => {
+          const re = new RegExp(`\\b${key}\\s*=\\s*\"([^\"]*)\"`, 'i');
+          const m = re.exec(headerText);
+          return m ? String(m[1] ?? '') : null;
+        };
+
+        const stripHeaderAttrKeys = (rest: string, keys: string[]): string => {
+          let out = rest;
+          for (const k of keys) out = out.replace(new RegExp(`\\s*${k}\\s*=\\s*\"[^\"]*\"`, 'gi'), '');
+          return out.replace(/\s+/g, ' ').trim();
+        };
+
+        const buildNextHeaderLine = (updates: {
+          borderStyle?: 'solid' | 'dotted' | 'dashed' | null;
+          borderColor?: string | null;
+          borderWidth?: number | null;
+        }): string => {
+          const cur = getHeaderLine().text;
+          const restRaw = cur.replace(/^:::\s*/i, '');
+          let rest = stripHeaderAttrKeys(restRaw, ['borderStyle', 'borderColor', 'borderWidth']);
+
+          const bs = updates.borderStyle !== undefined ? updates.borderStyle : (parseHeaderAttr(cur, 'borderStyle') || '').trim().toLowerCase();
+          const bc = updates.borderColor !== undefined ? updates.borderColor : (parseHeaderAttr(cur, 'borderColor') || '');
+          const bwRaw =
+            updates.borderWidth !== undefined ? String(updates.borderWidth ?? '') : String(parseHeaderAttr(cur, 'borderWidth') || '').trim();
+
+          const normStyle = bs === 'dotted' ? 'dotted' : bs === 'dashed' ? 'dashed' : bs ? 'solid' : null;
+          const normColor = String(bc ?? '').trim();
+          const normWidth = bwRaw.length ? Number(bwRaw) : NaN;
+
+          if (normStyle) rest = `${rest} borderStyle="${escapeAttrValue(normStyle)}"`.trim();
+          if (normColor.length > 0) rest = `${rest} borderColor="${escapeAttrValue(normColor)}"`.trim();
+          if (Number.isFinite(normWidth) && normWidth >= 0) rest = `${rest} borderWidth="${Math.round(normWidth)}"`.trim();
+
+          return rest.length > 0 ? `::: ${rest}`.trimEnd() : ':::';
+        };
+
+        const updateHeader = (u: { borderStyle?: 'solid' | 'dotted' | 'dashed' | null; borderColor?: string | null; borderWidth?: number | null }) => {
+          try {
+            const hl = getHeaderLine();
+            const next = buildNextHeaderLine(u);
+            view.dispatch({ changes: { from: hl.from, to: hl.to, insert: next } });
+          } catch {
+            // ignore
+          }
+        };
+
+        const curBorderStyle = (this.block.style?.borderStyle || 'solid') as 'solid' | 'dotted' | 'dashed';
+        const curBorderWidth =
+          this.block.style?.borderWidthPx !== undefined && Number.isFinite(this.block.style.borderWidthPx) ? this.block.style.borderWidthPx : 1;
+        const curBorderColor = (this.block.style?.borderColor || '').trim();
+
+        const borderStyleGroupBtn = tableToolbar.makeIconBtn({
+          label: 'Border style',
+          svg: curBorderWidth === 0 ? tIcon.borderNone : curBorderStyle === 'dotted' ? tIcon.borderDotted : curBorderStyle === 'dashed' ? tIcon.borderDashed : tIcon.borderSolid,
+          selected: true,
+        });
+        const borderWidthGroupBtn = tableToolbar.makeIconBtn({ label: `Border width (${curBorderWidth}px)`, svg: tIcon.borderWidth, selected: true });
+        const borderColorGroupBtn = tableToolbar.makeIconBtn({ label: 'Border color', svg: tIcon.borderColor, selected: true });
+
+        tableToolbar.bar.appendChild(
+          tableToolbar.makeDropdownGroup({
+            label: 'Border style',
+            currentBtn: borderStyleGroupBtn,
+            items: [
+              { label: 'None', svg: tIcon.borderNone, selected: curBorderWidth === 0, onSelect: () => updateHeader({ borderWidth: 0 }) },
+              { label: 'Solid', svg: tIcon.borderSolid, selected: curBorderWidth > 0 && curBorderStyle === 'solid', onSelect: () => updateHeader({ borderStyle: 'solid', borderWidth: Math.max(1, curBorderWidth || 1) }) },
+              { label: 'Dotted', svg: tIcon.borderDotted, selected: curBorderWidth > 0 && curBorderStyle === 'dotted', onSelect: () => updateHeader({ borderStyle: 'dotted', borderWidth: Math.max(1, curBorderWidth || 1) }) },
+              { label: 'Dashed', svg: tIcon.borderDashed, selected: curBorderWidth > 0 && curBorderStyle === 'dashed', onSelect: () => updateHeader({ borderStyle: 'dashed', borderWidth: Math.max(1, curBorderWidth || 1) }) },
+            ],
+          })
+        );
+        tableToolbar.bar.appendChild(
+          tableToolbar.makeDropdownGroup({
+            label: 'Border width',
+            currentBtn: borderWidthGroupBtn,
+            items: Array.from({ length: 9 }).map((_, i) => ({
+              label: i === 0 ? '0 (none)' : `${i}px`,
+              svg: tIcon.borderWidth,
+              selected: curBorderWidth === i,
+              onSelect: () => updateHeader({ borderWidth: i }),
+            })),
+          })
+        );
+        tableToolbar.bar.appendChild(
+          tableToolbar.makeDropdownGroup({
+            label: 'Border color',
+            currentBtn: borderColorGroupBtn,
+            items: [],
+            customBody: (container) => {
+              container.style.display = 'flex';
+              container.style.flexDirection = 'column';
+              container.style.gap = '6px';
+
+              const row = document.createElement('div');
+              row.style.display = 'flex';
+              row.style.alignItems = 'center';
+              row.style.gap = '8px';
+              row.style.padding = '6px';
+              row.style.borderRadius = '8px';
+              row.style.border = '1px solid rgba(255,255,255,0.10)';
+              row.style.background = 'rgba(0,0,0,0.12)';
+
+              const isHex = (s: string) => /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(s);
+
+              const colorInput = document.createElement('input');
+              colorInput.type = 'color';
+              colorInput.value = isHex(curBorderColor) ? curBorderColor : '#6b7280';
+              colorInput.style.width = '30px';
+              colorInput.style.height = '22px';
+              colorInput.style.border = 'none';
+              colorInput.style.background = 'transparent';
+              colorInput.style.padding = '0';
+
+              const textInput = document.createElement('input');
+              textInput.type = 'text';
+              textInput.value = isHex(curBorderColor) ? curBorderColor.toLowerCase() : String(colorInput.value || '').trim().toLowerCase();
+              textInput.placeholder = '#rrggbb';
+              textInput.style.flex = '1';
+              textInput.style.fontSize = '11px';
+              textInput.style.background = 'transparent';
+              textInput.style.border = 'none';
+              textInput.style.outline = 'none';
+              textInput.style.color = '#cfcfcf';
+
+              const normalizeColor = (raw: string): string | null => {
+                const s = String(raw || '').trim();
+                if (!s) return null;
+                const withHash = s.startsWith('#') ? s : `#${s}`;
+                if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(withHash)) return withHash.toLowerCase();
+                return s;
+              };
+
+              const apply = () => {
+                const next = normalizeColor(textInput.value);
+                updateHeader({ borderColor: next });
+                if (next) colorInput.value = next;
+              };
+
+              colorInput.addEventListener('input', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const v = String(colorInput.value || '').trim();
+                textInput.value = v;
+                updateHeader({ borderColor: normalizeColor(v) });
+              });
+              textInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  apply();
+                  textInput.blur();
+                }
+              });
+              textInput.addEventListener('blur', () => apply());
+
+              row.appendChild(colorInput);
+              row.appendChild(textInput);
+              container.appendChild(row);
+            },
+          })
+        );
+
+        // AI chat (same inline chat used by grid/figure)
+        tableToolbar.bar.appendChild(makeToolbarSeparator());
+        tableToolbar.bar.appendChild(
+          makeInlineComponentChatArea({
+            kind: 'table',
+            ariaLabel: 'Table edit prompt',
+            placeholder: 'Describe what you want…',
+            rows: 2,
+            widthPx: 320,
+            minWidthPx: 220,
+            maxWidthPx: 560,
+            heightPx: 44,
+            onPinChange: (v) => {
+              tableToolbar.setPinned(Boolean(v));
+            },
+            onClose: () => {
+              tableToolbar.setPinned(false);
+            },
+            getOriginal: () => ({
+              from: this.block.from,
+              to: this.block.to,
+              text: view.state.doc.sliceString(this.block.from, this.block.to),
+            }),
+            applyReplacement: (replacement) => {
+              view.dispatch({ changes: { from: this.block.from, to: this.block.to, insert: replacement } });
+            },
+          })
+        );
+
+        outer.appendChild(tableToolbar.bar);
+
+        const cols = Math.max(0, this.block.header.length);
+        const borderColor = this.block.style?.borderColor || 'rgba(255,255,255,0.16)';
+        const borderWidth = this.block.style?.borderWidthPx && this.block.style.borderWidthPx > 0 ? this.block.style.borderWidthPx : 1;
+        const singleStyle = this.block.style?.borderStyle || 'solid';
+        const cssBorder = (rule: TableRule) => {
+          if (rule === 'none') return 'none';
+          const style = rule === 'double' ? 'double' : singleStyle;
+          const w = rule === 'double' ? Math.max(3, borderWidth) : borderWidth;
+          return `${w}px ${style} ${borderColor}`;
+        };
+        const cssAlign = (a: TableAlign) => (a === 'center' ? 'center' : a === 'right' ? 'right' : 'left');
+
+        if (this.block.caption) {
+          const cap = document.createElement('div');
+          cap.textContent = this.block.caption;
+          cap.style.color = '#9aa0a6';
+          cap.style.fontStyle = 'italic';
+          cap.style.fontSize = '12px';
+          cap.style.marginTop = '22px';
+          cap.style.marginBottom = '6px';
+          outer.appendChild(cap);
+        } else {
+          // Keep table content from overlapping the top-right button.
+          const spacer = document.createElement('div');
+          spacer.style.height = '22px';
+          outer.appendChild(spacer);
+        }
+
+        const table = document.createElement('table');
+        table.style.width = '100%';
+        table.style.borderCollapse = 'collapse';
+
+        const mkCellStyle = (rowIndex: number, colIndex: number) => {
+          const styles: string[] = [];
+          styles.push(`text-align:${cssAlign(this.block.colAlign[colIndex] || 'left')}`);
+          styles.push('padding:6px 10px');
+          // vertical
+          if (colIndex === 0) styles.push(`border-left:${cssBorder(this.block.vRules[0] || 'none')}`);
+          if (colIndex > 0) styles.push(`border-left:${cssBorder(this.block.vRules[colIndex] || 'none')}`);
+          if (colIndex === cols - 1) styles.push(`border-right:${cssBorder(this.block.vRules[cols] || 'none')}`);
+          // horizontal
+          const totalRows = 1 + this.block.rows.length;
+          if (rowIndex === 0) styles.push(`border-top:${cssBorder(this.block.hRules[0] || 'none')}`);
+          if (rowIndex > 0) styles.push(`border-top:${cssBorder(this.block.hRules[rowIndex] || 'none')}`);
+          if (rowIndex === totalRows - 1) styles.push(`border-bottom:${cssBorder(this.block.hRules[totalRows] || 'none')}`);
+          return styles.join(';');
+        };
+
+        const thead = document.createElement('thead');
+        const trh = document.createElement('tr');
+        for (let c = 0; c < cols; c++) {
+          const th = document.createElement('th');
+          th.textContent = String(this.block.header[c] ?? '');
+          th.style.cssText = mkCellStyle(0, c);
+          th.style.fontWeight = '600';
+          trh.appendChild(th);
+        }
+        thead.appendChild(trh);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        for (let r = 0; r < this.block.rows.length; r++) {
+          const row = this.block.rows[r] ?? [];
+          const tr = document.createElement('tr');
+          for (let c = 0; c < cols; c++) {
+            const td = document.createElement('td');
+            td.textContent = String(row[c] ?? '');
+            td.style.cssText = mkCellStyle(1 + r, c);
+            tr.appendChild(td);
+          }
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+
+        outer.appendChild(table);
+        return outer;
+      }
+    }
+
+    for (const tb of xmdTableBlocks) {
+      // Never render tables inside grids; grids control their own rendering surface.
+      // This prevents "mixed XMD/HTML" when a grid is toggled to show XMD.
+      if (isInGrid(tb.from)) continue;
+      if (isRenderingDisabledAt(tb.from, tb.to)) {
+        decos.push(
+          Decoration.widget({
+            widget: new RenderPillWidget('Render table', tb.from, tb.to),
+            block: true,
+            side: -1,
+          }).range(tb.from)
+        );
+        continue;
+      }
+      decos.push(
+        Decoration.replace({
+          widget: new XmdTableWidget(tb),
+          block: true,
+        }).range(tb.from, tb.to)
+      );
+    }
+
+    // Render plain pipe-tables as a single widget (with per-element toggle).
+    // Never render a pipe-table inside any ::: ... ::: fenced block; the fence must be atomic.
+    const tableBlocks = parseTableBlocks().filter((t) => !isInFence(t.from));
     for (const tb of tableBlocks) {
       if (isRenderingDisabledAt(tb.from, tb.to)) {
         decos.push(
@@ -2083,9 +3552,17 @@ export function embeddedImagePreviewExtension() {
       } else {
         outGridMatchCount++;
       }
+      // Never render figures inside any ::: ... ::: fenced directive block.
+      // Grids/tables handle their own rendering; unknown/malformed fences must remain pure XMD.
+      if (isInFence(matchStart)) {
+        continue;
+      }
 
-      // Skip rendering if this figure is within a disabled range or a rendered table block.
+      // Skip rendering if this figure is within a disabled range or any table block (pipe or XMD).
       if (tableBlocks.some((t) => matchStart >= t.from && matchStart < t.to)) {
+        continue;
+      }
+      if (xmdTableBlocks.some((t) => matchStart >= t.from && matchStart < t.to)) {
         continue;
       }
       if (isRenderingDisabledAt(matchStart, matchEnd)) {
@@ -2238,7 +3715,7 @@ export function embeddedImagePreviewExtension() {
         const inlineWrap = g.placement === 'inline' && ((g.align ?? 'left') === 'left' || (g.align ?? 'left') === 'right');
         decos.push(
           Decoration.replace({
-            widget: new FigureGridWidget(g.cols, g.caption, headerFrom, headerTo, g.from, g.to, cells),
+            widget: new FigureGridWidget(g.cols, g.caption, headerFrom, headerTo, doc.sliceString(headerFrom, headerTo), g.from, g.to, cells),
             // If placement=inline and align is left/right, render as non-block so text can wrap (like inline figures).
             block: !inlineWrap,
           }).range(g.from, g.to)

@@ -90,12 +90,72 @@ function renderNode(node: IrNode): string {
       return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;max-width:100%;margin-left:0;margin-right:auto"><img src="${src}" alt="${cap}" style="display:block;max-width:100%" />${caption}</span></span>`;
     }
     case 'table': {
-      // Simple HTML table rendering.
-      const header = `<tr>${(node.header ?? []).map((h) => `<th>${escapeHtml(String(h))}</th>`).join('')}</tr>`;
-      const rows = (node.rows ?? [])
-        .map((r) => `<tr>${(r ?? []).map((c) => `<td>${escapeHtml(String(c))}</td>`).join('')}</tr>`)
+      const cols = Math.max(0, (node.header ?? []).length);
+      const align = (node.colAlign && node.colAlign.length === cols ? node.colAlign : Array.from({ length: cols }).map(() => 'left')) as Array<
+        'left' | 'center' | 'right'
+      >;
+      const vRules =
+        node.vRules && node.vRules.length === cols + 1 ? node.vRules : Array.from({ length: cols + 1 }).map(() => 'none' as const);
+      const totalRows = 1 + (node.rows?.length ?? 0);
+      const hRules =
+        node.hRules && node.hRules.length === totalRows + 1 ? node.hRules : Array.from({ length: totalRows + 1 }).map(() => 'none' as const);
+
+      const borderColor = (node.style?.borderColor ?? '').trim() || 'rgba(255,255,255,0.16)';
+      const borderWidth = Number.isFinite(node.style?.borderWidthPx) && (node.style?.borderWidthPx ?? 0) > 0 ? Math.round(node.style!.borderWidthPx!) : 1;
+      const singleStyle = (node.style?.borderStyle ?? 'solid') as 'solid' | 'dotted' | 'dashed';
+
+      const cssAlign = (a: 'left' | 'center' | 'right') => (a === 'center' ? 'center' : a === 'right' ? 'right' : 'left');
+      const cssBorder = (rule: 'none' | 'single' | 'double') => {
+        if (rule === 'none') return 'none';
+        const style = rule === 'double' ? 'double' : singleStyle;
+        // Double borders look better with a slightly thicker width; keep deterministic.
+        const w = rule === 'double' ? Math.max(3, borderWidth) : borderWidth;
+        return `${w}px ${style} ${borderColor}`;
+      };
+
+      const cellStyle = (params: { rowIndex: number; colIndex: number; isHeader: boolean }): string => {
+        const { rowIndex, colIndex } = params;
+        const styles: string[] = [];
+        styles.push(`text-align:${cssAlign(align[colIndex] ?? 'left')}`);
+        // Vertical boundaries:
+        // - boundary 0 => left border on col 0 cells
+        // - boundary i => left border on col i cells (i in 1..cols-1)
+        // - boundary cols => right border on last col cells
+        if (colIndex === 0) styles.push(`border-left:${cssBorder(vRules[0] ?? 'none')}`);
+        if (colIndex > 0) styles.push(`border-left:${cssBorder(vRules[colIndex] ?? 'none')}`);
+        if (colIndex === cols - 1) styles.push(`border-right:${cssBorder(vRules[cols] ?? 'none')}`);
+        // Horizontal boundaries:
+        // - hRules[0] => top border on header row cells
+        // - hRules[1] => top border on first data row cells
+        // - hRules[k] => top border on data row (k-1) cells (k in 2..totalRows-1)
+        // - hRules[totalRows] => bottom border on last row cells
+        if (rowIndex === 0) styles.push(`border-top:${cssBorder(hRules[0] ?? 'none')}`);
+        if (rowIndex > 0) styles.push(`border-top:${cssBorder(hRules[rowIndex] ?? 'none')}`);
+        if (rowIndex === totalRows - 1) styles.push(`border-bottom:${cssBorder(hRules[totalRows] ?? 'none')}`);
+        // Keep cells readable in the default dark preview theme.
+        styles.push('padding:6px 10px');
+        return styles.join(';');
+      };
+
+      const headerCells = (node.header ?? [])
+        .map((h, c) => `<th style="${cellStyle({ rowIndex: 0, colIndex: c, isHeader: true })}">${escapeHtml(String(h))}</th>`)
         .join('');
-      return `<table><thead>${header}</thead><tbody>${rows}</tbody></table>`;
+      const header = `<tr>${headerCells}</tr>`;
+
+      const bodyRows = (node.rows ?? [])
+        .map((r, rIdx) => {
+          const rowIndex = 1 + rIdx;
+          const tds = Array.from({ length: cols }).map((_, c) => {
+            const cell = (r ?? [])[c] ?? '';
+            return `<td style="${cellStyle({ rowIndex, colIndex: c, isHeader: false })}">${escapeHtml(String(cell))}</td>`;
+          });
+          return `<tr>${tds.join('')}</tr>`;
+        })
+        .join('');
+
+      const caption = String(node.caption ?? '').trim();
+      const capHtml = caption.length > 0 ? `<caption style="caption-side:top;text-align:left;margin-bottom:6px;color:#9aa0a6;font-style:italic">${escapeHtml(caption)}</caption>` : '';
+      return `<table style="border-collapse:collapse;width:100%">${capHtml}<thead>${header}</thead><tbody>${bodyRows}</tbody></table>`;
     }
     case 'grid': {
       const g = node as GridNode;
@@ -105,12 +165,19 @@ function renderNode(node: IrNode): string {
           ? g.cols
           : rows.reduce((m, r) => Math.max(m, (r ?? []).length), 0) || 1;
 
+      const borderColor = (g.style?.borderColor ?? '').trim() || 'rgba(255,255,255,0.16)';
+      const borderWidthRaw = g.style?.borderWidthPx;
+      const borderNone = Number.isFinite(borderWidthRaw) && (borderWidthRaw as number) === 0;
+      const borderWidth = Number.isFinite(borderWidthRaw) && (borderWidthRaw ?? 0) > 0 ? Math.round(borderWidthRaw!) : 1;
+      const borderStyle = (g.style?.borderStyle ?? 'solid') as 'solid' | 'dotted' | 'dashed';
+      const cellBorder = borderNone ? 'none' : `${borderWidth}px ${borderStyle} ${borderColor}`;
+
       const body = rows
         .map((row) => {
           const cells = Array.from({ length: cols }).map((_, i) => {
             const cell = row?.[i];
             const inner = renderNodes(cell?.children ?? []);
-            return `<td>${inner}</td>`;
+            return `<td style="border:${cellBorder};padding:6px 10px;vertical-align:top">${inner}</td>`;
           });
           return `<tr>${cells.join('')}</tr>`;
         })
@@ -127,9 +194,10 @@ function renderNode(node: IrNode): string {
       const floatCss = canFloat
         ? `float:${align === 'right' ? 'right' : 'left'};max-width:55%;margin:${align === 'right' ? '0.25em 0 0.75em 1em' : '0.25em 1em 0.75em 0'};`
         : '';
+      const gridId = g.label ? ` id="grid-${sanitizeDomId(g.label)}"` : '';
       // NOTE: This enables wrap-around behavior in preview. The editor surface (CodeMirror)
       // cannot do true wrap-around for replacement widgets, so we only implement it here (IR->HTML).
-      return `<div class="xmd-grid" style="${alignCss};padding:${pad}px;${floatCss}">${capHtml}<table><tbody>${body}</tbody></table></div>`;
+      return `<div class="xmd-grid"${gridId} style="${alignCss};padding:${pad}px;${floatCss}">${capHtml}<table style="border-collapse:collapse;width:100%"><tbody>${body}</tbody></table></div>`;
     }
     case 'raw_xmd_block':
       return renderMarkdownToHtml(node.xmd ?? '');

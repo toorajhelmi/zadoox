@@ -97,6 +97,30 @@ describe('parseXmdToIr', () => {
     expect(aIds).toEqual(bIds);
   });
 
+  it('parses ::: (grid) with label + border attrs', () => {
+    const xmd = [
+      '@ Title',
+      '',
+      '::: cols=2 caption="Grid Cap" label="grid:demo" borderStyle="dashed" borderColor="#00ff00" borderWidth="2"',
+      'Cell A text.',
+      '|||',
+      'Cell B text.',
+      ':::',
+    ].join('\n');
+
+    const ir = parseXmdToIr({ docId: 'doc-grid-style-1', xmd });
+    const grid = ir.children.find((n) => n.type === 'grid');
+    expect(grid).toBeTruthy();
+    if (!grid || grid.type !== 'grid') throw new Error('grid not found');
+
+    expect(grid.cols).toBe(2);
+    expect(grid.caption).toBe('Grid Cap');
+    expect(grid.label).toBe('grid:demo');
+    expect(grid.style?.borderStyle).toBe('dashed');
+    expect(grid.style?.borderColor).toBe('#00ff00');
+    expect(grid.style?.borderWidthPx).toBe(2);
+  });
+
   it('renders ::: (grid) to LaTeX using subfigures for figure-only grids', () => {
     const xmd = [
       '@ Title',
@@ -120,6 +144,44 @@ describe('parseXmdToIr', () => {
     expect(latex).toContain('\\caption{Cap A}');
     expect(latex).toContain('\\caption{Cap B}');
     expect(latex).toContain('\\caption{Grid Cap}');
+  });
+
+  it('parses :::table (XMD Table v1) with colSpec + row rules + styling attrs', () => {
+    const xmd = [
+      '@ Title',
+      '',
+      '::: caption="Results" label="tbl:results" borderStyle="dotted" borderColor="#ff0000" borderWidth="2"',
+      '|L||C|R|',
+      '=',
+      '| A | B | C |',
+      '|---|---|---|',
+      '-',
+      '| x | y | z |',
+      '-',
+      '| u | v | w |',
+      '=',
+      ':::',
+    ].join('\n');
+
+    const ir = parseXmdToIr({ docId: 'doc-table-1', xmd });
+    const tbl = ir.children.find((n) => n.type === 'table');
+    expect(tbl).toBeTruthy();
+    if (!tbl || tbl.type !== 'table') throw new Error('table not found');
+
+    expect(tbl.caption).toBe('Results');
+    expect(tbl.label).toBe('tbl:results');
+    expect(tbl.header).toEqual(['A', 'B', 'C']);
+    expect(tbl.rows.length).toBe(2);
+    expect(tbl.rows[0]).toEqual(['x', 'y', 'z']);
+    expect(tbl.rows[1]).toEqual(['u', 'v', 'w']);
+
+    expect(tbl.colAlign).toEqual(['left', 'center', 'right']);
+    expect(tbl.vRules).toEqual(['single', 'double', 'single', 'single']);
+    // hRules length = (header + 2 data rows) + 1 = 4
+    expect(tbl.hRules).toEqual(['double', 'single', 'single', 'double']);
+    expect(tbl.style?.borderStyle).toBe('dotted');
+    expect(tbl.style?.borderColor).toBe('#ff0000');
+    expect(tbl.style?.borderWidthPx).toBe(2);
   });
 });
 

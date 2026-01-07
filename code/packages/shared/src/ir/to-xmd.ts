@@ -66,11 +66,70 @@ function renderNode(node: IrNode): string {
     }
     case 'table': {
       const t = node as TableNode;
-      const header = `| ${t.header.join(' | ')} |`;
+      // If this table came from a structured XMD block, prefer preserving the original source text.
+      // This avoids unintended reformatting in preview/bridging renders.
+      const raw = t.source?.raw;
+      if (raw && raw.trim().startsWith(':::')) return raw.trimEnd();
+
+      const cols = Math.max(2, t.header.length || 2);
+      const align = (t.colAlign && t.colAlign.length === cols ? t.colAlign : Array.from({ length: cols }).map(() => 'left')) as Array<
+        'left' | 'center' | 'right'
+      >;
+      const vRules =
+        t.vRules && t.vRules.length === cols + 1 ? t.vRules : Array.from({ length: cols + 1 }).map(() => 'none' as const);
+
+      const boundaryToken = (r: 'none' | 'single' | 'double') => (r === 'single' ? '|' : r === 'double' ? '||' : '');
+      const alignToken = (a: 'left' | 'center' | 'right') => (a === 'left' ? 'L' : a === 'center' ? 'C' : 'R');
+      const colSpec = (() => {
+        let s = '';
+        s += boundaryToken(vRules[0] ?? 'none');
+        for (let i = 0; i < cols; i++) {
+          s += alignToken(align[i] ?? 'left');
+          s += boundaryToken(vRules[i + 1] ?? 'none');
+        }
+        return s.trim().length > 0 ? s : Array.from({ length: cols }).map(() => 'L').join('');
+      })();
+
+      const escapeAttr = (value: string) =>
+        String(value ?? '')
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, ' ')
+          .trim();
+
+      const attrs: string[] = [];
+      if ((t.caption ?? '').trim().length > 0) attrs.push(`caption="${escapeAttr(t.caption ?? '')}"`);
+      if ((t.label ?? '').trim().length > 0) attrs.push(`label="${escapeAttr(t.label ?? '')}"`);
+      if (t.style?.borderStyle) attrs.push(`borderStyle="${escapeAttr(t.style.borderStyle)}"`);
+      if (t.style?.borderColor) attrs.push(`borderColor="${escapeAttr(t.style.borderColor)}"`);
+      if (Number.isFinite(t.style?.borderWidthPx) && (t.style?.borderWidthPx ?? 0) > 0) attrs.push(`borderWidth="${Math.round(t.style!.borderWidthPx!)}"`);
+
+      const ruleChar = (r: 'none' | 'single' | 'double') => (r === 'single' ? '-' : r === 'double' ? '=' : '.');
+      const totalRows = 1 + (t.rows?.length ?? 0);
+      const hRules =
+        t.hRules && t.hRules.length === totalRows + 1 ? t.hRules : Array.from({ length: totalRows + 1 }).map(() => 'none' as const);
+
+      const headerRow = `| ${t.header.join(' | ')} |`;
       const sep = `| ${t.header.map(() => '---').join(' | ')} |`;
-      const rows = t.rows.map((r) => `| ${r.join(' | ')} |`).join('\n');
-      const body = rows ? `${header}\n${sep}\n${rows}` : `${header}\n${sep}`;
-      return body;
+      const rowLines = (t.rows ?? []).map((r) => `| ${r.join(' | ')} |`);
+
+      const lines: string[] = [];
+      lines.push(`:::${attrs.length ? ` ${attrs.join(' ')}` : ''}`);
+      lines.push(colSpec);
+      if (hRules[0] && hRules[0] !== 'none') lines.push(ruleChar(hRules[0]));
+      lines.push(headerRow);
+      lines.push(sep);
+      if (hRules[1] && hRules[1] !== 'none') lines.push(ruleChar(hRules[1]));
+      for (let i = 0; i < rowLines.length; i++) {
+        lines.push(rowLines[i]!);
+        const boundaryIdx = 2 + i; // between data row i and i+1, and finally bottom at totalRows
+        if (boundaryIdx < hRules.length - 1) {
+          if (hRules[boundaryIdx] && hRules[boundaryIdx] !== 'none') lines.push(ruleChar(hRules[boundaryIdx]));
+        }
+      }
+      if (hRules[totalRows] && hRules[totalRows] !== 'none') lines.push(ruleChar(hRules[totalRows]));
+      lines.push(':::');
+      return lines.join('\n');
     }
     case 'grid': {
       const g = node as GridNode;
@@ -82,6 +141,14 @@ function renderNode(node: IrNode): string {
       headerParts.push(`cols=${cols}`);
       const cap = String(g.caption ?? '').trim();
       if (cap.length > 0) headerParts.push(`caption="${cap.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').trim()}"`);
+      const label = String((g as { label?: string }).label ?? '').trim();
+      if (label.length > 0) headerParts.push(`label="${label.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').trim()}"`);
+      const borderStyle = String((g as { style?: { borderStyle?: string } }).style?.borderStyle ?? '').trim();
+      if (borderStyle.length > 0) headerParts.push(`borderStyle="${borderStyle.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').trim()}"`);
+      const borderColor = String((g as { style?: { borderColor?: string } }).style?.borderColor ?? '').trim();
+      if (borderColor.length > 0) headerParts.push(`borderColor="${borderColor.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').trim()}"`);
+      const bw = (g as { style?: { borderWidthPx?: number } }).style?.borderWidthPx;
+      if (Number.isFinite(bw) && (bw as number) >= 0) headerParts.push(`borderWidth="${Math.round(bw as number)}"`);
       const align = String(g.align ?? '').trim();
       if (align === 'left' || align === 'center' || align === 'right') headerParts.push(`align="${align}"`);
       const placement = String(g.placement ?? '').trim();

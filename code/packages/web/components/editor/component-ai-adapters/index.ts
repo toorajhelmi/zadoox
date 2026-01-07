@@ -22,6 +22,35 @@ export function buildComponentContext(params: {
 
   const lines = String(original).split('\n');
   const header = (lines.find((l) => l.trim().startsWith(':::')) || '').trim();
+
+  if (kind === 'table') {
+    // Very lightweight parsing: enough context for the model, without enforcing strict validation here.
+    const bodyLines = lines.slice(1);
+    const firstNonEmpty = bodyLines.find((l) => String(l ?? '').trim().length > 0) ?? '';
+    const colSpec = String(firstNonEmpty ?? '').trim();
+    const rowLines = bodyLines.filter((l) => String(l ?? '').trim().startsWith('|'));
+    const colsCount = (() => {
+      const m = /^\s*\|([\s\S]*)\|\s*$/.exec(rowLines[0] ?? '');
+      if (!m) return 0;
+      return String(m[1] ?? '')
+        .split('|')
+        .map((s) => s.trim())
+        .filter(() => true).length;
+    })();
+    return {
+      kind: 'table',
+      table: {
+        header,
+        colSpec: colSpec || null,
+        rowsCount: rowLines.length,
+        colsCount,
+        previewRows: rowLines.slice(0, 3),
+      },
+      conversation,
+    };
+  }
+
+  // grid
   const figures: Array<{ index: number; caption: string; src: string; attrs: string }> = [];
   const figRe = /!\[([^\]]*)\]\(([^)\s]+)\)\s*(\{[^}]*\})?/g;
   let m: RegExpExecArray | null;
@@ -51,13 +80,15 @@ export function buildComponentEditSummary(params: {
   replacement: string;
 }): string | null {
   if (params.kind === 'figure') return buildFigureEditSummary(params.original, params.replacement);
-  return buildGridEditSummary(params.original, params.replacement);
+  if (params.kind === 'grid') return buildGridEditSummary(params.original, params.replacement);
+  return null;
 }
 
 export function normalizeUpdatedXmd(kind: EmbeddedComponentKind, updatedXmd: string): string {
   const raw = String(updatedXmd ?? '').trim();
   if (!raw) return raw;
   if (kind === 'figure') return extractFirstFigureLine(raw) ?? raw;
+  // For both grid and table we accept the first :::...::: region.
   return extractFirstGridBlock(raw) ?? raw;
 }
 
@@ -68,8 +99,13 @@ export function buildComponentCapabilities(kind: EmbeddedComponentKind): Compone
     allowSrcChange: false,
     allowRemove: true,
     allowedFigureAttrs: ['width', 'align', 'placement', 'desc'],
-    allowedContainerAttrs: kind === 'grid' ? ['cols', 'caption', 'align', 'placement', 'margin'] : [],
-    output: kind === 'figure' ? { shape: 'singleFigureLine' } : { shape: 'fencedGridBlock' },
+    allowedContainerAttrs:
+      kind === 'grid'
+        ? ['cols', 'caption', 'align', 'placement', 'margin', 'label', 'borderStyle', 'borderColor', 'borderWidth']
+        : kind === 'table'
+          ? ['caption', 'label', 'borderStyle', 'borderColor', 'borderWidth']
+          : [],
+    output: kind === 'figure' ? { shape: 'singleFigureLine' } : kind === 'table' ? { shape: 'fencedTableBlock' } : { shape: 'fencedGridBlock' },
   };
 }
 
@@ -85,6 +121,16 @@ export function buildClarifySuggestions(kind: EmbeddedComponentKind, caps: Compo
     if (container.has('margin')) out.push('Set margin=small', 'Set margin=medium');
     if (caps.allowRemove) out.push('Remove an image');
     if (out.length === 0) out.push('Change width', 'Change alignment');
+    return Array.from(new Set(out));
+  }
+
+  if (kind === 'table') {
+    if (container.has('caption')) out.push('Set caption to "Results"', 'Remove caption');
+    if (container.has('label')) out.push('Set label to "tbl:results"');
+    if (container.has('borderWidth')) out.push('Set borderWidth=0', 'Set borderWidth=2');
+    if (container.has('borderStyle')) out.push('Set borderStyle=dotted', 'Set borderStyle=solid');
+    if (container.has('borderColor')) out.push('Set borderColor to #6b7280');
+    if (out.length === 0) out.push('Update caption', 'Change border');
     return Array.from(new Set(out));
   }
 

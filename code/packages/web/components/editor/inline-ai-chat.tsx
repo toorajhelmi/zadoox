@@ -15,6 +15,7 @@ import type { InlineWizardScopeStrategy } from './inline-wizards/types';
 import { TranslateWizard } from './inline-wizards/translate-wizard';
 import { InsertFigureWizard } from './inline-wizards/insert-figure-wizard';
 import { InsertFigureGridWizard } from './inline-wizards/insert-figure-grid-wizard';
+import { InsertTableWizard } from './inline-wizards/insert-table-wizard';
 import { TodoWizard } from './inline-wizards/todo-wizard';
 import type { EditorSurfaceMode } from './inline-wizards/types';
 
@@ -200,6 +201,7 @@ export function InlineAIChat({
     if (option.wizardKey === 'translate') return TranslateWizard;
     if (option.wizardKey === 'insert-figure') return InsertFigureWizard;
     if (option.wizardKey === 'insert-figure-grid') return InsertFigureGridWizard;
+    if (option.wizardKey === 'insert-table') return InsertTableWizard;
     return TodoWizard;
   })();
 

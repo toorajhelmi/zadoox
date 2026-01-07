@@ -286,7 +286,7 @@ export interface InlineEditResponse {
 }
 
 // Component-scoped AI edit types (used by /ai/component/edit)
-export type ComponentEditKind = 'figure' | 'grid';
+export type ComponentEditKind = 'figure' | 'grid' | 'table';
 
 export interface ComponentEditRequest {
   kind: ComponentEditKind;
