@@ -7,11 +7,16 @@ import { ensureLatexPreambleForLatexContent } from './latex-preamble';
 
 export type EditMode = 'markdown' | 'latex';
 
+// Bump this whenever the IR->LaTeX generator changes in a way that requires regenerating cached LaTeX
+// even if the IR hash is unchanged.
+const LATEX_GEN_VERSION = 'v2_arrayrulecolor_inside_tabular';
+
 export type EditorDocMetadata = {
   lastEditedFormat?: EditMode;
   latex?: string;
   latexIrHash?: string;
   xmdIrHash?: string;
+  latexGenVersion?: string;
 } & Record<string, any>;
 
 export function useEditorEditMode(params: {
@@ -82,7 +87,13 @@ export function useEditorEditMode(params: {
           latex: async () => {
             const cachedLatex = typeof meta.latex === 'string' ? meta.latex : '';
             const cachedLatexIrHash = typeof meta.latexIrHash === 'string' ? meta.latexIrHash : null;
-            const canReuse = Boolean(currentIrHash && cachedLatex && cachedLatexIrHash === currentIrHash);
+            const cachedGenVersion = typeof meta.latexGenVersion === 'string' ? meta.latexGenVersion : '';
+            const canReuse = Boolean(
+              currentIrHash &&
+                cachedLatex &&
+                cachedLatexIrHash === currentIrHash &&
+                cachedGenVersion === LATEX_GEN_VERSION
+            );
 
             const latexBase = canReuse ? cachedLatex : irToLatexDocument(currentIr);
             const ensured = ensureLatexPreambleForLatexContent(latexBase);
@@ -95,6 +106,7 @@ export function useEditorEditMode(params: {
               ...meta,
               latex,
               ...(currentIrHash ? { latexIrHash: currentIrHash, xmdIrHash: currentIrHash } : null),
+              latexGenVersion: LATEX_GEN_VERSION,
               lastEditedFormat: 'latex' as const,
             };
             setDocumentMetadata(nextMeta);
