@@ -129,6 +129,51 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     updateContent,
   });
 
+  // Persist LaTeX draft even when it does not change derived XMD.
+  // Otherwise, publish (which compiles saved `metadata.latex`) can lag behind what the user sees in LaTeX mode.
+  const latexMetadataSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (latexMetadataSaveTimeoutRef.current) {
+      clearTimeout(latexMetadataSaveTimeoutRef.current);
+      latexMetadataSaveTimeoutRef.current = null;
+    }
+
+    if (editMode !== 'latex') return;
+    if (!actualDocumentId || actualDocumentId === 'default') return;
+
+    const latexToPersist = String(latexDraft ?? '');
+    // No-op: don't spam empty saves.
+    if (latexToPersist.trim().length === 0) return;
+
+    latexMetadataSaveTimeoutRef.current = setTimeout(() => {
+      void (async () => {
+        try {
+          const currentDocument = await api.documents.get(actualDocumentId);
+          const mergedMetadata = {
+            ...(currentDocument.metadata || {}),
+            ...(documentMetadata || {}),
+            lastEditedFormat: 'latex' as const,
+            latex: latexToPersist,
+          };
+          await api.documents.update(actualDocumentId, {
+            metadata: mergedMetadata,
+            changeType: 'auto-save',
+          });
+        } catch (e) {
+          // Don't block typing or switching; saving failures will be visible via publish mismatch.
+          console.error('Failed to auto-save LaTeX draft:', e);
+        }
+      })();
+    }, 2000);
+
+    return () => {
+      if (latexMetadataSaveTimeoutRef.current) {
+        clearTimeout(latexMetadataSaveTimeoutRef.current);
+        latexMetadataSaveTimeoutRef.current = null;
+      }
+    };
+  }, [actualDocumentId, documentMetadata, editMode, latexDraft]);
+
   // IMPORTANT: Outline/preview should be driven from the canonical IR (derived from XMD).
   // The LaTeX surface is just another edit mode; it must update IR (via LaTeX -> IR -> XMD),
   // but we should not run a separate LaTeX->IR parse for outline, otherwise the outline can drift.
