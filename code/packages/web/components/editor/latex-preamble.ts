@@ -28,6 +28,7 @@ function ensureLatexPreambleHasPackages(latex: string, packages: string[]): { la
 export function ensureLatexPreambleForLatexContent(latex: string): { latex: string; added: string[] } {
   const src = String(latex ?? '');
   const needed: string[] = [];
+  const added: string[] = [];
 
   // Infer required packages from LaTeX content present in the draft.
   if (src.includes('\\includegraphics')) needed.push('graphicx');
@@ -40,7 +41,28 @@ export function ensureLatexPreambleForLatexContent(latex: string): { latex: stri
   const seen = new Set<string>();
   const deduped = needed.filter((p) => (seen.has(p) ? false : (seen.add(p), true)));
 
-  return ensureLatexPreambleHasPackages(src, deduped);
+  let out = src;
+  const base = ensureLatexPreambleHasPackages(out, deduped);
+  out = base.latex;
+  added.push(...base.added);
+
+  // xcolor is required for \definecolor and \arrayrulecolor (table rule colors, border rendering).
+  // We want `[table]` so \arrayrulecolor is available.
+  const needsXColor = out.includes('\\arrayrulecolor') || out.includes('\\definecolor') || out.includes('\\fcolorbox');
+  if (needsXColor) {
+    const beginDocIdx = out.indexOf('\\begin{document}');
+    if (beginDocIdx >= 0) {
+      const preamble = out.slice(0, beginDocIdx);
+      const rest = out.slice(beginDocIdx);
+      const hasXColor = /\\usepackage(\[[^\]]+\])?\{xcolor\}/.test(preamble);
+      if (!hasXColor) {
+        out = `${preamble}\\usepackage[table]{xcolor}\n${rest}`;
+        added.push('xcolor[table]');
+      }
+    }
+  }
+
+  return { latex: out, added };
 }
 
 

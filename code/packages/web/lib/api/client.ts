@@ -156,18 +156,24 @@ async function fetchBinary(
   }
 
   if (!response.ok) {
-    // Try JSON error first, but don't assume it.
+    // Error responses might be JSON or plain text. Read once, then attempt JSON parse.
+    const raw = await response.text().catch(() => '');
     try {
-      const data = (await response.json()) as ApiResponse<unknown>;
-      throw new ApiError(
-        data.error?.message || 'API request failed',
-        data.error?.code || 'UNKNOWN_ERROR',
-        response.status,
-        data.error?.details
-      );
+      const parsed = raw ? (JSON.parse(raw) as ApiResponse<unknown>) : null;
+      if (parsed && typeof parsed === 'object') {
+        throw new ApiError(
+          parsed.error?.message || `Request failed (${response.status} ${response.statusText})`,
+          parsed.error?.code || 'UNKNOWN_ERROR',
+          response.status,
+          parsed.error?.details
+        );
+      }
+      throw new Error('Not JSON');
     } catch {
+      // Fall back to showing a small portion of the raw body to aid debugging.
+      const bodyPreview = raw && raw.trim().length > 0 ? raw.trim().slice(0, 800) : null;
       throw new ApiError(
-        `Request failed (${response.status} ${response.statusText})`,
+        bodyPreview ? `Request failed (${response.status} ${response.statusText}).\n\n${bodyPreview}` : `Request failed (${response.status} ${response.statusText})`,
         'BINARY_REQUEST_FAILED',
         response.status
       );
