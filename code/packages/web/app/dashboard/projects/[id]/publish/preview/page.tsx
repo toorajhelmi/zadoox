@@ -30,6 +30,19 @@ export default function PublishPreviewPage() {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfFilename, setPdfFilename] = useState<string | null>(null);
 
+  const formatPdfError = (err: unknown): string => {
+    const fallback = 'Failed to generate PDF';
+    if (!err || typeof err !== 'object') return fallback;
+    const e = err as { message?: unknown; code?: unknown; details?: unknown; status?: unknown };
+    const message = typeof e.message === 'string' ? e.message : fallback;
+    const code = typeof e.code === 'string' ? e.code : null;
+    const details = e.details as any;
+    if (code === 'LATEX_COMPILE_ERROR' && details && typeof details.log === 'string') {
+      return `LaTeX compilation failed.\n\n${details.log}`;
+    }
+    return message;
+  };
+
   const canLoad = useMemo(() => !!projectId && !!documentId, [projectId, documentId]);
 
   useEffect(() => {
@@ -70,7 +83,7 @@ export default function PublishPreviewPage() {
         })
         .catch((err: unknown) => {
           if (cancelled) return;
-          setError(err instanceof Error ? err.message : 'Failed to generate PDF');
+          setError(formatPdfError(err));
         })
         .finally(() => {
           if (cancelled) return;
@@ -285,7 +298,7 @@ export default function PublishPreviewPage() {
               </div>
             ) : error ? (
               <div className="p-6 bg-[#252526] border border-[#3e3e42] rounded">
-                <p className="text-[#cccccc]">{error}</p>
+                <pre className="text-[#cccccc] whitespace-pre-wrap text-sm">{error}</pre>
               </div>
             ) : source === 'latex' ? (
               <div className="border border-[#3e3e42] rounded overflow-hidden bg-white">
