@@ -39,7 +39,10 @@ export default function PublishPreviewPage() {
     const code = typeof e.code === 'string' ? e.code : null;
     const details = e.details as any;
     if (code === 'LATEX_COMPILE_ERROR' && details && typeof details.log === 'string') {
-      return `LaTeX compilation failed.\n\n${details.log}`;
+      const excerpt = typeof details.texExcerpt === 'string' && details.texExcerpt.trim().length > 0 ? details.texExcerpt : null;
+      return excerpt
+        ? `LaTeX compilation failed.\n\n${details.log}\n\n--- main.tex excerpt ---\n${excerpt}`
+        : `LaTeX compilation failed.\n\n${details.log}`;
     }
     return message;
   };

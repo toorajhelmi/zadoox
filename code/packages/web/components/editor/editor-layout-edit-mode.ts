@@ -9,7 +9,7 @@ export type EditMode = 'markdown' | 'latex';
 
 // Bump this whenever the IR->LaTeX generator changes in a way that requires regenerating cached LaTeX
 // even if the IR hash is unchanged.
-const LATEX_GEN_VERSION = 'v2_arrayrulecolor_inside_tabular';
+const LATEX_GEN_VERSION = 'v3_fix_figure_grid_row_terminator';
 
 export type EditorDocMetadata = {
   lastEditedFormat?: EditMode;

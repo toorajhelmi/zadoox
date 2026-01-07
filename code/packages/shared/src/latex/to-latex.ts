@@ -735,7 +735,10 @@ function renderFigureGrid(grid: GridNode): string {
       cellLines.push('\\end{subfigure}');
       cells.push(cellLines.join('\n'));
     }
-    const rowSuffix = r < rows.length - 1 ? ` \\\\[${rowVspace}]` : '';
+    // IMPORTANT: If we emit an \hline after the row, we MUST terminate the row with \\,
+    // otherwise TeX will throw "Misplaced \noalign" (because \hline expands to \noalign).
+    const isLastRow = r === rows.length - 1;
+    const rowSuffix = !borderNone ? (isLastRow ? ' \\\\' : ` \\\\[${rowVspace}]`) : isLastRow ? '' : ` \\\\[${rowVspace}]`;
     out.push(`${cells.join(' & ')}${rowSuffix}`);
     if (!borderNone) out.push('\\hline');
   }
