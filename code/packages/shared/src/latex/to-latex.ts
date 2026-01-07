@@ -510,7 +510,7 @@ function renderTable(t: TableNode): string {
   const styleSetup = tableStyleToLatexSetup(t.style);
   const borderNone = Number.isFinite(t.style?.borderWidthPx) && (t.style?.borderWidthPx ?? 0) === 0;
   const ruleWidthLine = !borderNone && styleSetup.ruleWidthPt ? `\\setlength{\\arrayrulewidth}{${styleSetup.ruleWidthPt}}` : null;
-  const ruleColorLine = !borderNone && styleSetup.ruleColor?.name ? `\\arrayrulecolor{${styleSetup.ruleColor.name}}` : null;
+  const ruleColorName = !borderNone && styleSetup.ruleColor?.name ? styleSetup.ruleColor.name : null;
 
   const colToken = (a: 'left' | 'center' | 'right') =>
     a === 'center'
@@ -541,8 +541,9 @@ function renderTable(t: TableNode): string {
   out.push('{');
   for (const ln of styleSetup.preambleLines) out.push(ln);
   if (ruleWidthLine) out.push(ruleWidthLine);
-  if (ruleColorLine) out.push(ruleColorLine);
   out.push(`\\begin{tabularx}{\\linewidth}{${colSpec}}`);
+  // IMPORTANT: \arrayrulecolor expands to \noalign, so it must be used *inside* the tabular alignment.
+  if (ruleColorName) out.push(`\\arrayrulecolor{${ruleColorName}}`);
 
   const emitBoundary = (rule: TableRule) => {
     if (borderNone) return;
@@ -622,7 +623,7 @@ function renderGrid(grid: GridNode): string {
   const styleSetup = tableStyleToLatexSetup(grid.style);
   const borderNone = Number.isFinite(grid.style?.borderWidthPx) && (grid.style?.borderWidthPx ?? 0) === 0;
   const ruleWidthLine = !borderNone && styleSetup.ruleWidthPt ? `\\setlength{\\arrayrulewidth}{${styleSetup.ruleWidthPt}}` : null;
-  const ruleColorLine = !borderNone && styleSetup.ruleColor?.name ? `\\arrayrulecolor{${styleSetup.ruleColor.name}}` : null;
+  const ruleColorName = !borderNone && styleSetup.ruleColor?.name ? styleSetup.ruleColor.name : null;
   const colSpec = borderNone
     ? Array.from({ length: safeCols }).map(() => 'X').join('')
     : Array.from({ length: safeCols }).map(() => 'X').join('|');
@@ -632,8 +633,9 @@ function renderGrid(grid: GridNode): string {
   out.push('{');
   for (const ln of styleSetup.preambleLines) out.push(ln);
   if (ruleWidthLine) out.push(ruleWidthLine);
-  if (ruleColorLine) out.push(ruleColorLine);
   out.push(`\\begin{tabularx}{\\linewidth}{${borderNone ? '' : '|'}${colSpec}${borderNone ? '' : '|' }}`);
+  // IMPORTANT: \arrayrulecolor expands to \noalign, so it must be used *inside* the tabular alignment.
+  if (ruleColorName) out.push(`\\arrayrulecolor{${ruleColorName}}`);
   if (!borderNone) out.push('\\hline');
 
   for (let r = 0; r < rows.length; r++) {
@@ -690,7 +692,7 @@ function renderFigureGrid(grid: GridNode): string {
   const styleSetup = tableStyleToLatexSetup(grid.style);
   const borderNone = Number.isFinite(grid.style?.borderWidthPx) && (grid.style?.borderWidthPx ?? 0) === 0;
   const ruleWidthLine = !borderNone && styleSetup.ruleWidthPt ? `\\setlength{\\arrayrulewidth}{${styleSetup.ruleWidthPt}}` : null;
-  const ruleColorLine = !borderNone && styleSetup.ruleColor?.name ? `\\arrayrulecolor{${styleSetup.ruleColor.name}}` : null;
+  const ruleColorName = !borderNone && styleSetup.ruleColor?.name ? styleSetup.ruleColor.name : null;
 
   if (placementIsInline) {
     const side = align === 'right' ? 'r' : 'l';
@@ -709,12 +711,13 @@ function renderFigureGrid(grid: GridNode): string {
   out.push('{');
   for (const ln of styleSetup.preambleLines) out.push(ln);
   if (ruleWidthLine) out.push(ruleWidthLine);
-  if (ruleColorLine) out.push(ruleColorLine);
 
   // IMPORTANT: Use a tabular to force stable row/column layout.
   // This avoids edge cases where \hfill + paragraphing can stack subfigures vertically in some templates.
   const colSpec = borderNone ? `@{}${'c'.repeat(cols)}@{}` : `|${Array.from({ length: cols }).map(() => 'c').join('|')}|`;
   out.push(`\\begin{tabular}{${colSpec}}`);
+  // IMPORTANT: \arrayrulecolor expands to \noalign, so it must be used *inside* the tabular alignment.
+  if (ruleColorName) out.push(`\\arrayrulecolor{${ruleColorName}}`);
   if (!borderNone) out.push('\\hline');
   for (let r = 0; r < rows.length; r++) {
     const row = rows[r] ?? [];
