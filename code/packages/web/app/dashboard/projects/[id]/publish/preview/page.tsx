@@ -29,6 +29,7 @@ export default function PublishPreviewPage() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfFilename, setPdfFilename] = useState<string | null>(null);
+  const previewReady = !loading && !error && (source === 'latex' ? Boolean(pdfUrl) : Boolean(html));
 
   const formatPdfError = (err: unknown): string => {
     const fallback = 'Failed to generate PDF';
@@ -223,63 +224,64 @@ export default function PublishPreviewPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
-              {source === 'latex' && (
+            {previewReady && (
+              <div className="flex items-center gap-2 shrink-0">
+                {source === 'latex' && (
+                  <button
+                    onClick={() => {
+                      api.publish
+                        .latexPackage(projectId, { documentId, source: 'latex' })
+                        .then(({ blob, filename }) => {
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = filename ?? `${title || 'document'}.zip`;
+                          document.body.appendChild(a);
+                          a.click();
+                          a.remove();
+                          URL.revokeObjectURL(url);
+                        })
+                        .catch(() => {});
+                    }}
+                    className="p-2 bg-[#3e3e42] hover:bg-[#464647] text-white rounded transition-colors inline-flex items-center justify-center"
+                    title="Download LaTeX package (.zip)"
+                    aria-label="Download LaTeX package (.zip)"
+                  >
+                    <ArchiveBoxArrowDownIcon className="w-5 h-5" />
+                  </button>
+                )}
+
                 <button
                   onClick={() => {
-                    api.publish
-                      .latexPackage(projectId, { documentId, source: 'latex' })
-                      .then(({ blob, filename }) => {
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = filename ?? `${title || 'document'}.zip`;
-                        document.body.appendChild(a);
-                        a.click();
-                        a.remove();
-                        URL.revokeObjectURL(url);
-                      })
-                      .catch(() => {});
+                    // LaTeX: download generated PDF. MD/XMD: open browser print dialog (Save as PDF).
+                    if (source === 'latex') {
+                      if (!pdfUrl) return;
+                      const a = document.createElement('a');
+                      a.href = pdfUrl;
+                      a.download = pdfFilename || `${title || 'document'}.pdf`;
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                      return;
+                    }
+
+                    const w = iframeRef.current?.contentWindow;
+                    if (!w) return;
+                    try {
+                      w.focus();
+                      w.print();
+                    } catch {
+                      // noop
+                    }
                   }}
                   className="p-2 bg-[#3e3e42] hover:bg-[#464647] text-white rounded transition-colors inline-flex items-center justify-center"
-                  title="Download LaTeX package (.zip)"
-                  aria-label="Download LaTeX package (.zip)"
+                  title="Save as PDF"
+                  aria-label="Save as PDF"
                 >
-                  <ArchiveBoxArrowDownIcon className="w-5 h-5" />
+                  <ArrowDownTrayIcon className="w-5 h-5" />
                 </button>
-              )}
-
-              <button
-                onClick={() => {
-                  // LaTeX: download generated PDF. MD/XMD: open browser print dialog (Save as PDF).
-                  if (source === 'latex') {
-                    if (!pdfUrl) return;
-                    const a = document.createElement('a');
-                    a.href = pdfUrl;
-                    a.download = pdfFilename || `${title || 'document'}.pdf`;
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                    return;
-                  }
-
-                  const w = iframeRef.current?.contentWindow;
-                  if (!w) return;
-                  try {
-                    w.focus();
-                    w.print();
-                  } catch {
-                    // noop
-                  }
-                }}
-                className="p-2 bg-[#3e3e42] hover:bg-[#464647] text-white rounded transition-colors inline-flex items-center justify-center"
-                title="Save as PDF"
-                aria-label="Save as PDF"
-                disabled={loading || (source === 'latex' ? !pdfUrl : !html)}
-              >
-                <ArrowDownTrayIcon className="w-5 h-5" />
-              </button>
-            </div>
+              </div>
+            )}
           </div>
         </div>
 
