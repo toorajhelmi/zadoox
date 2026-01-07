@@ -656,13 +656,6 @@ function parseBlocks(xmd: string): Block[] {
       i++;
       continue;
     }
-    // #region agent log
-    // Detect when an image-like token exists but fails to parse as a figure block (likely missing attr block).
-    if (/^\s*!\[[^\]]*\]\([^)]+\)/.test(line.trim()) && !/\{[^}]*\}\s*$/.test(line.trim())) {
-      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'md-latex-roundtrip',hypothesisId:'H9',location:'xmd/parser.ts:parseBlocks',message:'Image-like line did not parse as figure (no attr block?)',data:{lineHead:String(line).trim().slice(0,120)},timestamp:Date.now()})}).catch(()=>{});
-    }
-    // #endregion agent log
-
     // Paragraph (consume until blank line, or until next structural block start)
     const paraStart = i;
     let j = i + 1;
@@ -958,15 +951,6 @@ export function parseXmdToIr(params: { docId: string; xmd: string }): DocumentNo
         const inferredCols = rows.reduce((m, r) => Math.max(m, r.length), 0);
         const cols = b.cols ?? (inferredCols > 0 ? inferredCols : undefined);
         const paddedRows = normalizeGridRows(rows, cols);
-
-        // #region agent log
-        // Summarize how grid cell content parsed (figures vs paragraphs) to validate round-trip safety.
-        try {
-          const allCellXmd = paddedRows.flat();
-          const sampleCell = String(allCellXmd[0] ?? '').trim().slice(0, 140);
-          fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'md-latex-roundtrip',hypothesisId:'H9',location:'xmd/parser.ts:grid',message:'Parsing grid block',data:{cols,caption:b.caption||null,rowCount:paddedRows.length,cellCount:allCellXmd.length,sampleCell},timestamp:Date.now()})}).catch(()=>{});
-        } catch { /* ignore */ }
-        // #endregion agent log
 
         const grid: GridNode = {
           type: 'grid',

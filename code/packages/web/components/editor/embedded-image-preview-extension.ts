@@ -3723,13 +3723,6 @@ export function embeddedImagePreviewExtension() {
       }
     }
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'grid-insert',hypothesisId:'H8',location:'embedded-image-preview-extension.ts:buildDecorations',message:'Grid vs figure decoration summary',data:{gridCount:gridBlocks.length,inGridMatchCount,outGridMatchCount,totalDecorations:decos.length,gridCols:gridBlocks.map(g=>g.cols)},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion agent log
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'grid-align',hypothesisId:'H18',location:'embedded-image-preview-extension.ts:buildDecorations',message:'Grid cell mapping summary',data:{gridSummaries},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion agent log
 
     return Decoration.set(decos, true);
   };

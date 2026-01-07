@@ -455,14 +455,36 @@ export async function publishRoutes(fastify: FastifyInstance) {
         fastify.log.error(error);
         const errorMessage = error instanceof Error ? error.message : 'Failed to generate PDF';
 
+        // Common user error: LaTeX did not compile (syntax error, missing package/font, etc).
+        // Return a 400 with the compiler log so the UI can show actionable feedback instead of a generic 500.
+        const lowerMsg = String(errorMessage).toLowerCase();
+        const isCompileFailure =
+          lowerMsg.includes('tectonic failed') ||
+          lowerMsg.includes('latexmk failed') ||
+          lowerMsg.includes('! latex error') ||
+          lowerMsg.includes('fatal error occurred');
+        if (isCompileFailure) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'LATEX_COMPILE_ERROR',
+              message: 'LaTeX compilation failed. Fix the LaTeX errors and try again.',
+              details: {
+                pdfCompiler: process.env.PDF_COMPILER ?? 'tectonic',
+                log: errorMessage,
+              },
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
         // Common local-dev failure: PDF compiler binary not installed (ENOENT).
         // `PdfCompileService` wraps spawn errors as: `Failed to run <cmd>: spawn <cmd> ENOENT`
-        const lower = String(errorMessage).toLowerCase();
         const isCompilerMissing =
-          lower.includes('failed to run tectonic') ||
-          lower.includes('spawn tectonic enoent') ||
-          lower.includes('failed to run latexmk') ||
-          lower.includes('spawn latexmk enoent');
+          lowerMsg.includes('failed to run tectonic') ||
+          lowerMsg.includes('spawn tectonic enoent') ||
+          lowerMsg.includes('failed to run latexmk') ||
+          lowerMsg.includes('spawn latexmk enoent');
         if (isCompilerMissing) {
           const response: ApiResponse<null> = {
             success: false,

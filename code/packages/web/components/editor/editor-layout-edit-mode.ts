@@ -87,10 +87,6 @@ export function useEditorEditMode(params: {
             const latexBase = canReuse ? cachedLatex : irToLatexDocument(currentIr);
             const ensured = ensureLatexPreambleForLatexContent(latexBase);
             const latex = ensured.latex;
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'switch-churn',hypothesisId:'H17',location:'editor-layout-edit-mode.ts:handleEditModeChange',message:'Switch to LaTeX ensured preamble packages',data:{currentIrHash,canReuse,addedPackages:ensured.added,latexLen:String(latex??'').length},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion agent log
-
             setLatexDraft(latex);
             setEditMode('latex');
             didInitModeRef.current = true;
@@ -131,9 +127,6 @@ export function useEditorEditMode(params: {
                 nextIrHash = computeDocIrHash(nextIr);
               }
 
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'switch-churn',hypothesisId:'H16',location:'editor-layout-edit-mode.ts:handleEditModeChange',message:'Switch to Markdown using IR hash cache',data:{currentIrHash,latexDraftLen,latexIsDerived,cachedLatexLen:String(cachedLatex??'').length,xmdLen:String(nextContent??'').length,assetRefs:(String(nextContent??'').split('zadoox-asset://').length-1),hasGridHeader:String(nextContent??'').includes('::: cols=')},timestamp:Date.now()})}).catch(()=>{});
-              // #endregion agent log
             } catch {
               // If conversion fails, keep the last known XMD content (never block switching).
             }
@@ -150,9 +143,6 @@ export function useEditorEditMode(params: {
             setDocumentMetadata(nextMeta);
 
             const contentChanged = nextContent !== content;
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'switch-churn',hypothesisId:'H15',location:'editor-layout-edit-mode.ts:handleEditModeChange',message:'Switch LaTeX->Markdown apply content',data:{contentChanged,prevLen:String(content??'').length,nextLen:String(nextContent??'').length},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion agent log
 
             if (contentChanged) updateContent(nextContent);
             await api.documents.update(actualDocumentId, {

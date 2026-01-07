@@ -614,15 +614,6 @@ function wrapWithBorder(content: string, border: { enabled: boolean; widthPt: st
 
 function renderGrid(grid: GridNode): string {
   const figureOnly = gridIsFigureOnly([grid]);
-  // #region agent log
-  try {
-    const rows = grid.rows ?? [];
-    const cellNodes = rows.flatMap((r) => (r ?? []).flatMap((c) => c?.children ?? []));
-    const typeCounts: Record<string, number> = {};
-    for (const n of cellNodes) typeCounts[n.type] = (typeCounts[n.type] ?? 0) + 1;
-    fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'md-latex-roundtrip',hypothesisId:'H10',location:'latex/to-latex.ts:renderGrid',message:'Rendering grid to LaTeX',data:{figureOnly,cols:grid.cols||null,caption:(grid.caption??'').slice(0,120),rowCount:rows.length,cellNodeTypes:typeCounts},timestamp:Date.now()})}).catch(()=>{});
-  } catch { /* ignore */ }
-  // #endregion agent log
   if (figureOnly) return renderFigureGrid(grid);
 
   const rows = grid.rows ?? [];
