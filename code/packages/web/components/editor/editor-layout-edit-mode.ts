@@ -10,7 +10,8 @@ export type EditMode = 'markdown' | 'latex';
 export type EditorDocMetadata = {
   lastEditedFormat?: EditMode;
   latex?: string;
-  latexIrHash?: string | null;
+  latexIrHash?: string;
+  xmdIrHash?: string;
 } & Record<string, any>;
 
 export function useEditorEditMode(params: {
@@ -94,7 +95,12 @@ export function useEditorEditMode(params: {
             setEditMode('latex');
             didInitModeRef.current = true;
 
-            const nextMeta: EditorDocMetadata = { ...meta, latex, latexIrHash: currentIrHash, lastEditedFormat: 'latex' as const };
+            const nextMeta: EditorDocMetadata = {
+              ...meta,
+              latex,
+              ...(currentIrHash ? { latexIrHash: currentIrHash, xmdIrHash: currentIrHash } : null),
+              lastEditedFormat: 'latex' as const,
+            };
             setDocumentMetadata(nextMeta);
             await api.documents.update(actualDocumentId, {
               content,
@@ -106,6 +112,7 @@ export function useEditorEditMode(params: {
 
           markdown: async () => {
             let nextContent = content;
+            let nextIrHash: string | null = currentIrHash;
             try {
               const cachedLatexIrHash = typeof meta.latexIrHash === 'string' ? meta.latexIrHash : null;
               const cachedLatex = typeof meta.latex === 'string' ? meta.latex : '';
@@ -121,6 +128,7 @@ export function useEditorEditMode(params: {
               } else {
                 const nextIr = parseLatexToIr({ docId: actualDocumentId, latex: latexDraft });
                 nextContent = irToXmd(nextIr);
+                nextIrHash = computeDocIrHash(nextIr);
               }
 
               // #region agent log
@@ -133,7 +141,12 @@ export function useEditorEditMode(params: {
             setEditMode('markdown');
             didInitModeRef.current = true;
 
-            const nextMeta: EditorDocMetadata = { ...meta, latex: latexDraft, lastEditedFormat: 'markdown' as const };
+            const nextMeta: EditorDocMetadata = {
+              ...meta,
+              latex: latexDraft,
+              ...(nextIrHash ? { xmdIrHash: nextIrHash } : null),
+              lastEditedFormat: 'markdown' as const,
+            };
             setDocumentMetadata(nextMeta);
 
             const contentChanged = nextContent !== content;

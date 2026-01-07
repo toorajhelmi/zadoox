@@ -129,50 +129,17 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     updateContent,
   });
 
-  // Persist LaTeX draft even when it does not change derived XMD.
-  // Otherwise, publish (which compiles saved `metadata.latex`) can lag behind what the user sees in LaTeX mode.
-  const latexMetadataSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Track the IR hash corresponding to the current XMD (`content`) so we can persist `metadata.xmdIrHash`.
+  // This keeps switching logic symmetric with LaTeX (which already tracks `metadata.latexIrHash`).
+  const xmdIrHash = useMemo(() => computeDocIrHash(irState.ir), [irState.ir]);
   useEffect(() => {
-    if (latexMetadataSaveTimeoutRef.current) {
-      clearTimeout(latexMetadataSaveTimeoutRef.current);
-      latexMetadataSaveTimeoutRef.current = null;
-    }
-
-    if (editMode !== 'latex') return;
-    if (!actualDocumentId || actualDocumentId === 'default') return;
-
-    const latexToPersist = String(latexDraft ?? '');
-    // No-op: don't spam empty saves.
-    if (latexToPersist.trim().length === 0) return;
-
-    latexMetadataSaveTimeoutRef.current = setTimeout(() => {
-      void (async () => {
-        try {
-          const currentDocument = await api.documents.get(actualDocumentId);
-          const mergedMetadata = {
-            ...(currentDocument.metadata || {}),
-            ...(documentMetadata || {}),
-            lastEditedFormat: 'latex' as const,
-            latex: latexToPersist,
-          };
-          await api.documents.update(actualDocumentId, {
-            metadata: mergedMetadata,
-            changeType: 'auto-save',
-          });
-        } catch (e) {
-          // Don't block typing or switching; saving failures will be visible via publish mismatch.
-          console.error('Failed to auto-save LaTeX draft:', e);
-        }
-      })();
-    }, 2000);
-
-    return () => {
-      if (latexMetadataSaveTimeoutRef.current) {
-        clearTimeout(latexMetadataSaveTimeoutRef.current);
-        latexMetadataSaveTimeoutRef.current = null;
-      }
-    };
-  }, [actualDocumentId, documentMetadata, editMode, latexDraft]);
+    if (!xmdIrHash) return;
+    setDocumentMetadata((prev) => {
+      const p = (prev || {}) as any;
+      if (p.xmdIrHash === xmdIrHash) return prev;
+      return { ...p, xmdIrHash };
+    });
+  }, [setDocumentMetadata, xmdIrHash]);
 
   // IMPORTANT: Outline/preview should be driven from the canonical IR (derived from XMD).
   // The LaTeX surface is just another edit mode; it must update IR (via LaTeX -> IR -> XMD),
@@ -318,7 +285,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               lastEditedFormat: 'latex',
               latex: nextLatex,
               // Keep mapping: this LaTeX draft corresponds to this IR hash.
-              latexIrHash: nextIrHash,
+              ...(nextIrHash ? { latexIrHash: nextIrHash } : null),
+              // Keep mapping: the derived XMD also corresponds to the same IR hash.
+              ...(nextIrHash ? { xmdIrHash: nextIrHash } : null),
             };
             setDocumentMetadata(nextMeta);
             // Avoid churn: only update XMD if it actually changes.
