@@ -11,7 +11,7 @@
 import { FastifyInstance } from 'fastify';
 import { authenticateUser, AuthenticatedRequest } from '../../middleware/auth.js';
 import { DocumentService } from '../../services/document-service.js';
-import { PdfCompileService } from '../../services/pdf-compile-service.js';
+import { PdfCompileError, PdfCompileService } from '../../services/pdf-compile-service.js';
 import { supabaseAdmin } from '../../db/client.js';
 import { ApiResponse } from '@zadoox/shared';
 import { projectIdParamSchema, publishPdfSchema, publishWebSchema } from '../../validation/schemas.js';
@@ -464,14 +464,24 @@ export async function publishRoutes(fastify: FastifyInstance) {
           lowerMsg.includes('! latex error') ||
           lowerMsg.includes('fatal error occurred');
         if (isCompileFailure) {
+          const details =
+            error instanceof PdfCompileError
+              ? {
+                  pdfCompiler: error.details.pdfCompiler,
+                  log: errorMessage,
+                  texExcerpt: error.details.texExcerpt,
+                }
+              : {
+                  pdfCompiler: process.env.PDF_COMPILER ?? 'tectonic',
+                  log: errorMessage,
+                };
           const response: ApiResponse<null> = {
             success: false,
             error: {
               code: 'LATEX_COMPILE_ERROR',
               message: 'LaTeX compilation failed. Fix the LaTeX errors and try again.',
               details: {
-                pdfCompiler: process.env.PDF_COMPILER ?? 'tectonic',
-                log: errorMessage,
+                ...details,
               },
             },
           };
