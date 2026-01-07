@@ -99,6 +99,66 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     expect(xmd).toContain('Hello.');
     expect(xmd).not.toContain('\\end{document}');
   });
+
+  it('XMD table -> IR -> LaTeX emits tabularx with caption/label and border color/width (best-effort)', () => {
+    const xmd = [
+      '@ Title',
+      '',
+      '::: caption="Results" label="tbl:results" borderStyle="dotted" borderColor="#6b7280" borderWidth="2"',
+      // colSpec: 3 cols, single vertical rules everywhere (including outer border)
+      '|L|C|R|',
+      // top rule
+      '-',
+      // header + (ignored) pipe-table separator line
+      '| A | B | C |',
+      '| --- | --- | --- |',
+      // rule after header
+      '-',
+      '| 1 | 2 | 3 |',
+      // bottom rule
+      '-',
+      ':::',
+    ].join('\n');
+
+    const ir = parseXmdToIr({ docId: 'doc-tbl-1', xmd });
+    const latex = irToLatexDocument(ir);
+
+    // Preamble should include tabular support + xcolor (for \arrayrulecolor + \definecolor).
+    expect(latex).toContain('\\usepackage{tabularx}');
+    expect(latex).toContain('\\usepackage{array}');
+    expect(latex).toContain('\\usepackage[table]{xcolor}');
+
+    // Table float + caption/label.
+    expect(latex).toContain('\\begin{table}[h]');
+    expect(latex).toContain('\\caption{Results}');
+    expect(latex).toContain('\\label{tbl:results}');
+
+    // Border width and color (hex) should be applied (dotted degraded to solid internally).
+    expect(latex).toContain('\\definecolor{zdxcol6b7280}{HTML}{6B7280}');
+    expect(latex).toContain('\\setlength{\\arrayrulewidth}{2pt}');
+    expect(latex).toContain('\\arrayrulecolor{zdxcol6b7280}');
+  });
+
+  it('XMD grid -> IR -> LaTeX applies border color/width and emits label when present', () => {
+    const xmd = [
+      '@ Title',
+      '',
+      '::: cols="2" caption="Grid Cap" label="grd:demo" borderColor="#6b7280" borderWidth="3"',
+      'A | B',
+      'C | D',
+      ':::',
+    ].join('\n');
+
+    const ir = parseXmdToIr({ docId: 'doc-grid-1', xmd });
+    const latex = irToLatexDocument(ir);
+
+    expect(latex).toContain('\\usepackage[table]{xcolor}');
+    expect(latex).toContain('\\definecolor{zdxcol6b7280}{HTML}{6B7280}');
+    expect(latex).toContain('\\setlength{\\arrayrulewidth}{3pt}');
+    expect(latex).toContain('\\arrayrulecolor{zdxcol6b7280}');
+    expect(latex).toContain('\\caption{Grid Cap}');
+    expect(latex).toContain('\\label{grd:demo}');
+  });
 });
 
 
