@@ -97,53 +97,6 @@ function containsFigure(nodes: IrNode[]): boolean {
   return false;
 }
 
-function containsInlineFigure(nodes: IrNode[], inGrid = false): boolean {
-  for (const n of nodes) {
-    if (n.type === 'figure' && !inGrid) {
-      const raw = (n as unknown as { source?: { raw?: string } }).source?.raw;
-      const attrs = parseFigureAttrsFromXmd(raw);
-      const placement = String(attrs.placement ?? '').trim().toLowerCase();
-      const align = String(attrs.align ?? '').trim().toLowerCase();
-      if (placement === 'inline' && align !== 'center') return true;
-    }
-    if (n.type === 'section' && n.children?.length) {
-      if (containsInlineFigure(n.children, inGrid)) return true;
-    }
-    if (n.type === 'grid') {
-      const g = n as unknown as GridNode;
-      for (const row of g.rows ?? []) {
-        for (const cell of row ?? []) {
-          if (containsInlineFigure(cell?.children ?? [], true)) return true;
-        }
-      }
-    }
-  }
-  return false;
-}
-
-function containsInlineGrid(nodes: IrNode[], inGrid = false): boolean {
-  for (const n of nodes) {
-    if (n.type === 'grid' && !inGrid) {
-      const g = n as unknown as GridNode;
-      const placement = String(g.placement ?? '').trim().toLowerCase();
-      const align = String(g.align ?? '').trim().toLowerCase();
-      if (placement === 'inline' && (align === 'left' || align === 'right')) return true;
-    }
-    if (n.type === 'section' && n.children?.length) {
-      if (containsInlineGrid(n.children, inGrid)) return true;
-    }
-    if (n.type === 'grid') {
-      const g = n as unknown as GridNode;
-      for (const row of g.rows ?? []) {
-        for (const cell of row ?? []) {
-          if (containsInlineGrid(cell?.children ?? [], true)) return true;
-        }
-      }
-    }
-  }
-  return false;
-}
-
 function containsGrid(nodes: IrNode[]): boolean {
   for (const n of nodes) {
     if (n.type === 'grid') return true;
@@ -273,13 +226,6 @@ function alignToLatex(n: { align?: string }): string {
   if (a === 'left') return '\\raggedright';
   if (a === 'right') return '\\raggedleft';
   return '\\centering';
-}
-
-function widthAttrToLatexDim(widthRaw: string | undefined): string | null {
-  const opt = widthAttrToIncludegraphicsOption(widthRaw);
-  if (!opt) return null;
-  const m = /^width=(.+)$/.exec(opt.trim());
-  return m ? String(m[1]).trim() : null;
 }
 
 function renderNodes(nodes: IrNode[]): string {
