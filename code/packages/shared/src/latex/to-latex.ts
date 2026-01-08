@@ -39,7 +39,9 @@ export function irToLatexDocument(doc: DocumentNode): string {
   const body = renderNodes(bodyNodes).trimEnd();
 
   const needsGraphicx = containsFigure(bodyNodes);
-  const needsWrapfig = containsInlineFigure(bodyNodes) || containsInlineGrid(bodyNodes);
+  // We do not generate wrapfigure/wrapfig anymore (block-only output for stable PDF layout),
+  // but users may still hand-edit LaTeX to use wrapfig. For generated LaTeX, keep it false.
+  const needsWrapfig = false;
   const needsGrid = containsGrid(bodyNodes);
   const needsTable = containsTable(bodyNodes);
   const needsTabular = needsGrid || needsTable;
@@ -285,51 +287,8 @@ function renderNodes(nodes: IrNode[]): string {
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
 
-    // Special-case: inline figure wrapping.
-    // `wrapfigure` only works when there is following text to wrap around.
-    // Also, our renderer joins blocks with blank lines; a blank line immediately after a wrapfigure
-    // can prevent text from wrapping in practice. So we join wrapfigure + next paragraph tightly.
-    if (n.type === 'figure') {
-      const next = nodes[i + 1];
-      const raw = (n as unknown as { source?: { raw?: string } }).source?.raw;
-      const attrs = parseFigureAttrsFromXmd(raw);
-      const placement = String(attrs.placement ?? '').trim().toLowerCase();
-      const align = String(attrs.align ?? '').trim().toLowerCase();
-      const canWrap =
-        placement === 'inline' &&
-        align !== 'center' &&
-        next?.type === 'paragraph' &&
-        String((next as { text?: unknown }).text ?? '').trim().length > 0;
-
-      if (canWrap) {
-        const wrap = renderNode(n).trimEnd();
-        const para = renderNode(next).trimEnd();
-        // Join without a blank line so LaTeX sees the paragraph as immediately following.
-        out.push(`${wrap}\n${para}`.trimEnd());
-        i++; // consumed next paragraph
-        continue;
-      }
-    }
-
-    // Special-case: inline grid wrapping (same caveats as inline figures).
-    if (n.type === 'grid') {
-      const next = nodes[i + 1];
-      const g = n as unknown as GridNode;
-      const placement = String(g.placement ?? '').trim().toLowerCase();
-      const align = String(g.align ?? '').trim().toLowerCase();
-      const canWrap =
-        placement === 'inline' &&
-        (align === 'left' || align === 'right') &&
-        next?.type === 'paragraph' &&
-        String((next as { text?: unknown }).text ?? '').trim().length > 0;
-      if (canWrap) {
-        const wrap = renderNode(n).trimEnd();
-        const para = renderNode(next).trimEnd();
-        out.push(`${wrap}\n${para}`.trimEnd());
-        i++;
-        continue;
-      }
-    }
+    // NOTE: We do not auto-generate wrapfigure/wrapfig for inline placement.
+    // This keeps PDF output stable/presentable by default; users can hand-edit LaTeX if they want wrapping.
 
     const s = renderNode(n);
     if (s.trim().length === 0) continue;
@@ -382,27 +341,9 @@ function renderNode(node: IrNode): string {
       const caption = escapeLatexText(node.caption ?? '');
       const label = node.label ? escapeLatexText(node.label) : '';
       const attrs = parseFigureAttrsFromXmd(node.source?.raw);
-      const placement = String(attrs.placement ?? '').trim().toLowerCase();
-      const align = String(attrs.align ?? '').trim().toLowerCase();
       const border = parseBorderFromAttrs(attrs);
 
       const lines: string[] = [];
-      if (placement === 'inline' && align !== 'center') {
-        // Inline placement: wrap the figure so surrounding text can flow around it (like the web preview).
-        // Map align -> side. Default inline side is left.
-        const side = align === 'right' ? 'r' : 'l';
-        const wrapWidth = widthAttrToLatexDim(attrs.width) ?? '0.450\\textwidth';
-        lines.push(`\\begin{wrapfigure}{${side}}{${wrapWidth}}`);
-        lines.push(alignToLatex(attrs));
-        // In wrapfigure, \linewidth equals the wrap width; keep image constrained.
-        lines.push(...border.preambleLines);
-        lines.push(wrapWithBorder(`\\includegraphics[width=\\linewidth]{\\detokenize{${src}}}`, border));
-        if (caption.trim().length > 0) lines.push(`\\caption{${caption}}`);
-        if (label.trim().length > 0) lines.push(`\\label{${label}}`);
-        lines.push('\\end{wrapfigure}');
-        return lines.join('\n');
-      }
-
       // Block placement (default): standard figure environment.
       lines.push('\\begin{figure}');
       lines.push(alignToLatex(attrs));
@@ -684,24 +625,15 @@ function renderFigureGrid(grid: GridNode): string {
   const rowVspace = margin === 'small' ? '0.25em' : margin === 'large' ? '1.75em' : '0.75em';
 
   const out: string[] = [];
-  const placement = grid.placement ?? 'block';
   const align = grid.align ?? 'center';
-  const placementIsInline = placement === 'inline' && (align === 'left' || align === 'right');
-  // IMPORTANT: inside wrapfigure, the relevant width is the wrap box's \linewidth, not \textwidth.
-  const widthStr = `${w.toFixed(3)}${placementIsInline ? '\\linewidth' : '\\textwidth'}`;
+  const widthStr = `${w.toFixed(3)}\\textwidth`;
   const styleSetup = tableStyleToLatexSetup(grid.style);
   const borderNone = Number.isFinite(grid.style?.borderWidthPx) && (grid.style?.borderWidthPx ?? 0) === 0;
   const ruleWidthLine = !borderNone && styleSetup.ruleWidthPt ? `\\setlength{\\arrayrulewidth}{${styleSetup.ruleWidthPt}}` : null;
   const ruleColorName = !borderNone && styleSetup.ruleColor?.name ? styleSetup.ruleColor.name : null;
 
-  if (placementIsInline) {
-    const side = align === 'right' ? 'r' : 'l';
-    // Heuristic: inline grids should not exceed ~60% of text width for 2-col grids, wider for 3+.
-    const wrapWidth = cols <= 2 ? '0.55\\textwidth' : cols === 3 ? '0.80\\textwidth' : '0.95\\textwidth';
-    out.push(`\\begin{wrapfigure}{${side}}{${wrapWidth}}`);
-  } else {
-    out.push('\\begin{figure}');
-  }
+  // NOTE: We do not auto-generate wrapfigure/wrapfig for inline placement.
+  out.push('\\begin{figure}');
   // Grid-level alignment (default: center).
   if (align === 'right') out.push('\\raggedleft');
   else if (align === 'left') out.push('\\raggedright');
@@ -750,7 +682,7 @@ function renderFigureGrid(grid: GridNode): string {
   const gridLabel = String((grid as unknown as { label?: string }).label ?? '').trim();
   if (gridLabel.length > 0) out.push(`\\label{${escapeLatexText(gridLabel)}}`);
 
-  out.push(placementIsInline ? '\\end{wrapfigure}' : '\\end{figure}');
+  out.push('\\end{figure}');
   return out.join('\n');
 }
 

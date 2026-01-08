@@ -5,7 +5,7 @@ import { irToLatexDocument } from '../to-latex';
 import { parseLatexToIr } from '../to-ir';
 
 describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
-  it('XMD -> IR -> LaTeX emits wrapfigure for placement="inline" (even if trailing text)', () => {
+  it('XMD -> IR -> LaTeX does not emit wrapfigure for placement="inline" (block-only output)', () => {
     const xmd = [
       '@ Title',
       '',
@@ -18,17 +18,16 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     const ir = parseXmdToIr({ docId: 'doc-1', xmd });
     const latex = irToLatexDocument(ir);
 
-    expect(latex).toContain('\\usepackage{wrapfig}');
-    expect(latex).toContain('\\begin{wrapfigure}{r}{0.330\\textwidth}');
-    expect(latex).toContain('\\includegraphics[width=\\linewidth]{\\detokenize{assets/img}}');
+    expect(latex).not.toContain('\\usepackage{wrapfig}');
+    expect(latex).not.toContain('\\begin{wrapfigure}');
+    expect(latex).toContain('\\begin{figure}');
+    expect(latex).toContain('\\includegraphics');
     expect(latex).toContain('\\caption{Cap}');
     expect(latex).toContain('\\label{fig:demo}');
-    expect(latex).toContain('\\end{wrapfigure}');
-    // Ensure we didn't separate wrapfigure from the paragraph with a blank line (wrapfig needs following text).
-    expect(latex).toContain('\\end{wrapfigure}\nThis paragraph should wrap around the inline figure.');
+    expect(latex).toContain('\\end{figure}');
   });
 
-  it('LaTeX -> IR -> XMD reconstructs inline placement from wrapfigure + includegraphics', () => {
+  it('LaTeX -> IR -> XMD reconstructs inline placement from wrapfigure + includegraphics (user-authored LaTeX)', () => {
     const latex = [
       '\\documentclass{article}',
       '\\usepackage{wrapfig}',
