@@ -50,45 +50,10 @@ export function useEditorEditMode(params: {
     const meta: EditorDocMetadata = documentMetadata ?? {};
     const last = meta.lastEditedFormat;
     const latex = meta.latex;
-    const cachedGenVersion = typeof meta.latexGenVersion === 'string' ? meta.latexGenVersion : '';
     if (!didInitModeRef.current && (last === 'latex' || last === 'markdown')) {
       setEditMode(last);
       didInitModeRef.current = true;
     }
-    // If last mode is LaTeX but generator has changed, auto-regenerate + persist so publish compiles
-    // the same LaTeX the user is seeing (no manual toggle required).
-    const needsUpgrade = last === 'latex' && cachedGenVersion !== LATEX_GEN_VERSION;
-    if (needsUpgrade && actualDocumentId && actualDocumentId !== 'default') {
-      try {
-        const currentIr = ir ?? parseXmdToIr({ docId: actualDocumentId, xmd: content });
-        const currentIrHash = computeDocIrHash(currentIr);
-        const latexBase = irToLatexDocument(currentIr);
-        const ensured = ensureLatexPreambleForLatexContent(latexBase);
-        const nextLatex = ensured.latex;
-        setLatexDraft(nextLatex);
-        const nextMeta: EditorDocMetadata = {
-          ...meta,
-          latex: nextLatex,
-          ...(currentIrHash ? { latexIrHash: currentIrHash, xmdIrHash: currentIrHash } : null),
-          latexGenVersion: LATEX_GEN_VERSION,
-          lastEditedFormat: 'latex' as const,
-        };
-        setDocumentMetadata(nextMeta);
-        // Best-effort persist; never block rendering.
-        void api.documents
-          .update(actualDocumentId, {
-            content,
-            metadata: nextMeta,
-            changeType: 'auto-save',
-            changeDescription: 'Auto-upgraded generated LaTeX',
-          })
-          .catch(() => {});
-      } catch {
-        // ignore
-      }
-      return;
-    }
-
     if (typeof latex === 'string') {
       // Avoid overwriting while the user is actively typing in LaTeX (prevents cursor/scroll reset).
       // The LaTeX draft is treated as the persisted editing surface when lastEditedFormat === 'latex'.
@@ -102,7 +67,7 @@ export function useEditorEditMode(params: {
         // ignore
       }
     }
-  }, [actualDocumentId, content, documentId, documentMetadata, editMode, ir, latexDraft, setDocumentMetadata]);
+  }, [actualDocumentId, documentId, documentMetadata, editMode, ir, latexDraft]);
 
   const handleEditModeChange = useCallback(
     async (next: EditMode) => {
