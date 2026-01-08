@@ -51,21 +51,14 @@ export function useEditorEditMode(params: {
     const last = meta.lastEditedFormat;
     const latex = meta.latex;
     const cachedGenVersion = typeof meta.latexGenVersion === 'string' ? meta.latexGenVersion : '';
-    const cachedLatex = typeof latex === 'string' ? latex : '';
     if (!didInitModeRef.current && (last === 'latex' || last === 'markdown')) {
       setEditMode(last);
       didInitModeRef.current = true;
     }
     // If last mode is LaTeX but generator has changed, auto-regenerate + persist so publish compiles
     // the same LaTeX the user is seeing (no manual toggle required).
-    // Auto-upgrade only when we detect stale generator artifacts (e.g. old wrapfigure output),
-    // so we don't overwrite user-authored LaTeX drafts.
-    const needsUpgrade =
-      last === 'latex' &&
-      cachedGenVersion !== LATEX_GEN_VERSION &&
-      (cachedLatex.includes('\\begin{wrapfigure}') || cachedLatex.includes('\\usepackage{wrapfig}'));
+    const needsUpgrade = last === 'latex' && cachedGenVersion !== LATEX_GEN_VERSION;
     if (needsUpgrade && actualDocumentId && actualDocumentId !== 'default') {
-      let upgraded = false;
       try {
         const currentIr = ir ?? parseXmdToIr({ docId: actualDocumentId, xmd: content });
         const currentIrHash = computeDocIrHash(currentIr);
@@ -81,7 +74,6 @@ export function useEditorEditMode(params: {
           lastEditedFormat: 'latex' as const,
         };
         setDocumentMetadata(nextMeta);
-        upgraded = true;
         // Best-effort persist; never block rendering.
         void api.documents
           .update(actualDocumentId, {
@@ -92,9 +84,9 @@ export function useEditorEditMode(params: {
           })
           .catch(() => {});
       } catch {
-        // If upgrade fails, fall back to existing cached LaTeX below.
+        // ignore
       }
-      if (upgraded) return;
+      return;
     }
 
     if (typeof latex === 'string') {

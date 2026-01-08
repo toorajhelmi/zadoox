@@ -410,7 +410,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
 
   const handleFormat = useEditorFormatHandler({
     content,
-    latexDraft,
     updateContent,
     selectedVersion,
     latestVersion,

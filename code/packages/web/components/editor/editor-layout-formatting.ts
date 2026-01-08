@@ -19,7 +19,6 @@ type UndoRedoApi = {
 
 export type EditorLayoutFormatHandlerParams = {
   content: string;
-  latexDraft: string;
   updateContent: (next: string) => void;
   selectedVersion: number | null;
   latestVersion: number | null;
@@ -42,7 +41,6 @@ export type EditorLayoutFormatHandlerParams = {
 export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) {
   const {
     content,
-    latexDraft,
     updateContent,
     selectedVersion,
     latestVersion,
@@ -129,11 +127,7 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
 
       // Always prefer CodeMirror's current doc + selection to avoid stale indices/content
       const view = editorViewRef.current;
-      const baseContent = view
-        ? view.state.doc.toString()
-        : editMode === 'latex'
-          ? latexDraft
-          : content;
+      const baseContent = view ? view.state.doc.toString() : content;
       const cmSelection = view?.state.selection.main ?? null;
 
       // Resolve a selection range in document coordinates (prefer stored selection, fallback to CodeMirror selection)
@@ -292,7 +286,6 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
     },
     [
       content,
-      latexDraft,
       updateContent,
       selectedVersion,
       latestVersion,
