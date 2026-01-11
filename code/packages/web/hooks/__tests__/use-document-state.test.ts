@@ -113,32 +113,7 @@ describe('useDocumentState - Core Functionality', () => {
     expect(result.current.documentTitle).toBe('My Title');
   });
 
-  it('should create "Untitled Document" when documentId is "default" and project has no documents', async () => {
-    const mockDocument: Document = {
-      id: 'doc-new',
-      projectId: 'project-1',
-      title: 'Untitled Document',
-      content: '',
-      metadata: { type: 'standalone' },
-      createdAt: new Date('2024-01-01'),
-      updatedAt: new Date('2024-01-01'),
-    };
-
-    vi.mocked(api.documents.listByProject).mockResolvedValueOnce([]);
-    vi.mocked(api.documents.create).mockResolvedValueOnce(mockDocument);
-
-    const { result } = renderHook(() => useDocumentState('default', 'project-1'));
-
-    await waitFor(
-      () => {
-        expect(result.current.isLoading).toBe(false);
-      },
-      { timeout: 10000 }
-    );
-
-    expect(result.current.documentTitle).toBe('Untitled Document');
-    expect(result.current.documentId).toBe('doc-new');
-  });
+  // Removed: "default" documentId handling (we always require a real UUID now).
 
   it.skip('should auto-save content after delay', async () => {
     const mockDocument: Document = {
@@ -398,22 +373,6 @@ describe('useDocumentState - Core Functionality', () => {
       }, { timeout: 5000 });
     });
 
-    it('should not update mode when documentId is "default"', async () => {
-      const { result } = renderHook(() => useDocumentState('default', 'project-1'));
-
-      await waitFor(
-        () => {
-          expect(result.current.isLoading).toBe(false);
-        },
-        { timeout: 10000 }
-      );
-
-      act(() => {
-        result.current.handleModeToggle('para-0', 'think');
-      });
-
-      // Should not call API
-      expect(api.documents.update).not.toHaveBeenCalled();
-    });
+    // Removed: "default" documentId handling (we always require a real UUID now).
   });
 });

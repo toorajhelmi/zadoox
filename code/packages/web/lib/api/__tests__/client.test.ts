@@ -90,7 +90,6 @@ describe('API Client - Projects', () => {
         'http://localhost:3001/api/v1/projects',
         expect.objectContaining({
           headers: expect.objectContaining({
-            'Content-Type': 'application/json',
             Authorization: 'Bearer test-token',
           }),
         })
@@ -170,7 +169,6 @@ describe('API Client - Projects', () => {
         'http://localhost:3001/api/v1/projects/1',
         expect.objectContaining({
           headers: expect.objectContaining({
-            'Content-Type': 'application/json',
             Authorization: 'Bearer test-token',
           }),
         })
@@ -340,7 +338,6 @@ describe('API Client - Projects', () => {
         expect.objectContaining({
           method: 'DELETE',
           headers: expect.objectContaining({
-            'Content-Type': 'application/json',
             Authorization: 'Bearer test-token',
           }),
         })

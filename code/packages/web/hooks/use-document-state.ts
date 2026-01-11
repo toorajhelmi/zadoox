@@ -74,7 +74,7 @@ export function useDocumentState(documentId: string, projectId: string) {
       }
 
       // Don't save if we don't have an actual document ID yet
-      if (!actualDocumentId || actualDocumentId === 'default') {
+      if (!actualDocumentId) {
         return;
       }
 
@@ -172,7 +172,7 @@ export function useDocumentState(documentId: string, projectId: string) {
   // Handle mode toggle
   const handleModeToggle = useCallback(
     async (paragraphId: string, newMode: ParagraphMode) => {
-      if (!actualDocumentId || actualDocumentId === 'default') {
+      if (!actualDocumentId) {
         return;
       }
 
