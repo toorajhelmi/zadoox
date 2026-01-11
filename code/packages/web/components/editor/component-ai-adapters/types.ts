@@ -1,4 +1,4 @@
-export type EmbeddedComponentKind = 'figure' | 'grid';
+export type EmbeddedComponentKind = 'figure' | 'grid' | 'table';
 
 export type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -14,6 +14,17 @@ export type ComponentContext =
         header: string;
         figuresCount: number;
         figures: Array<{ index: number; caption: string; src: string; attrs: string }>;
+      };
+      conversation: ChatMessage[];
+    }
+  | {
+      kind: 'table';
+      table: {
+        header: string;
+        colSpec: string | null;
+        rowsCount: number;
+        colsCount: number;
+        previewRows: string[];
       };
       conversation: ChatMessage[];
     };
@@ -41,7 +52,7 @@ export type ComponentEditCapabilities = {
    * Output constraints for the model. These are adapter/IR-defined, and help keep updatedXmd parseable.
    */
   output?: {
-    shape?: 'singleFigureLine' | 'fencedGridBlock';
+    shape?: 'singleFigureLine' | 'fencedGridBlock' | 'fencedTableBlock';
   };
 };
 

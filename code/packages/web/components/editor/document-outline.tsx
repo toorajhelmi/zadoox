@@ -88,9 +88,6 @@ function collectAssetFilesFromIr(ir: DocumentNode): AssetFile[] {
     }
   };
   walk(ir);
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'outline-grid',hypothesisId:'H5',location:'document-outline.tsx:collectAssetFilesFromIr',message:'Collected asset keys from IR',data:{assetCount:out.size},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion agent log
   return Array.from(out.values());
 }
 
@@ -168,10 +165,6 @@ export function DocumentOutline({ content, ir, projectName }: DocumentOutlinePro
     // Phase 11: outline is IR-driven.
     return derivedIr ? extractOutlineItemsFromIr(derivedIr) : [];
   }, [derivedIr]);
-
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'grid-insert',hypothesisId:'H7',location:'document-outline.tsx:items',message:'Outline items computed',data:{total:items.length,figureItems:items.filter((i:any)=>i.kind==='figure').length,headingItems:items.filter((i:any)=>i.kind==='heading').length,docId:(derivedIr as any)?.docId||null},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion agent log
 
   // We render a file/folder tree UI in the outline pane. The "file" represents the current document.
   // The document title (if present) becomes the file label; outline contents are headings/figures under that file.

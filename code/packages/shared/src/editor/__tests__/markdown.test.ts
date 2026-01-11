@@ -115,6 +115,20 @@ describe('Markdown Utilities', () => {
       expect(html).toContain('text-align:center');
     });
 
+    it('should apply border style/color/width from image attribute blocks', () => {
+      const markdown =
+        '![Caption](image.png){#fig:generated-123 borderStyle="solid" borderColor="#6b7280" borderWidth="2"}';
+      const html = renderMarkdownToHtml(markdown);
+      expect(html).toContain('border:2px solid #6b7280');
+    });
+
+    it('should allow borderWidth="0" to disable border from image attribute blocks', () => {
+      const markdown =
+        '![Caption](image.png){#fig:generated-123 borderStyle="solid" borderColor="#6b7280" borderWidth="0"}';
+      const html = renderMarkdownToHtml(markdown);
+      expect(html).toContain('border:none');
+    });
+
     it('should float inline figures by default so text can wrap', () => {
       const markdown =
         '![Caption](image.png){#fig:generated-123 label="Figure {REF}.1" placement="inline"}\n\nNext paragraph text';

@@ -27,6 +27,8 @@ export function ComponentAIChat(props: {
         content:
           detail.kind === 'figure'
             ? 'Editing this figure. Tell me what to change (caption, width, alignment, placement, etc.).'
+            : detail.kind === 'table'
+              ? 'Editing this table. Tell me what to change (caption, label, border style/color/width, etc.).'
             : 'Editing this grid. Tell me what to change (caption, cols, alignment, placement, margin, etc.).',
       },
     ];
@@ -44,7 +46,7 @@ export function ComponentAIChat(props: {
   const [adjustedPosition, setAdjustedPosition] = useState(position);
 
   const title = useMemo(() => {
-    const k: Record<ComponentAIKind, string> = { figure: 'Figure', grid: 'Grid' };
+    const k: Record<ComponentAIKind, string> = { figure: 'Figure', grid: 'Grid', table: 'Table' };
     return `Edit ${k[detail.kind]} with AI`;
   }, [detail.kind]);
 

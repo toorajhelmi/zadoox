@@ -8,8 +8,14 @@ export async function rollbackToVersion(params: {
 }) {
   const { actualDocumentId, versionNumber, setSelectedVersion, updateContent } = params;
   const content = await api.versions.reconstruct(actualDocumentId, versionNumber);
-  setSelectedVersion(null);
-  updateContent(content);
+  // Persist immediately as a rollback change (creates a new document version).
+  await api.documents.update(actualDocumentId, {
+    content,
+    changeType: 'rollback',
+    changeDescription: `Restored version v${versionNumber}`,
+  });
+  setSelectedVersion(null); // back to latest (editable)
+  updateContent(content); // update local editor state
 }
 
 export async function selectVersionForViewing(params: {

@@ -729,12 +729,6 @@ function parseBlocks(latex: string): Block[] {
         // Detect Zadoox figure-grid pattern: outer figure with an outer tabular containing nested cells.
         // This is emitted by the InsertFigureGridWizard and should round-trip to IR GridNode.
         const grid = parseFigureGridFromLatexRaw(raw) ?? parseFigureGridFromSubfigureRaw(raw);
-        // #region agent log
-        try {
-          const hasTabularx = raw.includes('\\begin{tabularx}');
-          fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'md-latex-roundtrip',hypothesisId:'H12',location:'latex/to-ir.ts:figure',message:'LaTeX figure parsed; grid detection result',data:{gridDetected:Boolean(grid),caption:(caption||'').slice(0,120),hasTabularx,rawHead:raw.slice(0,120)},timestamp:Date.now()})}).catch(()=>{});
-        } catch { /* ignore */ }
-        // #endregion agent log
         if (grid) {
           blocks.push({
             kind: 'grid',

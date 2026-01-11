@@ -33,6 +33,13 @@ export interface DocumentMetadata {
    */
   latex?: string;
   lastEditedFormat?: 'markdown' | 'latex';
+  /**
+   * IR hash values (computed from the canonical IR derived from XMD).
+   * We store per-representation hashes so switching can decide reuse vs regenerate.
+   */
+  xmdIrHash?: string;
+  latexIrHash?: string;
+  // Legacy/experimental field (kept for backward compatibility).
   irHashAtLastSync?: string;
 }
 

@@ -18,6 +18,47 @@ import { spawn } from 'node:child_process';
 
 export type PdfCompilerKind = 'tectonic' | 'texlive';
 
+export class PdfCompileError extends Error {
+  readonly name = 'PdfCompileError';
+  readonly details: {
+    pdfCompiler: PdfCompilerKind;
+    jobName: string;
+    texPath: string;
+    texExcerpt?: string;
+  };
+
+  constructor(message: string, details: { pdfCompiler: PdfCompilerKind; jobName: string; texPath: string; texExcerpt?: string }) {
+    super(message);
+    this.details = details;
+  }
+}
+
+function excerptAroundLine(tex: string, lineNumber1Based: number, radius = 6): string {
+  const lines = String(tex ?? '').split(/\r?\n/);
+  const n = Math.max(1, Math.floor(lineNumber1Based));
+  const start = Math.max(1, n - radius);
+  const end = Math.min(lines.length, n + radius);
+  const out: string[] = [];
+  for (let i = start; i <= end; i++) {
+    const prefix = i === n ? '>>' : '  ';
+    out.push(`${prefix} ${String(i).padStart(4, ' ')} | ${lines[i - 1] ?? ''}`);
+  }
+  return out.join('\n');
+}
+
+function tryParseTexErrorLineNumber(message: string, jobName: string): number | null {
+  const s = String(message ?? '');
+  // tectonic typically reports e.g. "error: main.tex:68: ..."
+  const re = new RegExp(String.raw`(?:^|\n)error:\s+${jobName}\.tex:(\d+):`, 'i');
+  const m = s.match(re);
+  if (m && m[1]) return Number(m[1]);
+  // fallback: any "<job>.tex:<line>:"
+  const re2 = new RegExp(String.raw`${jobName}\.tex:(\d+):`, 'i');
+  const m2 = s.match(re2);
+  if (m2 && m2[1]) return Number(m2[1]);
+  return null;
+}
+
 export class PdfCompileService {
   getCompilerKind(): PdfCompilerKind {
     const raw = String(process.env.PDF_COMPILER ?? 'tectonic').toLowerCase().trim();
@@ -55,6 +96,7 @@ export class PdfCompileService {
       await writeFile(texPath, latex, 'utf8');
 
       const kind = this.getCompilerKind();
+      try {
       if (kind === 'tectonic') {
         // IMPORTANT:
         // Tectonic maintains a cache (bundles, fonts, etc.). In dev, the frontend can issue duplicate
@@ -65,13 +107,7 @@ export class PdfCompileService {
         await mkdir(cacheDir, { recursive: true });
         await this.runCmd({
           cmd: 'tectonic',
-          args: [
-            '--outdir',
-            workDir,
-            '--synctex',
-            '--keep-logs',
-            `${jobName}.tex`,
-          ],
+            args: ['--outdir', workDir, '--synctex', '--keep-logs', `${jobName}.tex`],
           cwd: workDir,
           env: {
             ...process.env,
@@ -86,16 +122,22 @@ export class PdfCompileService {
         // TeX Live + latexmk
         await this.runCmd({
           cmd: 'latexmk',
-          args: [
-            '-pdf',
-            '-interaction=nonstopmode',
-            '-halt-on-error',
-            `-outdir=${workDir}`,
-            `${jobName}.tex`,
-          ],
+            args: ['-pdf', '-interaction=nonstopmode', '-halt-on-error', `-outdir=${workDir}`, `${jobName}.tex`],
           cwd: workDir,
           env: process.env,
         });
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        let texExcerpt: string | undefined;
+        try {
+          const tex = await readFile(texPath, 'utf8');
+          const line = tryParseTexErrorLineNumber(message, jobName);
+          if (line && Number.isFinite(line)) texExcerpt = excerptAroundLine(tex, line, 8);
+        } catch {
+          // ignore
+        }
+        throw new PdfCompileError(message, { pdfCompiler: kind, jobName, texPath, texExcerpt });
       }
 
       const pdf = await readFile(pdfPath);

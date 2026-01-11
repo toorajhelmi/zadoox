@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { DashboardLayout, LoaderIcon } from '@/components/dashboard';
 import { api } from '@/lib/api/client';
-import { ArchiveBoxArrowDownIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
+import { ArchiveBoxArrowDownIcon, ArrowDownTrayIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { createClient } from '@/lib/supabase/client';
 
 type PublishSource = 'markdown' | 'latex';
@@ -29,6 +29,23 @@ export default function PublishPreviewPage() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfFilename, setPdfFilename] = useState<string | null>(null);
+  const previewReady = !loading && !error && (source === 'latex' ? Boolean(pdfUrl) : Boolean(html));
+
+  const formatPdfError = (err: unknown): string => {
+    const fallback = 'Failed to generate PDF';
+    if (!err || typeof err !== 'object') return fallback;
+    const e = err as { message?: unknown; code?: unknown; details?: unknown; status?: unknown };
+    const message = typeof e.message === 'string' ? e.message : fallback;
+    const code = typeof e.code === 'string' ? e.code : null;
+    const details = e.details as any;
+    if (code === 'LATEX_COMPILE_ERROR' && details && typeof details.log === 'string') {
+      const excerpt = typeof details.texExcerpt === 'string' && details.texExcerpt.trim().length > 0 ? details.texExcerpt : null;
+      return excerpt
+        ? `LaTeX compilation failed.\n\n${details.log}\n\n--- main.tex excerpt ---\n${excerpt}`
+        : `LaTeX compilation failed.\n\n${details.log}`;
+    }
+    return message;
+  };
 
   const canLoad = useMemo(() => !!projectId && !!documentId, [projectId, documentId]);
 
@@ -70,7 +87,7 @@ export default function PublishPreviewPage() {
         })
         .catch((err: unknown) => {
           if (cancelled) return;
-          setError(err instanceof Error ? err.message : 'Failed to generate PDF');
+          setError(formatPdfError(err));
         })
         .finally(() => {
           if (cancelled) return;
@@ -210,6 +227,7 @@ export default function PublishPreviewPage() {
               </div>
             </div>
 
+            {previewReady && (
             <div className="flex items-center gap-2 shrink-0">
               {source === 'latex' && (
                 <button
@@ -235,7 +253,29 @@ export default function PublishPreviewPage() {
                   <ArchiveBoxArrowDownIcon className="w-5 h-5" />
                 </button>
               )}
+
+                {/* For LaTeX, the embedded PDF viewer already offers download/print controls. */}
+                {source !== 'latex' && (
+                  <button
+                    onClick={() => {
+                      const w = iframeRef.current?.contentWindow;
+                      if (!w) return;
+                      try {
+                        w.focus();
+                        w.print();
+                      } catch {
+                        // noop
+                      }
+                    }}
+                    className="p-2 bg-[#3e3e42] hover:bg-[#464647] text-white rounded transition-colors inline-flex items-center justify-center"
+                    title="Save as PDF"
+                    aria-label="Save as PDF"
+                  >
+                    <ArrowDownTrayIcon className="w-5 h-5" />
+                  </button>
+                )}
             </div>
+            )}
           </div>
         </div>
 
@@ -254,7 +294,7 @@ export default function PublishPreviewPage() {
               </div>
             ) : error ? (
               <div className="p-6 bg-[#252526] border border-[#3e3e42] rounded">
-                <p className="text-[#cccccc]">{error}</p>
+                <pre className="text-[#cccccc] whitespace-pre-wrap text-sm">{error}</pre>
               </div>
             ) : source === 'latex' ? (
               <div className="border border-[#3e3e42] rounded overflow-hidden bg-white">

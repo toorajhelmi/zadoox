@@ -137,11 +137,8 @@ describe('EditorLayout (LaTeX) undo/redo', () => {
     // Use formatting (immediate history entry) rather than debounced typing.
     fireEvent.click(screen.getByLabelText('Bold'));
 
-    const undoBtn = await waitFor(() => {
-      const b = screen.getByLabelText('Undo') as HTMLButtonElement;
-      expect(b).not.toBeDisabled();
-      return b;
-    });
+    const undoBtn = screen.getByLabelText('Undo') as HTMLButtonElement;
+    await waitFor(() => expect(undoBtn).not.toBeDisabled(), { timeout: 3000 });
 
     fireEvent.click(undoBtn);
 

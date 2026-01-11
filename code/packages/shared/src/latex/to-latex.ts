@@ -1,4 +1,4 @@
-import type { DocumentNode, FigureNode, GridNode, IrNode } from '../ir/types';
+import type { DocumentNode, FigureNode, GridNode, IrNode, TableNode, TableRule, TableStyle } from '../ir/types';
 
 /**
  * IR -> LaTeX string (best-effort, Phase 12).
@@ -39,10 +39,15 @@ export function irToLatexDocument(doc: DocumentNode): string {
   const body = renderNodes(bodyNodes).trimEnd();
 
   const needsGraphicx = containsFigure(bodyNodes);
-  const needsWrapfig = containsInlineFigure(bodyNodes);
+  // We do not generate wrapfigure/wrapfig anymore (block-only output for stable PDF layout),
+  // but users may still hand-edit LaTeX to use wrapfig. For generated LaTeX, keep it false.
+  const needsWrapfig = false;
   const needsGrid = containsGrid(bodyNodes);
+  const needsTable = containsTable(bodyNodes);
+  const needsTabular = needsGrid || needsTable;
   const needsSubcaption = needsGrid && gridIsFigureOnly(bodyNodes);
   const needsCaption = needsGrid && !needsSubcaption && gridNeedsCaptionOf(bodyNodes);
+  const needsXColor = containsBorderColor(bodyNodes);
 
   // Minimal, broadly compatible, and IR-compatible:
   // avoid \\usepackage and other preamble directives that are not represented in IR.
@@ -52,10 +57,11 @@ export function irToLatexDocument(doc: DocumentNode): string {
   if (needsGraphicx) preambleParts.push('\\usepackage{graphicx}');
   if (needsWrapfig) preambleParts.push('\\usepackage{wrapfig}');
   if (needsSubcaption) preambleParts.push('\\usepackage{subcaption}');
-  if (needsGrid) {
+  if (needsTabular) {
     preambleParts.push('\\usepackage{tabularx}');
     preambleParts.push('\\usepackage{array}');
   }
+  if (needsXColor) preambleParts.push('\\usepackage[table]{xcolor}');
   if (needsCaption) preambleParts.push('\\usepackage{caption}');
   if (titleLine) preambleParts.push(titleLine);
   // Only emit author/date if IR actually has them (i.e. present in XMD or added in LaTeX then parsed).
@@ -91,23 +97,27 @@ function containsFigure(nodes: IrNode[]): boolean {
   return false;
 }
 
-function containsInlineFigure(nodes: IrNode[], inGrid = false): boolean {
+function containsGrid(nodes: IrNode[]): boolean {
   for (const n of nodes) {
-    if (n.type === 'figure' && !inGrid) {
-      const raw = (n as unknown as { source?: { raw?: string } }).source?.raw;
-      const attrs = parseFigureAttrsFromXmd(raw);
-      const placement = String(attrs.placement ?? '').trim().toLowerCase();
-      const align = String(attrs.align ?? '').trim().toLowerCase();
-      if (placement === 'inline' && align !== 'center') return true;
-    }
+    if (n.type === 'grid') return true;
     if (n.type === 'section' && n.children?.length) {
-      if (containsInlineFigure(n.children, inGrid)) return true;
+      if (containsGrid(n.children)) return true;
+    }
+  }
+  return false;
+}
+
+function containsTable(nodes: IrNode[]): boolean {
+  for (const n of nodes) {
+    if (n.type === 'table') return true;
+    if (n.type === 'section' && n.children?.length) {
+      if (containsTable(n.children)) return true;
     }
     if (n.type === 'grid') {
       const g = n as unknown as GridNode;
       for (const row of g.rows ?? []) {
         for (const cell of row ?? []) {
-          if (containsInlineFigure(cell?.children ?? [], true)) return true;
+          if (containsTable(cell?.children ?? [])) return true;
         }
       }
     }
@@ -115,11 +125,27 @@ function containsInlineFigure(nodes: IrNode[], inGrid = false): boolean {
   return false;
 }
 
-function containsGrid(nodes: IrNode[]): boolean {
+function containsBorderColor(nodes: IrNode[]): boolean {
   for (const n of nodes) {
-    if (n.type === 'grid') return true;
+    if (n.type === 'table') {
+      const t = n as unknown as TableNode;
+      if (String(t.style?.borderColor ?? '').trim().length > 0) return true;
+    }
+    if (n.type === 'grid') {
+      const g = n as unknown as GridNode;
+      if (String(g.style?.borderColor ?? '').trim().length > 0) return true;
+      for (const row of g.rows ?? []) {
+        for (const cell of row ?? []) {
+          if (containsBorderColor(cell?.children ?? [])) return true;
+        }
+      }
+    }
+    if (n.type === 'figure') {
+      const attrs = parseFigureAttrsFromXmd((n as unknown as { source?: { raw?: string } }).source?.raw);
+      if (String(attrs.borderColor ?? '').trim().length > 0) return true;
+    }
     if (n.type === 'section' && n.children?.length) {
-      if (containsGrid(n.children)) return true;
+      if (containsBorderColor(n.children)) return true;
     }
   }
   return false;
@@ -202,63 +228,13 @@ function alignToLatex(n: { align?: string }): string {
   return '\\centering';
 }
 
-function widthAttrToLatexDim(widthRaw: string | undefined): string | null {
-  const opt = widthAttrToIncludegraphicsOption(widthRaw);
-  if (!opt) return null;
-  const m = /^width=(.+)$/.exec(opt.trim());
-  return m ? String(m[1]).trim() : null;
-}
-
 function renderNodes(nodes: IrNode[]): string {
   const out: string[] = [];
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
 
-    // Special-case: inline figure wrapping.
-    // `wrapfigure` only works when there is following text to wrap around.
-    // Also, our renderer joins blocks with blank lines; a blank line immediately after a wrapfigure
-    // can prevent text from wrapping in practice. So we join wrapfigure + next paragraph tightly.
-    if (n.type === 'figure') {
-      const next = nodes[i + 1];
-      const raw = (n as unknown as { source?: { raw?: string } }).source?.raw;
-      const attrs = parseFigureAttrsFromXmd(raw);
-      const placement = String(attrs.placement ?? '').trim().toLowerCase();
-      const align = String(attrs.align ?? '').trim().toLowerCase();
-      const canWrap =
-        placement === 'inline' &&
-        align !== 'center' &&
-        next?.type === 'paragraph' &&
-        String((next as { text?: unknown }).text ?? '').trim().length > 0;
-
-      if (canWrap) {
-        const wrap = renderNode(n).trimEnd();
-        const para = renderNode(next).trimEnd();
-        // Join without a blank line so LaTeX sees the paragraph as immediately following.
-        out.push(`${wrap}\n${para}`.trimEnd());
-        i++; // consumed next paragraph
-        continue;
-      }
-    }
-
-    // Special-case: inline grid wrapping (same caveats as inline figures).
-    if (n.type === 'grid') {
-      const next = nodes[i + 1];
-      const g = n as unknown as GridNode;
-      const placement = String(g.placement ?? '').trim().toLowerCase();
-      const align = String(g.align ?? '').trim().toLowerCase();
-      const canWrap =
-        placement === 'inline' &&
-        (align === 'left' || align === 'right') &&
-        next?.type === 'paragraph' &&
-        String((next as { text?: unknown }).text ?? '').trim().length > 0;
-      if (canWrap) {
-        const wrap = renderNode(n).trimEnd();
-        const para = renderNode(next).trimEnd();
-        out.push(`${wrap}\n${para}`.trimEnd());
-        i++;
-        continue;
-      }
-    }
+    // NOTE: We do not auto-generate wrapfigure/wrapfig for inline placement.
+    // This keeps PDF output stable/presentable by default; users can hand-edit LaTeX if they want wrapping.
 
     const s = renderNode(n);
     if (s.trim().length === 0) continue;
@@ -311,44 +287,24 @@ function renderNode(node: IrNode): string {
       const caption = escapeLatexText(node.caption ?? '');
       const label = node.label ? escapeLatexText(node.label) : '';
       const attrs = parseFigureAttrsFromXmd(node.source?.raw);
-      const placement = String(attrs.placement ?? '').trim().toLowerCase();
-      const align = String(attrs.align ?? '').trim().toLowerCase();
+      const border = parseBorderFromAttrs(attrs);
 
       const lines: string[] = [];
-      if (placement === 'inline' && align !== 'center') {
-        // Inline placement: wrap the figure so surrounding text can flow around it (like the web preview).
-        // Map align -> side. Default inline side is left.
-        const side = align === 'right' ? 'r' : 'l';
-        const wrapWidth = widthAttrToLatexDim(attrs.width) ?? '0.450\\textwidth';
-        lines.push(`\\begin{wrapfigure}{${side}}{${wrapWidth}}`);
-        lines.push(alignToLatex(attrs));
-        // In wrapfigure, \linewidth equals the wrap width; keep image constrained.
-        lines.push(`\\includegraphics[width=\\linewidth]{\\detokenize{${src}}}`);
-        if (caption.trim().length > 0) lines.push(`\\caption{${caption}}`);
-        if (label.trim().length > 0) lines.push(`\\label{${label}}`);
-        lines.push('\\end{wrapfigure}');
-        return lines.join('\n');
-      }
-
       // Block placement (default): standard figure environment.
       lines.push('\\begin{figure}');
       lines.push(alignToLatex(attrs));
       const widthOpt = widthAttrToIncludegraphicsOption(attrs.width);
       const optStr = widthOpt ? `[${widthOpt}]` : '';
       // Use \detokenize so asset keys (with underscores) work without manual escaping.
-      lines.push(`\\includegraphics${optStr}{\\detokenize{${src}}}`);
+      lines.push(...border.preambleLines);
+      lines.push(wrapWithBorder(`\\includegraphics${optStr}{\\detokenize{${src}}}`, border));
       if (caption.trim().length > 0) lines.push(`\\caption{${caption}}`);
       if (label.trim().length > 0) lines.push(`\\label{${label}}`);
       lines.push('\\end{figure}');
       return lines.join('\n');
     }
     case 'table': {
-      // Minimal: degrade to a markdown-ish table inside verbatim.
-      const header = `| ${node.header.join(' | ')} |`;
-      const sep = `| ${node.header.map(() => '---').join(' | ')} |`;
-      const rows = node.rows.map((r) => `| ${r.join(' | ')} |`).join('\n');
-      const body = rows ? `${header}\n${sep}\n${rows}` : `${header}\n${sep}`;
-      return `\\begin{verbatim}\n${body}\n\\end{verbatim}`;
+      return renderTable(node as unknown as TableNode);
     }
     case 'grid': {
       const g = node as unknown as GridNode;
@@ -371,27 +327,203 @@ function renderNode(node: IrNode): string {
   }
 }
 
+type LatexColorRef = { name: string; defineLine?: string };
+
+function parseHexColor(raw: string): string | null {
+  const s = String(raw ?? '').trim();
+  if (!s.startsWith('#')) return null;
+  const hex = s.slice(1);
+  if (/^[0-9a-f]{6}$/i.test(hex)) return hex.toUpperCase();
+  if (/^[0-9a-f]{3}$/i.test(hex)) {
+    const up = hex.toUpperCase();
+    return `${up[0]}${up[0]}${up[1]}${up[1]}${up[2]}${up[2]}`;
+  }
+  return null;
+}
+
+function latexColorRefFromCss(raw: string): LatexColorRef | null {
+  const s = String(raw ?? '').trim();
+  if (!s) return null;
+  const hex = parseHexColor(s);
+  if (hex) {
+    const name = `zdxcol${hex.toLowerCase()}`;
+    return { name, defineLine: `\\definecolor{${name}}{HTML}{${hex}}` };
+  }
+  // Best-effort: allow named xcolor colors like "gray", "black", etc.
+  if (/^[a-zA-Z]+$/.test(s)) return { name: s };
+  return null;
+}
+
+function borderStyleToLatex(styleRaw: string | undefined): 'solid' {
+  // Best-effort: LaTeX table rules and fbox borders are solid by default.
+  // Dotted/dashed require extra packages and are not universally supported; degrade to solid.
+  void styleRaw;
+  return 'solid';
+}
+
+function tableRuleToVToken(rule: TableRule): string {
+  if (rule === 'double') return '||';
+  if (rule === 'single') return '|';
+  return '';
+}
+
+function tableRuleToHLines(rule: TableRule): string[] {
+  if (rule === 'none') return [];
+  if (rule === 'double') return ['\\hline', '\\hline'];
+  return ['\\hline'];
+}
+
+function tableStyleToLatexSetup(style: TableStyle | undefined): { preambleLines: string[]; ruleWidthPt: string | null; ruleColor?: LatexColorRef } {
+  const bw = style?.borderWidthPx;
+  const bwNum = Number.isFinite(bw) ? Math.round(Number(bw)) : NaN;
+  const ruleWidthPt = Number.isFinite(bwNum) && bwNum >= 0 ? `${bwNum}pt` : null;
+  const ruleColor = latexColorRefFromCss(String(style?.borderColor ?? '').trim() || '') ?? undefined;
+  const preambleLines: string[] = [];
+  if (ruleColor?.defineLine) preambleLines.push(ruleColor.defineLine);
+  return { preambleLines, ruleWidthPt, ruleColor };
+}
+
+function renderTable(t: TableNode): string {
+  const cols = Math.max(0, (t.header ?? []).length);
+  if (cols === 0) return '';
+
+  const align = (t.colAlign && t.colAlign.length === cols ? t.colAlign : Array.from({ length: cols }).map(() => 'left')) as Array<
+    'left' | 'center' | 'right'
+  >;
+  const vRules = t.vRules && t.vRules.length === cols + 1 ? t.vRules : Array.from({ length: cols + 1 }).map(() => 'none' as const);
+  const totalRows = 1 + (t.rows?.length ?? 0);
+  const hRules = t.hRules && t.hRules.length === totalRows + 1 ? t.hRules : Array.from({ length: totalRows + 1 }).map(() => 'none' as const);
+
+  const styleSetup = tableStyleToLatexSetup(t.style);
+  const borderNone = Number.isFinite(t.style?.borderWidthPx) && (t.style?.borderWidthPx ?? 0) === 0;
+  const ruleWidthLine = !borderNone && styleSetup.ruleWidthPt ? `\\setlength{\\arrayrulewidth}{${styleSetup.ruleWidthPt}}` : null;
+  const ruleColorName = !borderNone && styleSetup.ruleColor?.name ? styleSetup.ruleColor.name : null;
+
+  const colToken = (a: 'left' | 'center' | 'right') =>
+    a === 'center'
+      ? '>{\\centering\\arraybackslash}X'
+      : a === 'right'
+        ? '>{\\raggedleft\\arraybackslash}X'
+        : '>{\\raggedright\\arraybackslash}X';
+
+  const colSpec = (() => {
+    if (borderNone) return align.map(colToken).join('');
+    let s = '';
+    s += tableRuleToVToken(vRules[0] ?? 'none');
+    for (let i = 0; i < cols; i++) {
+      s += colToken(align[i] ?? 'left');
+      s += tableRuleToVToken(vRules[i + 1] ?? 'none');
+    }
+    return s;
+  })();
+
+  const caption = String(t.caption ?? '').trim();
+  const label = String(t.label ?? '').trim();
+
+  const out: string[] = [];
+  // Use table float for consistent LaTeX output (even without caption/label).
+  out.push('\\begin{table}[h]');
+  out.push('\\centering');
+  // Keep rule setup scoped to this table.
+  out.push('{');
+  for (const ln of styleSetup.preambleLines) out.push(ln);
+  if (ruleWidthLine) out.push(ruleWidthLine);
+  out.push(`\\begin{tabularx}{\\linewidth}{${colSpec}}`);
+  // IMPORTANT: \arrayrulecolor expands to \noalign, so it must be used *inside* the tabular alignment.
+  if (ruleColorName) out.push(`\\arrayrulecolor{${ruleColorName}}`);
+
+  const emitBoundary = (rule: TableRule) => {
+    if (borderNone) return;
+    for (const ln of tableRuleToHLines(rule)) out.push(ln);
+  };
+
+  // Top rule (boundary 0)
+  emitBoundary(hRules[0] ?? 'none');
+
+  // Header row
+  const headerCells = (t.header ?? []).map((c) => `\\textbf{${mdInlineToLatex(String(c ?? ''))}}`);
+  out.push(`${headerCells.join(' & ')} \\\\`);
+
+  // Boundary between header and first row (boundary 1)
+  emitBoundary(hRules[1] ?? 'none');
+
+  // Body rows
+  for (let r = 0; r < (t.rows ?? []).length; r++) {
+    const row = t.rows[r] ?? [];
+    const cells = Array.from({ length: cols }).map((_, i) => mdInlineToLatex(String(row[i] ?? '')));
+    out.push(`${cells.join(' & ')} \\\\`);
+    emitBoundary(hRules[2 + r] ?? 'none');
+  }
+
+  out.push('\\end{tabularx}');
+  out.push('}');
+  if (caption.length > 0) out.push(`\\caption{${escapeLatexText(caption)}}`);
+  if (label.length > 0) out.push(`\\label{${escapeLatexText(label)}}`);
+  out.push('\\end{table}');
+
+  return out.join('\n');
+}
+
+function parseBorderFromAttrs(attrs: { borderStyle?: string; borderColor?: string; borderWidth?: string }): {
+  preambleLines: string[];
+  widthPt: string | null;
+  color?: LatexColorRef;
+  enabled: boolean;
+} {
+  const bwRaw = String(attrs.borderWidth ?? '').trim();
+  const bwNum = bwRaw.length ? Number(bwRaw) : NaN;
+  if (Number.isFinite(bwNum) && Math.round(bwNum) === 0) {
+    return { preambleLines: [], widthPt: '0pt', enabled: false };
+  }
+  const hasAny = bwRaw.length > 0 || String(attrs.borderColor ?? '').trim().length > 0 || String(attrs.borderStyle ?? '').trim().length > 0;
+  if (!hasAny) return { preambleLines: [], widthPt: null, enabled: false };
+
+  const w = Number.isFinite(bwNum) && bwNum > 0 ? `${Math.round(bwNum)}pt` : '1pt';
+  const color = latexColorRefFromCss(String(attrs.borderColor ?? '').trim() || '');
+  const preambleLines: string[] = [];
+  if (color?.defineLine) preambleLines.push(color.defineLine);
+  // Style is best-effort only.
+  borderStyleToLatex(String(attrs.borderStyle ?? ''));
+  return { preambleLines, widthPt: w, color: color ?? undefined, enabled: true };
+}
+
+function wrapWithBorder(content: string, border: { enabled: boolean; widthPt: string | null; color?: LatexColorRef }): string {
+  if (!border.enabled) return content;
+  const w = border.widthPt ?? '1pt';
+  const parts: string[] = [];
+  parts.push('{');
+  parts.push(`\\setlength{\\fboxsep}{0pt}`);
+  parts.push(`\\setlength{\\fboxrule}{${w}}`);
+  if (border.color?.name) parts.push(`\\fcolorbox{${border.color.name}}{white}{${content}}`);
+  else parts.push(`\\fbox{${content}}`);
+  parts.push('}');
+  return parts.join('\n');
+}
+
 function renderGrid(grid: GridNode): string {
   const figureOnly = gridIsFigureOnly([grid]);
-  // #region agent log
-  try {
-    const rows = grid.rows ?? [];
-    const cellNodes = rows.flatMap((r) => (r ?? []).flatMap((c) => c?.children ?? []));
-    const typeCounts: Record<string, number> = {};
-    for (const n of cellNodes) typeCounts[n.type] = (typeCounts[n.type] ?? 0) + 1;
-    fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'md-latex-roundtrip',hypothesisId:'H10',location:'latex/to-latex.ts:renderGrid',message:'Rendering grid to LaTeX',data:{figureOnly,cols:grid.cols||null,caption:(grid.caption??'').slice(0,120),rowCount:rows.length,cellNodeTypes:typeCounts},timestamp:Date.now()})}).catch(()=>{});
-  } catch { /* ignore */ }
-  // #endregion agent log
   if (figureOnly) return renderFigureGrid(grid);
 
   const rows = grid.rows ?? [];
   const cols = grid.cols && Number.isFinite(grid.cols) && grid.cols > 0 ? grid.cols : rows.reduce((m, r) => Math.max(m, (r ?? []).length), 0);
   const safeCols = cols > 0 ? cols : 1;
-  const colSpec = Array.from({ length: safeCols }).map(() => 'X').join('|');
+  const styleSetup = tableStyleToLatexSetup(grid.style);
+  const borderNone = Number.isFinite(grid.style?.borderWidthPx) && (grid.style?.borderWidthPx ?? 0) === 0;
+  const ruleWidthLine = !borderNone && styleSetup.ruleWidthPt ? `\\setlength{\\arrayrulewidth}{${styleSetup.ruleWidthPt}}` : null;
+  const ruleColorName = !borderNone && styleSetup.ruleColor?.name ? styleSetup.ruleColor.name : null;
+  const colSpec = borderNone
+    ? Array.from({ length: safeCols }).map(() => 'X').join('')
+    : Array.from({ length: safeCols }).map(() => 'X').join('|');
 
   const out: string[] = [];
-  out.push(`\\begin{tabularx}{\\linewidth}{|${colSpec}|}`);
-  out.push('\\hline');
+  // Keep rule setup scoped to this grid.
+  out.push('{');
+  for (const ln of styleSetup.preambleLines) out.push(ln);
+  if (ruleWidthLine) out.push(ruleWidthLine);
+  out.push(`\\begin{tabularx}{\\linewidth}{${borderNone ? '' : '|'}${colSpec}${borderNone ? '' : '|' }}`);
+  // IMPORTANT: \arrayrulecolor expands to \noalign, so it must be used *inside* the tabular alignment.
+  if (ruleColorName) out.push(`\\arrayrulecolor{${ruleColorName}}`);
+  if (!borderNone) out.push('\\hline');
 
   for (let r = 0; r < rows.length; r++) {
     const row = rows[r] ?? [];
@@ -401,10 +533,26 @@ function renderGrid(grid: GridNode): string {
       cells.push(renderGridCell(cell?.children ?? []));
     }
     out.push(`${cells.join(' & ')} \\\\`);
-    out.push('\\hline');
+    if (!borderNone) out.push('\\hline');
   }
 
   out.push('\\end{tabularx}');
+  out.push('}');
+
+  const gridCaption = String(grid.caption ?? '').trim();
+  const gridLabel = String((grid as unknown as { label?: string }).label ?? '').trim();
+  if (gridCaption.length > 0 || gridLabel.length > 0) {
+    // Wrap in a table float so caption/label compile without extra packages.
+    const wrapper: string[] = [];
+    wrapper.push('\\begin{table}[h]');
+    wrapper.push('\\centering');
+    wrapper.push(out.join('\n'));
+    if (gridCaption.length > 0) wrapper.push(`\\caption{${escapeLatexText(gridCaption)}}`);
+    if (gridLabel.length > 0) wrapper.push(`\\label{${escapeLatexText(gridLabel)}}`);
+    wrapper.push('\\end{table}');
+    return wrapper.join('\n');
+  }
+
   return out.join('\n');
 }
 
@@ -423,28 +571,32 @@ function renderFigureGrid(grid: GridNode): string {
   const rowVspace = margin === 'small' ? '0.25em' : margin === 'large' ? '1.75em' : '0.75em';
 
   const out: string[] = [];
-  const placement = grid.placement ?? 'block';
   const align = grid.align ?? 'center';
-  const placementIsInline = placement === 'inline' && (align === 'left' || align === 'right');
-  // IMPORTANT: inside wrapfigure, the relevant width is the wrap box's \linewidth, not \textwidth.
-  const widthStr = `${w.toFixed(3)}${placementIsInline ? '\\linewidth' : '\\textwidth'}`;
-  if (placementIsInline) {
-    const side = align === 'right' ? 'r' : 'l';
-    // Heuristic: inline grids should not exceed ~60% of text width for 2-col grids, wider for 3+.
-    const wrapWidth = cols <= 2 ? '0.55\\textwidth' : cols === 3 ? '0.80\\textwidth' : '0.95\\textwidth';
-    out.push(`\\begin{wrapfigure}{${side}}{${wrapWidth}}`);
-  } else {
-    out.push('\\begin{figure}');
-  }
+  const widthStr = `${w.toFixed(3)}\\textwidth`;
+  const styleSetup = tableStyleToLatexSetup(grid.style);
+  const borderNone = Number.isFinite(grid.style?.borderWidthPx) && (grid.style?.borderWidthPx ?? 0) === 0;
+  const ruleWidthLine = !borderNone && styleSetup.ruleWidthPt ? `\\setlength{\\arrayrulewidth}{${styleSetup.ruleWidthPt}}` : null;
+  const ruleColorName = !borderNone && styleSetup.ruleColor?.name ? styleSetup.ruleColor.name : null;
+
+  // NOTE: We do not auto-generate wrapfigure/wrapfig for inline placement.
+  out.push('\\begin{figure}');
   // Grid-level alignment (default: center).
   if (align === 'right') out.push('\\raggedleft');
   else if (align === 'left') out.push('\\raggedright');
   else out.push('\\centering');
 
+  // Keep rule setup scoped to this grid.
+  out.push('{');
+  for (const ln of styleSetup.preambleLines) out.push(ln);
+  if (ruleWidthLine) out.push(ruleWidthLine);
+
   // IMPORTANT: Use a tabular to force stable row/column layout.
   // This avoids edge cases where \hfill + paragraphing can stack subfigures vertically in some templates.
-  const colSpec = `@{}${'c'.repeat(cols)}@{}`;
+  const colSpec = borderNone ? `@{}${'c'.repeat(cols)}@{}` : `|${Array.from({ length: cols }).map(() => 'c').join('|')}|`;
   out.push(`\\begin{tabular}{${colSpec}}`);
+  // IMPORTANT: \arrayrulecolor expands to \noalign, so it must be used *inside* the tabular alignment.
+  if (ruleColorName) out.push(`\\arrayrulecolor{${ruleColorName}}`);
+  if (!borderNone) out.push('\\hline');
   for (let r = 0; r < rows.length; r++) {
     const row = rows[r] ?? [];
     const cells: string[] = [];
@@ -461,15 +613,22 @@ function renderFigureGrid(grid: GridNode): string {
       cellLines.push('\\end{subfigure}');
       cells.push(cellLines.join('\n'));
     }
-    const rowSuffix = r < rows.length - 1 ? ` \\\\[${rowVspace}]` : '';
+    // IMPORTANT: If we emit an \hline after the row, we MUST terminate the row with \\,
+    // otherwise TeX will throw "Misplaced \noalign" (because \hline expands to \noalign).
+    const isLastRow = r === rows.length - 1;
+    const rowSuffix = !borderNone ? (isLastRow ? ' \\\\' : ` \\\\[${rowVspace}]`) : isLastRow ? '' : ` \\\\[${rowVspace}]`;
     out.push(`${cells.join(' & ')}${rowSuffix}`);
+    if (!borderNone) out.push('\\hline');
   }
   out.push('\\end{tabular}');
+  out.push('}');
 
   const gridCaption = String(grid.caption ?? '').trim();
   if (gridCaption.length > 0) out.push(`\\caption{${escapeLatexText(gridCaption)}}`);
+  const gridLabel = String((grid as unknown as { label?: string }).label ?? '').trim();
+  if (gridLabel.length > 0) out.push(`\\label{${escapeLatexText(gridLabel)}}`);
 
-  out.push(placementIsInline ? '\\end{wrapfigure}' : '\\end{figure}');
+  out.push('\\end{figure}');
   return out.join('\n');
 }
 
@@ -478,11 +637,13 @@ function renderFigureInFigureGrid(node: FigureNode): string {
   const caption = escapeLatexText(node.caption ?? '');
   const label = node.label ? escapeLatexText(node.label) : '';
   const attrs = parseFigureAttrsFromXmd((node as unknown as { source?: { raw?: string } }).source?.raw);
+  const border = parseBorderFromAttrs(attrs);
 
   const lines: string[] = [];
   // In a figure grid, alignment is handled by the subfigure container; keep image full-width by default.
   const widthOpt = widthAttrToIncludegraphicsOptionInCell(attrs.width) ?? 'width=\\linewidth';
-  lines.push(`\\includegraphics[${widthOpt}]{\\detokenize{${src}}}`);
+  lines.push(...border.preambleLines);
+  lines.push(wrapWithBorder(`\\includegraphics[${widthOpt}]{\\detokenize{${src}}}`, border));
   if (caption.trim().length > 0) lines.push(`\\caption{${caption}}`);
   if (label.trim().length > 0) lines.push(`\\label{${label}}`);
   return lines.join('\n');
@@ -540,11 +701,13 @@ function renderFigureInGridCell(node: FigureNode): string {
   const caption = escapeLatexText(node.caption ?? '');
   const label = node.label ? escapeLatexText(node.label) : '';
   const attrs = parseFigureAttrsFromXmd((node as unknown as { source?: { raw?: string } }).source?.raw);
+  const border = parseBorderFromAttrs(attrs);
 
   const lines: string[] = [];
   lines.push(alignToLatex(attrs));
   const widthOpt = widthAttrToIncludegraphicsOptionInCell(attrs.width) ?? 'width=\\linewidth';
-  lines.push(`\\includegraphics[${widthOpt}]{\\detokenize{${src}}}`);
+  lines.push(...border.preambleLines);
+  lines.push(wrapWithBorder(`\\includegraphics[${widthOpt}]{\\detokenize{${src}}}`, border));
   if (caption.trim().length > 0) lines.push(`\\captionof{figure}{${caption}}`);
   if (label.trim().length > 0) lines.push(`\\label{${label}}`);
   return lines.join('\n');
@@ -605,6 +768,9 @@ function parseFigureAttrsFromXmd(raw: string | undefined): {
   placement?: string;
   width?: string;
   desc?: string;
+  borderStyle?: string;
+  borderColor?: string;
+  borderWidth?: string;
 } {
   const s = (raw ?? '').trim();
   if (!s.startsWith('![') || !s.includes('](')) return {};
@@ -622,6 +788,9 @@ function parseFigureAttrsFromXmd(raw: string | undefined): {
     placement: parseAttrValue(attrs, 'placement') ?? undefined,
     width: parseAttrValue(attrs, 'width') ?? undefined,
     desc: parseAttrValue(attrs, 'desc') ?? undefined,
+    borderStyle: parseAttrValue(attrs, 'borderStyle') ?? undefined,
+    borderColor: parseAttrValue(attrs, 'borderColor') ?? undefined,
+    borderWidth: parseAttrValue(attrs, 'borderWidth') ?? undefined,
   };
 }
 

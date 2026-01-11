@@ -79,11 +79,19 @@ async function fetchApi<T>(
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
   const token = await getAuthToken();
-  
+
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string> || {}),
+    ...(((options.headers as Record<string, string>) || {}) as Record<string, string>),
   };
+
+  // Only set JSON content-type when we actually send a body.
+  // Some servers (Fastify) reject empty bodies when content-type is application/json.
+  const hasBody = options.body !== undefined && options.body !== null;
+  const isFormData =
+    typeof FormData !== 'undefined' && options.body instanceof FormData;
+  if (hasBody && !isFormData) {
+    headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+  }
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -156,18 +164,24 @@ async function fetchBinary(
   }
 
   if (!response.ok) {
-    // Try JSON error first, but don't assume it.
+    // Error responses might be JSON or plain text. Read once, then attempt JSON parse.
+    const raw = await response.text().catch(() => '');
     try {
-      const data = (await response.json()) as ApiResponse<unknown>;
+      const parsed = raw ? (JSON.parse(raw) as ApiResponse<unknown>) : null;
+      if (parsed && typeof parsed === 'object') {
       throw new ApiError(
-        data.error?.message || 'API request failed',
-        data.error?.code || 'UNKNOWN_ERROR',
+          parsed.error?.message || `Request failed (${response.status} ${response.statusText})`,
+          parsed.error?.code || 'UNKNOWN_ERROR',
         response.status,
-        data.error?.details
+          parsed.error?.details
       );
+      }
+      throw new Error('Not JSON');
     } catch {
+      // Fall back to showing a small portion of the raw body to aid debugging.
+      const bodyPreview = raw && raw.trim().length > 0 ? raw.trim().slice(0, 800) : null;
       throw new ApiError(
-        `Request failed (${response.status} ${response.statusText})`,
+        bodyPreview ? `Request failed (${response.status} ${response.statusText}).\n\n${bodyPreview}` : `Request failed (${response.status} ${response.statusText})`,
         'BINARY_REQUEST_FAILED',
         response.status
       );
@@ -224,6 +238,16 @@ export const api = {
       await fetchApi<void>(`/projects/${id}`, {
         method: 'DELETE',
       });
+    },
+
+    duplicate: async (id: string): Promise<Project> => {
+      const response = await fetchApi<Project>(`/projects/${id}/duplicate`, {
+        method: 'POST',
+      });
+      if (!response.data) {
+        throw new ApiError('Failed to duplicate project', 'DUPLICATE_FAILED', 500);
+      }
+      return response.data;
     },
   },
 

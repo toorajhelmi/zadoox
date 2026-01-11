@@ -14,6 +14,10 @@ import type {
   RawXmdBlockNode,
   SectionNode,
   TableNode,
+  TableBorderStyle,
+  TableColumnAlign,
+  TableRule,
+  TableStyle,
 } from '../ir/types';
 
 type Block =
@@ -24,7 +28,20 @@ type Block =
   | { kind: 'code'; language?: string; code: string; raw: string; startOffset: number; endOffset: number }
   | { kind: 'math'; latex: string; raw: string; startOffset: number; endOffset: number }
   | { kind: 'figure'; src: string; caption: string; label?: string; raw: string; startOffset: number; endOffset: number }
-  | { kind: 'table'; header: string[]; rows: string[][]; caption?: string; label?: string; raw: string; startOffset: number; endOffset: number }
+  | {
+      kind: 'table';
+      header: string[];
+      rows: string[][];
+      caption?: string;
+      label?: string;
+      colAlign?: TableColumnAlign[];
+      vRules?: TableRule[];
+      hRules?: TableRule[];
+      style?: TableStyle;
+      raw: string;
+      startOffset: number;
+      endOffset: number;
+    }
   | { kind: 'list'; ordered: boolean; items: string[]; raw: string; startOffset: number; endOffset: number }
   | { kind: 'paragraph'; text: string; raw: string; startOffset: number; endOffset: number }
   | {
@@ -134,6 +151,59 @@ function isTableSeparatorRow(line: string): boolean {
   const parts = trimmed.split('|').map((p) => p.trim());
   if (parts.length < 2) return false;
   return parts.every((p) => /^:?-{3,}:?$/.test(p));
+}
+
+function parseTableRuleLine(line: string): TableRule | null {
+  const t = String(line ?? '').trim();
+  if (t === '.') return 'none';
+  if (t === '-') return 'single';
+  if (t === '=') return 'double';
+  return null;
+}
+
+function parseTableColSpec(line: string): { colAlign: TableColumnAlign[]; vRules: TableRule[]; raw: string } | null {
+  const raw = String(line ?? '').trim();
+  if (!raw) return null;
+  // Accept LaTeX-like column spec with optional outer/inner vertical rules:
+  //   |L||C|R|
+  //   LCR
+  //   L|C|R
+  // Only these tokens are allowed: L/C/R and |/||.
+  if (!/^[|LCRlcr]+$/.test(raw)) return null;
+
+  const colAlign: TableColumnAlign[] = [];
+  const vRules: TableRule[] = [];
+  let i = 0;
+
+  const readBars = (): TableRule => {
+    let count = 0;
+    while (i < raw.length && raw[i] === '|') {
+      count++;
+      i++;
+    }
+    if (count >= 2) return 'double';
+    if (count === 1) return 'single';
+    return 'none';
+  };
+
+  // Optional leading bars => left outer boundary.
+  vRules.push(readBars());
+
+  while (i < raw.length) {
+    const ch = raw[i]!;
+    const letter = ch.toUpperCase();
+    if (letter !== 'L' && letter !== 'C' && letter !== 'R') return null;
+    colAlign.push(letter === 'L' ? 'left' : letter === 'C' ? 'center' : 'right');
+    i++;
+    // Bars after this column => boundary after it.
+    vRules.push(readBars());
+  }
+
+  if (colAlign.length === 0) return null;
+  // vRules should be cols+1. If missing trailing boundary (shouldn't happen), pad.
+  while (vRules.length < colAlign.length + 1) vRules.push('none');
+  if (vRules.length > colAlign.length + 1) vRules.length = colAlign.length + 1;
+  return { colAlign, vRules, raw };
 }
 
 function parseBlocks(xmd: string): Block[] {
@@ -267,10 +337,25 @@ function parseBlocks(xmd: string): Block[] {
     //   - ::: <args> ... :::  (grid; args must exist so we don't confuse with the closing ':::')
     const trimmedDirective = line.trim();
     const directive = /^:::(\w+)?\s*(.*)?$/.exec(trimmedDirective);
-    if (directive && trimmedDirective !== ':::') {
+    const isBareFence = Boolean(directive) && trimmedDirective === ':::';
+    const bareFenceLooksLikeTableOpen = (() => {
+      if (!isBareFence) return false;
+      // Only treat bare ":::"
+      // as a block opener when the next non-empty line is a table colSpec (|L||C|R|).
+      // This prevents accidentally consuming arbitrary content between unrelated ":::"
+      // lines while still allowing hand-typed table blocks with no keyword/attrs.
+      let j = i + 1;
+      while (j < lines.length && isBlank(lines[j]!.line)) j++;
+      const next = j < lines.length ? lines[j]!.line : '';
+      return Boolean(parseTableColSpec(next));
+    })();
+
+    if (directive && (trimmedDirective !== ':::' || bareFenceLooksLikeTableOpen)) {
       const kindRaw = String(directive[1] ?? '').trim().toLowerCase();
       const args = String(directive[2] ?? '').trim();
-      const kind = kindRaw || (args.length > 0 ? 'grid' : '');
+      // If no keyword is present (e.g. "::: caption=..."), we infer the kind later from attrs/body.
+      // This allows "table blocks" to use ::: ... ::: without a "table" keyword, while keeping grid support.
+      const kind = kindRaw || '';
       const startOffset = start;
       let j = i + 1;
       const bodyLines: string[] = [];
@@ -311,13 +396,32 @@ function parseBlocks(xmd: string): Block[] {
         const raw = lines.slice(i, closeLineIndex + 1).map((l) => l.line).join('\n');
         const body = bodyLines.join('\n');
 
-        if (kind === 'equation') {
+        // Infer kind (only when the directive didn't specify one).
+        // Recommendation: keep this distinction purely structural so attrs like label/border*
+        // can be shared across grids and tables without ambiguity.
+        //
+        // Rules:
+        // - If kind is explicitly given (table/figure/equation/grid), respect it.
+        // - If no keyword, treat as grid ONLY when it has a grid-defining attribute (cols/columns).
+        // - If no keyword, treat as table ONLY when the first non-empty body line is a table colSpec (|L||C|R|).
+        // - Otherwise preserve as raw.
+        const inferredKind = (() => {
+          if (kind === 'equation' || kind === 'figure' || kind === 'table' || kind === 'grid') return kind;
+          const attrs = parseDirectiveAttrs(args);
+          const hasGridCols = Boolean(attrs.cols || attrs.columns);
+          if (hasGridCols) return 'grid';
+          const firstNonEmpty = bodyLines.find((l) => String(l ?? '').trim().length > 0);
+          if (firstNonEmpty && parseTableColSpec(firstNonEmpty)) return 'table';
+          return '';
+        })();
+
+        if (inferredKind === 'equation') {
           blocks.push({ kind: 'math', latex: body.trim(), raw, startOffset, endOffset });
           i = closeLineIndex + 1;
           continue;
         }
 
-        if (kind === 'figure') {
+        if (inferredKind === 'figure') {
           // Minimal: treat first non-empty line as src, remainder as caption.
           const parts = bodyLines.map((l) => l.trim()).filter((l) => l.length > 0);
           const src = parts[0] || '';
@@ -331,18 +435,113 @@ function parseBlocks(xmd: string): Block[] {
           continue;
         }
 
-        if (kind === 'table') {
-          // Minimal pipe-table parsing from body
-          const bodyNonEmpty = bodyLines.filter((l) => l.trim().length > 0);
-          const headerRow = bodyNonEmpty[0] ? parsePipeRow(bodyNonEmpty[0]) : null;
-          const sepRowOk = bodyNonEmpty[1] ? isTableSeparatorRow(bodyNonEmpty[1]) : false;
-          if (headerRow && sepRowOk) {
-            const rows: string[][] = [];
-            for (let k = 2; k < bodyNonEmpty.length; k++) {
-              const row = parsePipeRow(bodyNonEmpty[k]);
-              if (row) rows.push(row);
+        if (inferredKind === 'table') {
+          const attrs = parseDirectiveAttrs(args);
+          const caption = String(attrs.caption ?? '').trim();
+          const label = String(attrs.label ?? '').trim();
+          const borderStyleRaw = String(attrs.borderstyle ?? '').trim().toLowerCase();
+          const borderStyle: TableBorderStyle | undefined =
+            borderStyleRaw === 'solid' || borderStyleRaw === 'dotted' || borderStyleRaw === 'dashed'
+              ? (borderStyleRaw as TableBorderStyle)
+              : undefined;
+          const borderColor = String(attrs.bordercolor ?? '').trim();
+          const borderWidthRaw = String(attrs.borderwidth ?? '').trim();
+          const borderWidthPx = borderWidthRaw.length > 0 ? Number(borderWidthRaw) : undefined;
+          const style: TableStyle | undefined =
+            borderStyle || borderColor || (Number.isFinite(borderWidthPx) && (borderWidthPx as number) >= 0)
+              ? {
+                  ...(borderStyle ? { borderStyle } : null),
+                  ...(borderColor ? { borderColor } : null),
+                  ...(Number.isFinite(borderWidthPx) && (borderWidthPx as number) >= 0 ? { borderWidthPx: borderWidthPx as number } : null),
+                }
+              : undefined;
+
+          // Body parser:
+          // - optional first non-empty line is colSpec (|L||C|R|), defining alignment + vertical borders
+          // - optional standalone row-rule lines: '.', '-', '=' (uniform across columns)
+          // - table rows are standard pipe rows; separator row (|---|---|) is ignored
+          const bodyTrimmed = bodyLines.map((l) => String(l ?? ''));
+          let idx = 0;
+          while (idx < bodyTrimmed.length && bodyTrimmed[idx]!.trim().length === 0) idx++;
+
+          let colSpec: { colAlign: TableColumnAlign[]; vRules: TableRule[] } | null = null;
+          if (idx < bodyTrimmed.length) {
+            const parsed = parseTableColSpec(bodyTrimmed[idx]!);
+            if (parsed) {
+              colSpec = { colAlign: parsed.colAlign, vRules: parsed.vRules };
+              idx++;
             }
-            blocks.push({ kind: 'table', header: headerRow, rows, raw, startOffset, endOffset });
+          }
+
+          let pendingRule: TableRule = 'none';
+          let topRule: TableRule = 'none';
+          const beforeRowRules: Record<number, TableRule> = {};
+          let header: string[] | null = null;
+            const rows: string[][] = [];
+          let sawSep = false;
+
+          const applyPendingToNextRow = (rowIndex: number) => {
+            // rowIndex is 0 for header, 1 for first data row, etc.
+            if (rowIndex === 0) topRule = pendingRule;
+            else beforeRowRules[rowIndex] = pendingRule;
+            pendingRule = 'none';
+          };
+
+          for (; idx < bodyTrimmed.length; idx++) {
+            const ln = bodyTrimmed[idx]!;
+            if (ln.trim().length === 0) continue;
+
+            const rule = parseTableRuleLine(ln);
+            if (rule) {
+              pendingRule = rule;
+              continue;
+            }
+
+            const row = parsePipeRow(ln);
+            if (!row) continue;
+
+            // Ignore the standard separator row.
+            if (header && !sawSep && isTableSeparatorRow(ln)) {
+              sawSep = true;
+              continue;
+            }
+            if (!header) {
+              header = row;
+              applyPendingToNextRow(0);
+              continue;
+            }
+
+            const rowIndex = 1 + rows.length; // 1 for first data row
+            applyPendingToNextRow(rowIndex);
+            rows.push(row);
+          }
+
+          // Bottom rule: if user ends with a rule marker, treat it as bottom border.
+          const bottomRule = pendingRule;
+
+          if (header && header.length >= 2) {
+            const totalRows = 1 + rows.length;
+            const hRules: TableRule[] = Array.from({ length: totalRows + 1 }).map(() => 'none');
+            hRules[0] = topRule;
+            for (const [k, v] of Object.entries(beforeRowRules)) {
+              const idx = Number(k);
+              if (Number.isFinite(idx) && idx >= 1 && idx <= totalRows) hRules[idx] = v;
+            }
+            hRules[totalRows] = bottomRule;
+
+            blocks.push({
+              kind: 'table',
+              ...(caption ? { caption } : null),
+              ...(label ? { label } : null),
+              header,
+              rows,
+              ...(colSpec ? { colAlign: colSpec.colAlign, vRules: colSpec.vRules } : null),
+              ...(style ? { style } : null),
+              ...(hRules.some((r) => r !== 'none') ? { hRules } : null),
+              raw,
+              startOffset,
+              endOffset,
+            });
           } else {
             blocks.push({ kind: 'raw', xmd: raw, raw, startOffset, endOffset });
           }
@@ -350,11 +549,28 @@ function parseBlocks(xmd: string): Block[] {
           continue;
         }
 
-        if (kind === 'grid') {
+        if (inferredKind === 'grid') {
           const attrs = parseDirectiveAttrs(args);
           const colsRaw = attrs.cols ?? attrs.columns;
           const cols = colsRaw ? Number(String(colsRaw).trim()) : undefined;
           const caption = String(attrs.caption ?? '').trim();
+          const label = String(attrs.label ?? '').trim();
+          const borderStyleRaw = String(attrs.borderstyle ?? '').trim().toLowerCase();
+          const borderStyle: TableBorderStyle | undefined =
+            borderStyleRaw === 'solid' || borderStyleRaw === 'dotted' || borderStyleRaw === 'dashed'
+              ? (borderStyleRaw as TableBorderStyle)
+              : undefined;
+          const borderColor = String(attrs.bordercolor ?? '').trim();
+          const borderWidthRaw = String(attrs.borderwidth ?? '').trim();
+          const borderWidthPx = borderWidthRaw.length > 0 ? Number(borderWidthRaw) : undefined;
+          const style: TableStyle | undefined =
+            borderStyle || borderColor || (Number.isFinite(borderWidthPx) && (borderWidthPx as number) >= 0)
+              ? {
+                  ...(borderStyle ? { borderStyle } : null),
+                  ...(borderColor ? { borderColor } : null),
+                  ...(Number.isFinite(borderWidthPx) && (borderWidthPx as number) >= 0 ? { borderWidthPx: borderWidthPx as number } : null),
+                }
+              : undefined;
           const alignRaw = String(attrs.align ?? '').trim().toLowerCase();
           const align =
             alignRaw === 'left' || alignRaw === 'center' || alignRaw === 'right'
@@ -378,6 +594,8 @@ function parseBlocks(xmd: string): Block[] {
             kind: 'grid',
             cols: Number.isFinite(cols) && (cols as number) > 0 ? (cols as number) : undefined,
             ...(caption.length > 0 ? { caption } : null),
+            ...(label.length > 0 ? { label } : null),
+            ...(style ? { style } : null),
             ...(align ? { align } : null),
             ...(placement ? { placement } : null),
             ...(margin ? { margin } : null),
@@ -438,13 +656,6 @@ function parseBlocks(xmd: string): Block[] {
       i++;
       continue;
     }
-    // #region agent log
-    // Detect when an image-like token exists but fails to parse as a figure block (likely missing attr block).
-    if (/^\s*!\[[^\]]*\]\([^)]+\)/.test(line.trim()) && !/\{[^}]*\}\s*$/.test(line.trim())) {
-      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'md-latex-roundtrip',hypothesisId:'H9',location:'xmd/parser.ts:parseBlocks',message:'Image-like line did not parse as figure (no attr block?)',data:{lineHead:String(line).trim().slice(0,120)},timestamp:Date.now()})}).catch(()=>{});
-    }
-    // #endregion agent log
-
     // Paragraph (consume until blank line, or until next structural block start)
     const paraStart = i;
     let j = i + 1;
@@ -722,6 +933,10 @@ export function parseXmdToIr(params: { docId: string; xmd: string }): DocumentNo
           label: b.label,
           header: b.header,
           rows: b.rows,
+          colAlign: b.colAlign,
+          vRules: b.vRules,
+          hRules: b.hRules,
+          style: b.style,
           source: { blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
         };
         appendToCurrentContainer(node);
@@ -737,20 +952,13 @@ export function parseXmdToIr(params: { docId: string; xmd: string }): DocumentNo
         const cols = b.cols ?? (inferredCols > 0 ? inferredCols : undefined);
         const paddedRows = normalizeGridRows(rows, cols);
 
-        // #region agent log
-        // Summarize how grid cell content parsed (figures vs paragraphs) to validate round-trip safety.
-        try {
-          const allCellXmd = paddedRows.flat();
-          const sampleCell = String(allCellXmd[0] ?? '').trim().slice(0, 140);
-          fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'md-latex-roundtrip',hypothesisId:'H9',location:'xmd/parser.ts:grid',message:'Parsing grid block',data:{cols,caption:b.caption||null,rowCount:paddedRows.length,cellCount:allCellXmd.length,sampleCell},timestamp:Date.now()})}).catch(()=>{});
-        } catch { /* ignore */ }
-        // #endregion agent log
-
         const grid: GridNode = {
           type: 'grid',
           id: stableNodeId({ docId, nodeType: 'grid', path }),
           cols,
+          label: (b as { label?: string }).label,
           caption: b.caption,
+          style: (b as { style?: TableStyle }).style,
           align: b.align,
           placement: b.placement,
           margin: b.margin,
@@ -958,6 +1166,10 @@ function parseXmdToIrFragmentNodes(params: { docId: string; xmd: string; basePat
         label: b.label,
         header: b.header,
         rows: b.rows,
+        colAlign: b.colAlign,
+        vRules: b.vRules,
+        hRules: b.hRules,
+        style: b.style,
         source: { blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
       } as TableNode);
       return;

@@ -103,12 +103,51 @@ export interface FigureNode extends BaseNode {
   label?: string;
 }
 
+export type TableRule = 'none' | 'single' | 'double';
+export type TableColumnAlign = 'left' | 'center' | 'right';
+export type TableBorderStyle = 'solid' | 'dotted' | 'dashed';
+
+export interface TableStyle {
+  /**
+   * Style used for single-line rules (vertical + horizontal).
+   * Double rules always render using CSS/LaTeX "double" regardless of this setting.
+   */
+  borderStyle?: TableBorderStyle;
+  /**
+   * CSS color for table rules (e.g. "#6b7280", "rgba(0,0,0,0.2)").
+   */
+  borderColor?: string;
+  /**
+   * Border width in pixels (stringy in XMD, numeric in IR).
+   */
+  borderWidthPx?: number;
+}
+
 export interface TableNode extends BaseNode {
   type: 'table';
   caption?: string;
   label?: string;
   header: string[];
   rows: string[][];
+  /**
+   * Optional per-column alignment, derived from the table colSpec line (L/C/R).
+   * If absent, consumers should treat columns as left-aligned.
+   */
+  colAlign?: TableColumnAlign[];
+  /**
+   * Optional vertical rules per boundary (length: cols + 1). Index 0 is left outer border.
+   * Index i is the boundary between col i-1 and col i (for i in 1..cols-1). Index cols is right outer border.
+   */
+  vRules?: TableRule[];
+  /**
+   * Optional horizontal rules per boundary (length: (header+rows) + 1).
+   * Index 0 is the top border. Index 1 is the border between header and first data row. Last index is bottom border.
+   */
+  hRules?: TableRule[];
+  /**
+   * Optional table-wide styling (applies to rendered rules).
+   */
+  style?: TableStyle;
 }
 
 export interface GridCell {
@@ -122,9 +161,19 @@ export interface GridNode extends BaseNode {
    */
   cols?: number;
   /**
+   * Optional grid label for linking/export (e.g. "grid:overview" or "fig:grid-1").
+   * Note: label semantics are project-defined; we keep it as a raw string.
+   */
+  label?: string;
+  /**
    * Optional grid-level caption (typically used for figure grids).
    */
   caption?: string;
+  /**
+   * Optional grid-level styling for borders. This is intentionally the same shape as TableStyle
+   * so grids and tables can share border attributes in XMD.
+   */
+  style?: TableStyle;
   /**
    * Optional grid-level alignment (applies to the grid block as a whole).
    */

@@ -47,54 +47,16 @@ export function useDocumentState(documentId: string, projectId: string) {
       try {
         setIsLoading(true);
         
-        // If documentId is 'default', find or create the default document for this project
-        if (documentId === 'default') {
-          // Get all documents for this project
-          const documents = await api.documents.listByProject(projectId);
-          
-          // If project has documents, use the first one
-          // Otherwise, create a new "Untitled Document"
-          let document;
-          if (documents.length > 0) {
-            document = documents[0];
-          } else {
-            // Project has no documents, create the default "Untitled Document"
-            document = await api.documents.create({
-              projectId,
-              title: 'Untitled Document',
-              content: '',
-              metadata: {
-                type: 'standalone',
-              },
-            });
-          }
-          
-          setActualDocumentId(document.id);
-          const loadedContent = document.content || '';
-          setContent(loadedContent);
-          setDocumentTitle(deriveTitleFromXmd(loadedContent) ?? document.title);
-          setLastSaved(new Date(document.updatedAt));
-          setParagraphModes(document.metadata?.paragraphModes || {});
-          setDocumentMetadata(document.metadata || {});
-          setIsLoading(false);
-          return;
-        }
-
         // Try to get existing document by ID
-        try {
-          const document = await api.documents.get(documentId);
-          setActualDocumentId(document.id);
-          const loadedContent = document.content || '';
-          setContent(loadedContent);
-          setDocumentTitle(deriveTitleFromXmd(loadedContent) ?? document.title);
-          setLastSaved(new Date(document.updatedAt));
-          setParagraphModes(document.metadata?.paragraphModes || {});
-          setDocumentMetadata(document.metadata || {});
-          setIsLoading(false);
-        } catch (error) {
-          console.error('Failed to load document:', error);
-          setIsLoading(false);
-        }
+        const document = await api.documents.get(documentId);
+        setActualDocumentId(document.id);
+        const loadedContent = document.content || '';
+        setContent(loadedContent);
+        setDocumentTitle(deriveTitleFromXmd(loadedContent) ?? document.title);
+        setLastSaved(new Date(document.updatedAt));
+        setParagraphModes(document.metadata?.paragraphModes || {});
+        setDocumentMetadata(document.metadata || {});
+        setIsLoading(false);
       } catch (error) {
         console.error('Failed to load document:', error);
         setIsLoading(false);
@@ -112,7 +74,7 @@ export function useDocumentState(documentId: string, projectId: string) {
       }
 
       // Don't save if we don't have an actual document ID yet
-      if (!actualDocumentId || actualDocumentId === 'default') {
+      if (!actualDocumentId) {
         return;
       }
 
@@ -121,13 +83,29 @@ export function useDocumentState(documentId: string, projectId: string) {
         const derivedTitle = deriveTitleFromXmd(contentToSave);
         // Get current document to preserve metadata (especially paragraphModes)
         const currentDocument = await api.documents.get(actualDocumentId);
-        // Merge server metadata with local metadata (local wins) to avoid races where an autosave
-        // overwrites fields like lastEditedFormat/latex that were just updated in the UI.
-        const mergedMetadata = {
-          ...(currentDocument.metadata || {}),
-          ...(documentMetadata || {}),
+        // Merge server metadata with local metadata, but DO NOT allow a stale autosave to wipe
+        // `metadata.latex` / `metadata.latexIrHash` / `metadata.lastEditedFormat` that were just
+        // set by a mode switch. This was the root cause of "I switched and saw correct LaTeX,
+        // but publish compiled older LaTeX".
+        const serverMeta = (currentDocument.metadata || {}) as Record<string, any>;
+        const localMeta = (documentMetadata || {}) as Record<string, any>;
+        const mergedMetadata: Record<string, any> = {
+          ...serverMeta,
+          ...localMeta,
           paragraphModes: paragraphModes, // Preserve current paragraph modes
         };
+
+        const serverLatex = typeof serverMeta.latex === 'string' ? serverMeta.latex : null;
+        const localLatex = typeof localMeta.latex === 'string' ? localMeta.latex : null;
+        const localHasLatex = typeof localLatex === 'string' && localLatex.trim().length > 0;
+        const serverHasLatex = typeof serverLatex === 'string' && serverLatex.trim().length > 0;
+
+        // If local metadata doesn't have LaTeX, preserve the server's LaTeX fields.
+        if (!localHasLatex && serverHasLatex) {
+          mergedMetadata.latex = serverMeta.latex;
+          mergedMetadata.latexIrHash = serverMeta.latexIrHash;
+          mergedMetadata.lastEditedFormat = serverMeta.lastEditedFormat;
+        }
         
         // Update document with content change, preserving existing metadata
         const document = await api.documents.update(actualDocumentId, {
@@ -194,7 +172,7 @@ export function useDocumentState(documentId: string, projectId: string) {
   // Handle mode toggle
   const handleModeToggle = useCallback(
     async (paragraphId: string, newMode: ParagraphMode) => {
-      if (!actualDocumentId || actualDocumentId === 'default') {
+      if (!actualDocumentId) {
         return;
       }
 

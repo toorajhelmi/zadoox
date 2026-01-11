@@ -4,6 +4,7 @@
 
 import { FastifyInstance } from 'fastify';
 import { ProjectService } from '../../services/project-service.js';
+import { DocumentService } from '../../services/document-service.js';
 import { authenticateUser, AuthenticatedRequest } from '../../middleware/auth.js';
 import {
   CreateProjectInput,
@@ -380,6 +381,121 @@ export async function projectRoutes(fastify: FastifyInstance) {
       } catch (error: unknown) {
         fastify.log.error(error);
         const errorMessage = error instanceof Error ? error.message : 'Failed to delete project';
+        const statusCode = errorMessage.includes('not found') ? 404 : 500;
+        const response: ApiResponse<null> = {
+          success: false,
+          error: {
+            code: statusCode === 404 ? 'NOT_FOUND' : 'INTERNAL_ERROR',
+            message: errorMessage,
+          },
+        };
+        return reply.status(statusCode).send(response);
+      }
+    }
+  );
+
+  /**
+   * POST /api/v1/projects/:id/duplicate
+   * Duplicate a project (and its documents)
+   */
+  fastify.post(
+    '/projects/:id/duplicate',
+    {
+      schema: {
+        description: 'Duplicate a project (and its documents)',
+        tags: ['Projects'],
+        security,
+        params: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+          },
+          required: ['id'],
+        },
+        response: {
+          201: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              data: schemas.Project,
+            },
+            required: ['success'],
+          },
+          400: schemas.ApiResponse,
+          404: schemas.ApiResponse,
+          500: schemas.ApiResponse,
+        },
+      },
+    },
+    async (request: AuthenticatedRequest, reply) => {
+      try {
+        const paramValidation = projectIdSchema.safeParse(request.params);
+        if (!paramValidation.success) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid project ID',
+              details: paramValidation.error.errors,
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        const { id } = paramValidation.data;
+        const projectService = new ProjectService(request.supabase!);
+        const documentService = new DocumentService(request.supabase!);
+
+        // Fetch source project (also verifies ownership via RLS)
+        const sourceProject = await projectService.getProjectById(id, request.userId!);
+
+        // Create duplicated project
+        const newProjectInput: CreateProjectInput = {
+          name: `Copy of ${sourceProject.name}`,
+          description: sourceProject.description,
+          type: sourceProject.type,
+          settings: sourceProject.settings,
+        };
+        const newProject = await projectService.createProject(newProjectInput, request.userId!);
+
+        // Duplicate documents (best-effort; if this fails, keep the new project)
+        const docs = await documentService.listDocumentsByProject(id);
+        for (const d of docs) {
+          const created = await documentService.createDocument(
+            {
+              projectId: newProject.id,
+              title: d.title,
+              content: d.content,
+              // createDocument only persists a subset; we re-apply full metadata below.
+              metadata: {
+                type: d.metadata?.type,
+                chapterNumber: d.metadata?.chapterNumber,
+                order: d.metadata?.order,
+              },
+            },
+            request.userId!
+          );
+
+          // Preserve full metadata (latex cache, hashes, etc.) without creating a new version.
+          await documentService.updateDocument(
+            created.id,
+            {
+              metadata: d.metadata,
+            },
+            request.userId!,
+            'auto-save',
+            'Duplicate document metadata'
+          );
+        }
+
+        const response: ApiResponse<Project> = {
+          success: true,
+          data: newProject,
+        };
+        return reply.status(201).send(response);
+      } catch (error: unknown) {
+        fastify.log.error(error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to duplicate project';
         const statusCode = errorMessage.includes('not found') ? 404 : 500;
         const response: ApiResponse<null> = {
           success: false,

@@ -300,10 +300,6 @@ export function InsertFigureGridWizard({ ctx, onCancel, onCloseAll, onPreviewIns
               return `\n\n${parts.join('\n')}\n\n`;
             })();
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7204edcf-b69f-4375-b0dd-9edf2b67f01a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'grid-insert',hypothesisId:'H1',location:'insert-figure-grid-wizard.tsx:doInsert',message:'Built grid insert snippet',data:{editMode:ctx.editMode,gridRows,gridCols:safeCols,cellCount:cells.length,filledCount:filled.length,uploadedCount:uploadedRefs.length,leadingNewlines:(String(snippet).match(/^\n+/)?.[0]?.length||0),snippetHead:String(snippet).slice(0,80)},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion agent log
-
       const p = await onPreviewInsert({ content: snippet, placement: 'after' });
       await onApply(p);
     } catch (e) {

@@ -84,8 +84,10 @@ describe('embeddedImagePreviewExtension', () => {
 
     const dom = widget.toDOM({ dispatch: vi.fn() } as any);
     expect(dom.className).toContain('cm-embedded-figure-card');
-    // Inline placement adds outline hint and inline-block
-    expect((dom as HTMLElement).style.outline).toContain('dashed');
+    // Inline placement should still render as inline-block (for best-effort wrap behavior),
+    // but we intentionally removed extra inline hint visuals (no dashed outline).
+    expect((dom as HTMLElement).style.display).toContain('inline-block');
+    expect((dom as HTMLElement).style.outline || '').toBe('');
   });
 
   it('prompt send shows inline preview and apply dispatches a change', async () => {

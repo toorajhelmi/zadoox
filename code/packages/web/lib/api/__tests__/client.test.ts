@@ -90,7 +90,6 @@ describe('API Client - Projects', () => {
         'http://localhost:3001/api/v1/projects',
         expect.objectContaining({
           headers: expect.objectContaining({
-            'Content-Type': 'application/json',
             Authorization: 'Bearer test-token',
           }),
         })
@@ -170,7 +169,6 @@ describe('API Client - Projects', () => {
         'http://localhost:3001/api/v1/projects/1',
         expect.objectContaining({
           headers: expect.objectContaining({
-            'Content-Type': 'application/json',
             Authorization: 'Bearer test-token',
           }),
         })
@@ -259,6 +257,45 @@ describe('API Client - Projects', () => {
     });
   });
 
+  describe('api.projects.duplicate', () => {
+    it('should duplicate a project', async () => {
+      const mockProject: Project = {
+        id: '2',
+        name: 'Copy of Project',
+        type: 'academic',
+        ownerId: 'user-1',
+        settings: {
+          defaultFormat: 'latex',
+          chapterNumbering: true,
+          autoSync: true,
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      (global.fetch as any).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: mockProject,
+        }),
+      });
+
+      const result = await api.projects.duplicate('1');
+
+      expect(result).toEqual(mockProject);
+      expect(global.fetch).toHaveBeenCalledWith(
+        'http://localhost:3001/api/v1/projects/1/duplicate',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            Authorization: 'Bearer test-token',
+          }),
+        })
+      );
+    });
+  });
+
   describe('api.projects.update', () => {
     it('should update an existing project', async () => {
       const input: UpdateProjectInput = {
@@ -340,7 +377,6 @@ describe('API Client - Projects', () => {
         expect.objectContaining({
           method: 'DELETE',
           headers: expect.objectContaining({
-            'Content-Type': 'application/json',
             Authorization: 'Bearer test-token',
           }),
         })

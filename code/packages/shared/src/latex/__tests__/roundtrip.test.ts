@@ -5,7 +5,7 @@ import { irToLatexDocument } from '../to-latex';
 import { parseLatexToIr } from '../to-ir';
 
 describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
-  it('XMD -> IR -> LaTeX emits wrapfigure for placement="inline" (even if trailing text)', () => {
+  it('XMD -> IR -> LaTeX does not emit wrapfigure for placement="inline" (block-only output)', () => {
     const xmd = [
       '@ Title',
       '',
@@ -18,17 +18,16 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     const ir = parseXmdToIr({ docId: 'doc-1', xmd });
     const latex = irToLatexDocument(ir);
 
-    expect(latex).toContain('\\usepackage{wrapfig}');
-    expect(latex).toContain('\\begin{wrapfigure}{r}{0.330\\textwidth}');
-    expect(latex).toContain('\\includegraphics[width=\\linewidth]{\\detokenize{assets/img}}');
+    expect(latex).not.toContain('\\usepackage{wrapfig}');
+    expect(latex).not.toContain('\\begin{wrapfigure}');
+    expect(latex).toContain('\\begin{figure}');
+    expect(latex).toContain('\\includegraphics');
     expect(latex).toContain('\\caption{Cap}');
     expect(latex).toContain('\\label{fig:demo}');
-    expect(latex).toContain('\\end{wrapfigure}');
-    // Ensure we didn't separate wrapfigure from the paragraph with a blank line (wrapfig needs following text).
-    expect(latex).toContain('\\end{wrapfigure}\nThis paragraph should wrap around the inline figure.');
+    expect(latex).toContain('\\end{figure}');
   });
 
-  it('LaTeX -> IR -> XMD reconstructs inline placement from wrapfigure + includegraphics', () => {
+  it('LaTeX -> IR -> XMD reconstructs inline placement from wrapfigure + includegraphics (user-authored LaTeX)', () => {
     const latex = [
       '\\documentclass{article}',
       '\\usepackage{wrapfig}',
@@ -98,6 +97,66 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     const xmd = irToXmd(ir);
     expect(xmd).toContain('Hello.');
     expect(xmd).not.toContain('\\end{document}');
+  });
+
+  it('XMD table -> IR -> LaTeX emits tabularx with caption/label and border color/width (best-effort)', () => {
+    const xmd = [
+      '@ Title',
+      '',
+      '::: caption="Results" label="tbl:results" borderStyle="dotted" borderColor="#6b7280" borderWidth="2"',
+      // colSpec: 3 cols, single vertical rules everywhere (including outer border)
+      '|L|C|R|',
+      // top rule
+      '-',
+      // header + (ignored) pipe-table separator line
+      '| A | B | C |',
+      '| --- | --- | --- |',
+      // rule after header
+      '-',
+      '| 1 | 2 | 3 |',
+      // bottom rule
+      '-',
+      ':::',
+    ].join('\n');
+
+    const ir = parseXmdToIr({ docId: 'doc-tbl-1', xmd });
+    const latex = irToLatexDocument(ir);
+
+    // Preamble should include tabular support + xcolor (for \arrayrulecolor + \definecolor).
+    expect(latex).toContain('\\usepackage{tabularx}');
+    expect(latex).toContain('\\usepackage{array}');
+    expect(latex).toContain('\\usepackage[table]{xcolor}');
+
+    // Table float + caption/label.
+    expect(latex).toContain('\\begin{table}[h]');
+    expect(latex).toContain('\\caption{Results}');
+    expect(latex).toContain('\\label{tbl:results}');
+
+    // Border width and color (hex) should be applied (dotted degraded to solid internally).
+    expect(latex).toContain('\\definecolor{zdxcol6b7280}{HTML}{6B7280}');
+    expect(latex).toContain('\\setlength{\\arrayrulewidth}{2pt}');
+    expect(latex).toContain('\\arrayrulecolor{zdxcol6b7280}');
+  });
+
+  it('XMD grid -> IR -> LaTeX applies border color/width and emits label when present', () => {
+    const xmd = [
+      '@ Title',
+      '',
+      '::: cols="2" caption="Grid Cap" label="grd:demo" borderColor="#6b7280" borderWidth="3"',
+      'A | B',
+      'C | D',
+      ':::',
+    ].join('\n');
+
+    const ir = parseXmdToIr({ docId: 'doc-grid-1', xmd });
+    const latex = irToLatexDocument(ir);
+
+    expect(latex).toContain('\\usepackage[table]{xcolor}');
+    expect(latex).toContain('\\definecolor{zdxcol6b7280}{HTML}{6B7280}');
+    expect(latex).toContain('\\setlength{\\arrayrulewidth}{3pt}');
+    expect(latex).toContain('\\arrayrulecolor{zdxcol6b7280}');
+    expect(latex).toContain('\\caption{Grid Cap}');
+    expect(latex).toContain('\\label{grd:demo}');
   });
 });
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { ChevronRightIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
 import { EditorSidebar } from './editor-sidebar';
 import { EditorToolbar } from './editor-toolbar';
@@ -128,6 +129,18 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     setDocumentMetadata,
     updateContent,
   });
+
+  // Track the IR hash corresponding to the current XMD (`content`) so we can persist `metadata.xmdIrHash`.
+  // This keeps switching logic symmetric with LaTeX (which already tracks `metadata.latexIrHash`).
+  const xmdIrHash = useMemo(() => computeDocIrHash(irState.ir), [irState.ir]);
+  useEffect(() => {
+    if (!xmdIrHash) return;
+    setDocumentMetadata((prev) => {
+      const p = (prev || {}) as any;
+      if (p.xmdIrHash === xmdIrHash) return prev;
+      return { ...p, xmdIrHash };
+    });
+  }, [setDocumentMetadata, xmdIrHash]);
 
   // IMPORTANT: Outline/preview should be driven from the canonical IR (derived from XMD).
   // The LaTeX surface is just another edit mode; it must update IR (via LaTeX -> IR -> XMD),
@@ -273,7 +286,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               lastEditedFormat: 'latex',
               latex: nextLatex,
               // Keep mapping: this LaTeX draft corresponds to this IR hash.
-              latexIrHash: nextIrHash,
+              ...(nextIrHash ? { latexIrHash: nextIrHash } : null),
+              // Keep mapping: the derived XMD also corresponds to the same IR hash.
+              ...(nextIrHash ? { xmdIrHash: nextIrHash } : null),
             };
             setDocumentMetadata(nextMeta);
             // Avoid churn: only update XMD if it actually changes.
