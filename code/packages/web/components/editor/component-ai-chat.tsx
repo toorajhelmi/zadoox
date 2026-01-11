@@ -29,7 +29,7 @@ export function ComponentAIChat(props: {
             ? 'Editing this figure. Tell me what to change (caption, width, alignment, placement, etc.).'
             : detail.kind === 'table'
               ? 'Editing this table. Tell me what to change (caption, label, border style/color/width, etc.).'
-              : 'Editing this grid. Tell me what to change (caption, cols, alignment, placement, margin, etc.).',
+            : 'Editing this grid. Tell me what to change (caption, cols, alignment, placement, margin, etc.).',
       },
     ];
     if (detail.initialMessage && detail.initialMessage.trim()) {

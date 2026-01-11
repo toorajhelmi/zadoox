@@ -79,11 +79,19 @@ async function fetchApi<T>(
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
   const token = await getAuthToken();
-  
+
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string> || {}),
+    ...(((options.headers as Record<string, string>) || {}) as Record<string, string>),
   };
+
+  // Only set JSON content-type when we actually send a body.
+  // Some servers (Fastify) reject empty bodies when content-type is application/json.
+  const hasBody = options.body !== undefined && options.body !== null;
+  const isFormData =
+    typeof FormData !== 'undefined' && options.body instanceof FormData;
+  if (hasBody && !isFormData) {
+    headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+  }
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -161,12 +169,12 @@ async function fetchBinary(
     try {
       const parsed = raw ? (JSON.parse(raw) as ApiResponse<unknown>) : null;
       if (parsed && typeof parsed === 'object') {
-        throw new ApiError(
+      throw new ApiError(
           parsed.error?.message || `Request failed (${response.status} ${response.statusText})`,
           parsed.error?.code || 'UNKNOWN_ERROR',
-          response.status,
+        response.status,
           parsed.error?.details
-        );
+      );
       }
       throw new Error('Not JSON');
     } catch {
@@ -230,6 +238,16 @@ export const api = {
       await fetchApi<void>(`/projects/${id}`, {
         method: 'DELETE',
       });
+    },
+
+    duplicate: async (id: string): Promise<Project> => {
+      const response = await fetchApi<Project>(`/projects/${id}/duplicate`, {
+        method: 'POST',
+      });
+      if (!response.data) {
+        throw new ApiError('Failed to duplicate project', 'DUPLICATE_FAILED', 500);
+      }
+      return response.data;
     },
   },
 

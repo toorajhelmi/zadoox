@@ -24,6 +24,7 @@ interface EditorSidebarProps {
 export function EditorSidebar({ isOpen, onToggle, content, ir, projectName, documentId, onRollback, onVersionSelect, lastSaved, activeTab: externalActiveTab, onTabChange }: EditorSidebarProps) {
   const [internalActiveTab, setInternalActiveTab] = useState<SidebarTab>('outline');
   const activeTab = externalActiveTab ?? internalActiveTab;
+  const resolvedDocumentId = documentId;
   
   const handleTabChange = (tab: SidebarTab) => {
     if (onTabChange) {
@@ -51,7 +52,7 @@ export function EditorSidebar({ isOpen, onToggle, content, ir, projectName, docu
               <DocumentTextIcon className="w-4 h-4" />
               <span className="text-sm font-medium">Outline</span>
             </button>
-            {documentId && (
+            {resolvedDocumentId && (
               <button
                 onClick={() => handleTabChange('history')}
                 className={`flex-1 h-full flex items-center justify-center gap-2 px-4 transition-colors ${
@@ -69,9 +70,9 @@ export function EditorSidebar({ isOpen, onToggle, content, ir, projectName, docu
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto">
             {activeTab === 'outline' && <DocumentOutline content={content} ir={ir} projectName={projectName} />}
-            {activeTab === 'history' && documentId && onRollback && (
+            {activeTab === 'history' && resolvedDocumentId && onRollback && (
               <VersionHistoryPanel
-                documentId={documentId}
+                documentId={resolvedDocumentId}
                 onRollback={onRollback}
                 onVersionSelect={onVersionSelect}
                 refreshTrigger={lastSaved}

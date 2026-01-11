@@ -124,6 +124,14 @@ export function ChevronRightIcon({ className = 'w-4 h-4', strokeWidth = 1.5 }: I
   );
 }
 
+export function ChevronLeftIcon({ className = 'w-4 h-4', strokeWidth = 1.5 }: IconProps) {
+  return (
+    <svg className={className} {...baseIconProps} strokeWidth={strokeWidth}>
+      <path d="m15 18-6-6 6-6" />
+    </svg>
+  );
+}
+
 export function MenuIcon({ className = 'w-4 h-4', strokeWidth = 1.5 }: IconProps) {
   return (
     <svg className={className} {...baseIconProps} strokeWidth={strokeWidth}>
@@ -168,6 +176,38 @@ export function ArrowRightIcon({ className = 'w-4 h-4', strokeWidth = 1.5 }: Ico
     <svg className={className} {...baseIconProps} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
       <line x1="5" y1="12" x2="19" y2="12" />
       <polyline points="12 5 19 12 12 19" />
+    </svg>
+  );
+}
+
+/**
+ * Project Actions
+ */
+export function DuplicateIcon({ className = 'w-4 h-4', strokeWidth = 1.5 }: IconProps) {
+  return (
+    <svg className={className} {...baseIconProps} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="9" width="12" height="12" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}
+
+export function TrashIcon({ className = 'w-4 h-4', strokeWidth = 1.5 }: IconProps) {
+  return (
+    <svg className={className} {...baseIconProps} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M6 6l1 16h10l1-16" />
+      <path d="M10 11v6M14 11v6" />
+    </svg>
+  );
+}
+
+export function PencilIcon({ className = 'w-4 h-4', strokeWidth = 1.5 }: IconProps) {
+  return (
+    <svg className={className} {...baseIconProps} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
     </svg>
   );
 }

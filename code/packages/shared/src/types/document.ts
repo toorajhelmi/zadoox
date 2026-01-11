@@ -34,11 +34,6 @@ export interface DocumentMetadata {
   latex?: string;
   lastEditedFormat?: 'markdown' | 'latex';
   /**
-   * Version marker for generated LaTeX so we can invalidate cached LaTeX when the generator changes.
-   * (Stored in metadata to avoid schema migrations during Phase 12.)
-   */
-  latexGenVersion?: string;
-  /**
    * IR hash values (computed from the canonical IR derived from XMD).
    * We store per-representation hashes so switching can decide reuse vs regenerate.
    */

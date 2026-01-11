@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { DashboardLayout, ProjectCard, CreateProjectModal, ProjectsIcon, PlusIcon, SparkleIcon, LoaderIcon } from '@/components/dashboard';
+import Link from 'next/link';
+import { DashboardLayout, ProjectCard, CreateProjectModal, ProjectsIcon, PlusIcon, SparkleIcon, LoaderIcon, ChevronLeftIcon } from '@/components/dashboard';
 import { api } from '@/lib/api/client';
 import type { Project, CreateProjectInput } from '@zadoox/shared';
 
@@ -34,14 +35,38 @@ export default function ProjectsPage() {
     await loadProjects(); // Reload projects after creation
   };
 
+  const handleDuplicateProject = async (project: Project) => {
+    await api.projects.duplicate(project.id);
+    await loadProjects();
+  };
+
+  const handleDeleteProject = async (project: Project) => {
+    await api.projects.delete(project.id);
+    await loadProjects();
+  };
+
+  const handleRenameProject = async (project: Project, nextName: string) => {
+    await api.projects.update(project.id, { name: nextName });
+    await loadProjects();
+  };
+
   return (
     <DashboardLayout>
       <div className="h-full flex flex-col">
         {/* Header */}
         <div className="px-6 py-4 border-b border-[#3e3e42] bg-[#252526] flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-white mb-1">Projects</h1>
-            <p className="text-sm text-[#969696]">Manage your documentation projects</p>
+          <div className="flex items-start gap-3">
+            <Link
+              href="/dashboard"
+              title="Back to Dashboard"
+              className="mt-1 p-2 rounded hover:bg-[#2a2d2e] text-[#cccccc] hover:text-white transition-colors"
+            >
+              <ChevronLeftIcon className="w-5 h-5" />
+            </Link>
+            <div>
+              <h1 className="text-xl font-semibold text-white mb-1">Projects</h1>
+              <p className="text-sm text-[#969696]">Manage your documentation projects</p>
+            </div>
           </div>
           <button
             onClick={() => setIsCreateModalOpen(true)}
@@ -107,7 +132,13 @@ export default function ProjectsPage() {
           {!loading && !error && projects.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {projects.map((project) => (
-                <ProjectCard key={project.id} project={project} />
+                <ProjectCard
+                  key={project.id}
+                  project={project}
+                  onDuplicate={handleDuplicateProject}
+                  onDelete={handleDeleteProject}
+                  onRename={handleRenameProject}
+                />
               ))}
             </div>
           )}

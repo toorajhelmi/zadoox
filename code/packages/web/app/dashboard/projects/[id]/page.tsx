@@ -43,10 +43,24 @@ export default function ProjectDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  const handleEdit = () => {
-    // TODO: Fetch documents and use the first one, or create a default document
-    const defaultDocumentId = 'default';
-    router.push(`/dashboard/projects/${projectId}/documents/${defaultDocumentId}`);
+  const handleEdit = async () => {
+    // Prefer existing documents; fallback to creating an untitled doc.
+    const docs = await api.documents.listByProject(projectId);
+    let docId: string | null = null;
+    if (docs.length > 0) {
+      docId = docs[0].id;
+    } else {
+      const created = await api.documents.create({
+        projectId,
+        title: 'Untitled Document',
+        content: '',
+        metadata: { type: 'standalone' },
+      });
+      docId = created.id;
+    }
+    if (docId) {
+      router.push(`/dashboard/projects/${projectId}/documents/${docId}`);
+    }
   };
 
   if (loading) {

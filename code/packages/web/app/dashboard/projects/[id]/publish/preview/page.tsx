@@ -228,31 +228,31 @@ export default function PublishPreviewPage() {
             </div>
 
             {previewReady && (
-              <div className="flex items-center gap-2 shrink-0">
-                {source === 'latex' && (
-                  <button
-                    onClick={() => {
-                      api.publish
-                        .latexPackage(projectId, { documentId, source: 'latex' })
-                        .then(({ blob, filename }) => {
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = filename ?? `${title || 'document'}.zip`;
-                          document.body.appendChild(a);
-                          a.click();
-                          a.remove();
-                          URL.revokeObjectURL(url);
-                        })
-                        .catch(() => {});
-                    }}
-                    className="p-2 bg-[#3e3e42] hover:bg-[#464647] text-white rounded transition-colors inline-flex items-center justify-center"
-                    title="Download LaTeX package (.zip)"
-                    aria-label="Download LaTeX package (.zip)"
-                  >
-                    <ArchiveBoxArrowDownIcon className="w-5 h-5" />
-                  </button>
-                )}
+            <div className="flex items-center gap-2 shrink-0">
+              {source === 'latex' && (
+                <button
+                  onClick={() => {
+                    api.publish
+                      .latexPackage(projectId, { documentId, source: 'latex' })
+                      .then(({ blob, filename }) => {
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = filename ?? `${title || 'document'}.zip`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        URL.revokeObjectURL(url);
+                      })
+                      .catch(() => {});
+                  }}
+                  className="p-2 bg-[#3e3e42] hover:bg-[#464647] text-white rounded transition-colors inline-flex items-center justify-center"
+                  title="Download LaTeX package (.zip)"
+                  aria-label="Download LaTeX package (.zip)"
+                >
+                  <ArchiveBoxArrowDownIcon className="w-5 h-5" />
+                </button>
+              )}
 
                 {/* For LaTeX, the embedded PDF viewer already offers download/print controls. */}
                 {source !== 'latex' && (
@@ -274,7 +274,7 @@ export default function PublishPreviewPage() {
                     <ArrowDownTrayIcon className="w-5 h-5" />
                   </button>
                 )}
-              </div>
+            </div>
             )}
           </div>
         </div>

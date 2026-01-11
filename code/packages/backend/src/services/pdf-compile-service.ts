@@ -97,35 +97,35 @@ export class PdfCompileService {
 
       const kind = this.getCompilerKind();
       try {
-        if (kind === 'tectonic') {
-          // IMPORTANT:
-          // Tectonic maintains a cache (bundles, fonts, etc.). In dev, the frontend can issue duplicate
-          // requests (e.g. React StrictMode), and concurrent tectonic runs can race on a shared cache,
-          // causing flaky errors like "failed to open input file texsys.cfg".
-          // To make compilation deterministic, isolate the cache per compilation.
-          const cacheDir = path.join(workDir, '.tectonic-cache');
-          await mkdir(cacheDir, { recursive: true });
-          await this.runCmd({
-            cmd: 'tectonic',
+      if (kind === 'tectonic') {
+        // IMPORTANT:
+        // Tectonic maintains a cache (bundles, fonts, etc.). In dev, the frontend can issue duplicate
+        // requests (e.g. React StrictMode), and concurrent tectonic runs can race on a shared cache,
+        // causing flaky errors like "failed to open input file texsys.cfg".
+        // To make compilation deterministic, isolate the cache per compilation.
+        const cacheDir = path.join(workDir, '.tectonic-cache');
+        await mkdir(cacheDir, { recursive: true });
+        await this.runCmd({
+          cmd: 'tectonic',
             args: ['--outdir', workDir, '--synctex', '--keep-logs', `${jobName}.tex`],
-            cwd: workDir,
-            env: {
-              ...process.env,
-              // Prefer explicit cache dir if supported; also set XDG cache home.
-              TECTONIC_CACHE_DIR: cacheDir,
-              XDG_CACHE_HOME: cacheDir,
-              // Some tools consult HOME; keep everything within the temp dir.
-              HOME: workDir,
-            },
-          });
-        } else {
-          // TeX Live + latexmk
-          await this.runCmd({
-            cmd: 'latexmk',
+          cwd: workDir,
+          env: {
+            ...process.env,
+            // Prefer explicit cache dir if supported; also set XDG cache home.
+            TECTONIC_CACHE_DIR: cacheDir,
+            XDG_CACHE_HOME: cacheDir,
+            // Some tools consult HOME; keep everything within the temp dir.
+            HOME: workDir,
+          },
+        });
+      } else {
+        // TeX Live + latexmk
+        await this.runCmd({
+          cmd: 'latexmk',
             args: ['-pdf', '-interaction=nonstopmode', '-halt-on-error', `-outdir=${workDir}`, `${jobName}.tex`],
-            cwd: workDir,
-            env: process.env,
-          });
+          cwd: workDir,
+          env: process.env,
+        });
         }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);

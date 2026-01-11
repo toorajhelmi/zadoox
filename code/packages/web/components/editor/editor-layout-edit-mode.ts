@@ -7,16 +7,11 @@ import { ensureLatexPreambleForLatexContent } from './latex-preamble';
 
 export type EditMode = 'markdown' | 'latex';
 
-// Bump this whenever the IR->LaTeX generator changes in a way that requires regenerating cached LaTeX
-// even if the IR hash is unchanged.
-const LATEX_GEN_VERSION = 'v4_disable_wrapfigure_generation';
-
 export type EditorDocMetadata = {
   lastEditedFormat?: EditMode;
   latex?: string;
   latexIrHash?: string;
   xmdIrHash?: string;
-  latexGenVersion?: string;
 } & Record<string, any>;
 
 export function useEditorEditMode(params: {
@@ -87,13 +82,7 @@ export function useEditorEditMode(params: {
           latex: async () => {
             const cachedLatex = typeof meta.latex === 'string' ? meta.latex : '';
             const cachedLatexIrHash = typeof meta.latexIrHash === 'string' ? meta.latexIrHash : null;
-            const cachedGenVersion = typeof meta.latexGenVersion === 'string' ? meta.latexGenVersion : '';
-            const canReuse = Boolean(
-              currentIrHash &&
-                cachedLatex &&
-                cachedLatexIrHash === currentIrHash &&
-                cachedGenVersion === LATEX_GEN_VERSION
-            );
+            const canReuse = Boolean(currentIrHash && cachedLatex && cachedLatexIrHash === currentIrHash);
 
             const latexBase = canReuse ? cachedLatex : irToLatexDocument(currentIr);
             const ensured = ensureLatexPreambleForLatexContent(latexBase);
@@ -106,7 +95,6 @@ export function useEditorEditMode(params: {
               ...meta,
               latex,
               ...(currentIrHash ? { latexIrHash: currentIrHash, xmdIrHash: currentIrHash } : null),
-              latexGenVersion: LATEX_GEN_VERSION,
               lastEditedFormat: 'latex' as const,
             };
             setDocumentMetadata(nextMeta);
@@ -120,25 +108,11 @@ export function useEditorEditMode(params: {
 
           markdown: async () => {
             let nextContent = content;
-            let nextIrHash: string | null = currentIrHash;
+            let nextIrHash: string | null = null;
             try {
-              const cachedLatexIrHash = typeof meta.latexIrHash === 'string' ? meta.latexIrHash : null;
-              const cachedLatex = typeof meta.latex === 'string' ? meta.latex : '';
-              const latexDraftLen = String(latexDraft ?? '').length;
-
-              const latexIsDerived =
-                Boolean(currentIrHash && cachedLatexIrHash && cachedLatexIrHash === currentIrHash) &&
-                Boolean(cachedLatex) &&
-                String(latexDraft ?? '') === cachedLatex;
-
-              if (latexIsDerived) {
-                nextContent = irToXmd(currentIr);
-              } else {
-                const nextIr = parseLatexToIr({ docId: actualDocumentId, latex: latexDraft });
-                nextContent = irToXmd(nextIr);
-                nextIrHash = computeDocIrHash(nextIr);
-              }
-
+              const nextIr = parseLatexToIr({ docId: actualDocumentId, latex: latexDraft });
+              nextContent = irToXmd(nextIr);
+              nextIrHash = computeDocIrHash(nextIr);
             } catch {
               // If conversion fails, keep the last known XMD content (never block switching).
             }
@@ -149,7 +123,7 @@ export function useEditorEditMode(params: {
             const nextMeta: EditorDocMetadata = {
               ...meta,
               latex: latexDraft,
-              ...(nextIrHash ? { xmdIrHash: nextIrHash } : null),
+              ...(nextIrHash ? { xmdIrHash: nextIrHash, latexIrHash: nextIrHash } : null),
               lastEditedFormat: 'markdown' as const,
             };
             setDocumentMetadata(nextMeta);

@@ -120,7 +120,10 @@ export class DocumentService {
     if (input.title !== undefined) updateData.title = input.title;
     
     let newVersion = existing.version;
-    if (input.content !== undefined && input.content !== existing.content) {
+    const forceVersion = changeType === 'rollback';
+    const contentChanged = input.content !== undefined && input.content !== existing.content;
+
+    if (input.content !== undefined && (contentChanged || forceVersion)) {
       // Content changed - create version and increment version number
       // Version service will check if content actually changed for manual-save/auto-save
       if (authorId) {

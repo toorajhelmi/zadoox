@@ -477,7 +477,7 @@ function parseBlocks(xmd: string): Block[] {
           let topRule: TableRule = 'none';
           const beforeRowRules: Record<number, TableRule> = {};
           let header: string[] | null = null;
-          const rows: string[][] = [];
+            const rows: string[][] = [];
           let sawSep = false;
 
           const applyPendingToNextRow = (rowIndex: number) => {

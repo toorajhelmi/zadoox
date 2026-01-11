@@ -1013,7 +1013,7 @@ class FigureCardWidget extends WidgetType {
     if (userBorderSet) {
       img.style.border = 'none';
     } else {
-      img.style.border = '1px solid rgba(255,255,255,0.10)';
+    img.style.border = '1px solid rgba(255,255,255,0.10)';
     }
     if (align === 'center') img.style.margin = '0 auto';
     if (align === 'right') img.style.marginLeft = 'auto';
