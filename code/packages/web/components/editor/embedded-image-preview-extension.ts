@@ -1393,11 +1393,6 @@ class FigureCardWidget extends WidgetType {
         '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
         '<path d="M2 3h12M6 7h8M3 11h11M8 15h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
         '</svg>',
-      alignFull:
-        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-        '<rect x="2.5" y="4" width="11" height="8" stroke="currentColor" stroke-width="1.5"/>' +
-        '<path d="M2.5 8h11" stroke="currentColor" stroke-width="1" opacity="0.35"/>' +
-        '</svg>',
       sizeS:
         '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
         '<rect x="5.5" y="5.5" width="5" height="5" stroke="currentColor" stroke-width="1.5" />' +
@@ -1470,14 +1465,7 @@ class FigureCardWidget extends WidgetType {
     // Compact group buttons (show current selection; click to open menu)
     const alignGroupBtn = makeIconBtn({
       label: 'Align',
-      svg:
-        currentAlign === 'full'
-          ? icon.alignFull
-          : currentAlign === 'center'
-            ? icon.alignCenter
-            : currentAlign === 'right'
-              ? icon.alignRight
-              : icon.alignLeft,
+      svg: currentAlign === 'center' ? icon.alignCenter : currentAlign === 'right' ? icon.alignRight : icon.alignLeft,
       selected: true,
     });
     const sizeGroupBtn = makeIconBtn({
@@ -2250,6 +2238,11 @@ class FigureGridWidget extends WidgetType {
       alignRight:
         '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
         '<path d="M2 3h12M6 7h8M3 11h11M8 15h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '</svg>',
+      alignFull:
+        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+        '<rect x="2.5" y="4" width="11" height="8" stroke="currentColor" stroke-width="1.5"/>' +
+        '<path d="M2.5 8h11" stroke="currentColor" stroke-width="1" opacity="0.35"/>' +
         '</svg>',
       inline:
         '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
