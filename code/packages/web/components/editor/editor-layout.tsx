@@ -397,19 +397,16 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       }
     },
     [
-      content,
-      updateContent,
-      selectedVersion,
       latestVersion,
-      cursorPosition,
-      changeTracking.isTracking,
-      editMode,
-      actualDocumentId,
-      documentId,
-      documentMetadata,
-      setDocumentMetadata,
+      selectedVersion,
+      updateContent,
       setLatexDraft,
+      setDocumentMetadata,
       saveDocument,
+      content,
+      editMode,
+      changeTracking.isTracking,
+      cursorPosition,
       activeUndoRedo,
     ]
   );

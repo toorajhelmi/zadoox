@@ -250,7 +250,7 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
           cols: b.cols,
           caption: b.caption,
           ...(b.label ? { label: b.label } : null),
-          ...(b.align ? { align: b.align as any } : null),
+          ...(b.align ? { align: b.align as GridNode['align'] } : null),
           ...(b.style ? { style: b.style } : null),
           rows: (b.rows ?? []).map((row, r) =>
             (row ?? []).map((cell, c) => {
@@ -293,8 +293,8 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
       }
 
       if (b.kind === 'table') {
-        const idx = (counters as any).table ?? 0;
-        (counters as any).table = idx + 1;
+        const idx = counters.table ?? 0;
+        counters.table = idx + 1;
         const path = fullPath(`table[${idx}]`);
         const node: TableNode = {
           type: 'table',
@@ -1163,7 +1163,7 @@ function parseFigureFromRaw(raw: string): Extract<Block, { kind: 'figure' }> | n
   let caption = '';
   let label = '';
   let align = 'center';
-  let placement = '';
+  const placement = '';
   let width: string | undefined;
   let desc: string | undefined;
 

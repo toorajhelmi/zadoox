@@ -95,14 +95,11 @@ function shrinkWrapGridCellMedia(html: string): string {
   // That forces grid tables to expand to full width even for center/left/right alignments.
   //
   // For shrink-wrap grids we want figures to hug content, so strip width:100% and use inline-block.
-  let replacedFigure = 0;
-  let replacedImg = 0;
   let sampleImgBefore: string | null = null;
   let sampleImgAfter: string | null = null;
   let out = s.replace(/<span([^>]*?)class="figure"([^>]*?)>/g, (m, a, b) => {
     const attrs = `${a || ''}${b || ''}`;
     if (!/\sstyle="/i.test(attrs)) return m;
-    replacedFigure++;
     return m.replace(/\sstyle="([^"]*)"/i, (_m2, style) => {
       let next = removeWidth100Only(String(style || ''));
       next = next.replace(/(^|;)\s*display\s*:\s*block\s*(;|$)/gi, '$1display:inline-block$2');
@@ -117,7 +114,6 @@ function shrinkWrapGridCellMedia(html: string): string {
   out = out.replace(/<img([^>]*?)>/g, (m, attrs) => {
     const a = String(attrs || '');
     if (!/\sstyle="/i.test(a)) return m;
-    replacedImg++;
     return `<img${a.replace(/\sstyle="([^"]*)"/i, (_m2, style) => {
       const raw = String(style || '');
       if (!sampleImgBefore) sampleImgBefore = raw;
