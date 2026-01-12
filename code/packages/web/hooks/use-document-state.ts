@@ -48,15 +48,15 @@ export function useDocumentState(documentId: string, projectId: string) {
         setIsLoading(true);
         
         // Try to get existing document by ID
-        const document = await api.documents.get(documentId);
-        setActualDocumentId(document.id);
-        const loadedContent = document.content || '';
-        setContent(loadedContent);
-        setDocumentTitle(deriveTitleFromXmd(loadedContent) ?? document.title);
-        setLastSaved(new Date(document.updatedAt));
-        setParagraphModes(document.metadata?.paragraphModes || {});
-        setDocumentMetadata(document.metadata || {});
-        setIsLoading(false);
+          const document = await api.documents.get(documentId);
+          setActualDocumentId(document.id);
+          const loadedContent = document.content || '';
+          setContent(loadedContent);
+          setDocumentTitle(deriveTitleFromXmd(loadedContent) ?? document.title);
+          setLastSaved(new Date(document.updatedAt));
+          setParagraphModes(document.metadata?.paragraphModes || {});
+          setDocumentMetadata(document.metadata || {});
+          setIsLoading(false);
       } catch (error) {
         console.error('Failed to load document:', error);
         setIsLoading(false);

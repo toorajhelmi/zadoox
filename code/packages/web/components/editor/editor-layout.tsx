@@ -6,8 +6,6 @@ import { ChevronRightIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
 import { EditorSidebar } from './editor-sidebar';
 import { EditorToolbar } from './editor-toolbar';
 import { EditorStatusBar } from './editor-status-bar';
-import { AIEnhancedEditor } from './ai-enhanced-editor';
-import { CodeMirrorEditor } from './codemirror-editor';
 import { IrPreview } from './ir-preview';
 import { FormattingToolbar } from './formatting-toolbar';
 import { ThinkModePanel } from './think-mode-panel';
@@ -17,11 +15,10 @@ import { useDocumentState } from '@/hooks/use-document-state';
 import { useIrDocument } from '@/hooks/use-ir-document';
 import { api } from '@/lib/api/client';
 import type { FormatType } from './floating-format-menu';
-import type { ResearchSource, DocumentStyle } from '@zadoox/shared';
+import type { ResearchSource, DocumentStyle, DocumentNode } from '@zadoox/shared';
 import type { InlineEditBlock, InlineEditOperation } from '@zadoox/shared';
 import type { QuickOption } from '@/lib/services/context-options';
-import { irToLatexDocument, irToXmd, parseLatexToIr, parseXmdToIr } from '@zadoox/shared';
-import { computeDocIrHash } from './ir-hash';
+import { irToLatexDocument, irToXmd } from '@zadoox/shared';
 import { applyInlineOperations, buildInlineBlocksAroundCursor } from './editor-layout-inline-edit';
 import { useEditorKeyboardShortcuts } from './editor-layout-shortcuts';
 import { useEditorFormatHandler } from './editor-layout-formatting';
@@ -36,6 +33,9 @@ import { applyThinkModeGeneratedContentToXmd } from './editor-layout-think-apply
 import { rollbackToVersion, selectVersionForViewing } from './editor-layout-version-actions';
 import { previewInsertAtCursor } from './editor-layout-inline-preview';
 import { ensureLatexPreambleForLatexContent } from './latex-preamble';
+import { ActiveEditorSurface } from './active-editor-surface';
+import { useCanonicalIrState } from './editor-layout-canonical-ir';
+import { getActiveEditorText, getCursorScopeText, getSurfaceCapabilities, getSurfaceSyntax, getTypingHistoryAdapter, pickUndoRedo } from './editor-surface';
 
 interface EditorLayoutProps {
   projectId: string;
@@ -92,6 +92,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [thinkPanelOpen, setThinkPanelOpen] = useState(false);
   const [openParagraphId, setOpenParagraphId] = useState<string | null>(null);
   const [inlineAIChatOpen, setInlineAIChatOpen] = useState(false);
+  const [inlineAIHintVisible, setInlineAIHintVisible] = useState(false);
+  const inlineAIHintHideTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [documentStyle, setDocumentStyle] = useState<DocumentStyle>('other');
   const [projectName, setProjectName] = useState<string>('');
   const currentSelectionRef = useRef<{ from: number; to: number; text: string } | null>(null);
@@ -102,6 +104,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const previousLatexForHistoryRef = useRef<string>('');
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const latexDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const latexAutoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const latexEditNonceRef = useRef<number>(0);
+  const getCurrentIrRef = useRef<() => DocumentNode | null>(() => null);
   const editorViewRef = useRef<import('@codemirror/view').EditorView | null>(null);
   const editorContainerRef = useRef<HTMLDivElement | null>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -120,32 +125,42 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     enabled: Boolean(actualDocumentId || documentId),
   });
 
+  const getCurrentIrForModeSwitch = useCallback(() => getCurrentIrRef.current(), []);
+
   const { editMode, setEditMode, latexDraft, setLatexDraft, handleEditModeChange } = useEditorEditMode({
     actualDocumentId,
     documentId,
     content,
-    ir: irState.ir,
+    getCurrentIr: getCurrentIrForModeSwitch,
     documentMetadata,
     setDocumentMetadata,
     updateContent,
   });
 
-  // Track the IR hash corresponding to the current XMD (`content`) so we can persist `metadata.xmdIrHash`.
-  // This keeps switching logic symmetric with LaTeX (which already tracks `metadata.latexIrHash`).
-  const xmdIrHash = useMemo(() => computeDocIrHash(irState.ir), [irState.ir]);
-  useEffect(() => {
-    if (!xmdIrHash) return;
-    setDocumentMetadata((prev) => {
-      const p = (prev || {}) as any;
-      if (p.xmdIrHash === xmdIrHash) return prev;
-      return { ...p, xmdIrHash };
-    });
-  }, [setDocumentMetadata, xmdIrHash]);
+  const handleEditModeChangeStable = useCallback(
+    async (next: 'markdown' | 'latex') => {
+      await handleEditModeChange(next);
+    },
+    [handleEditModeChange]
+  );
 
-  // IMPORTANT: Outline/preview should be driven from the canonical IR (derived from XMD).
-  // The LaTeX surface is just another edit mode; it must update IR (via LaTeX -> IR -> XMD),
-  // but we should not run a separate LaTeX->IR parse for outline, otherwise the outline can drift.
-  const sidebarIr = irState.ir;
+  const docKey = actualDocumentId || documentId || null;
+  const { canonicalIr, getCurrentIr } = useCanonicalIrState({
+    docKey,
+    editMode,
+    content,
+    latexDraft,
+    mdIr: irState.ir,
+    documentMetadata,
+    setDocumentMetadata,
+    latexEditNonce: latexEditNonceRef.current,
+  });
+
+  useEffect(() => {
+    getCurrentIrRef.current = getCurrentIr;
+  }, [getCurrentIr]);
+
+  const sidebarIr = canonicalIr ?? irState.ir;
 
   const currentTextStyle = (() => {
     const view = editorViewRef.current;
@@ -154,22 +169,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       const sel = view.state.selection.main;
       const line = view.state.doc.lineAt(sel.head).text;
       const trimmed = line.trimStart();
-      if (editMode === 'latex') {
-        if (/^\\title\{/.test(trimmed)) return 'title' as const;
-        if (/^\\section\{/.test(trimmed)) return 'heading1' as const;
-        if (/^\\subsection\{/.test(trimmed)) return 'heading2' as const;
-        if (/^\\subsubsection\{/.test(trimmed)) return 'heading3' as const;
-        return 'paragraph' as const;
-      }
-
-      const t = /^@\s+/.exec(trimmed);
-      if (t) return 'title' as const;
-      const m = /^(#{1,6})\s+/.exec(trimmed);
-      if (!m) return 'paragraph' as const;
-      const level = m[1].length;
-      if (level === 1) return 'heading1' as const; // Section
-      if (level === 2) return 'heading2' as const; // Subsection
-      return 'heading3' as const; // Subsubsection+
+      return getSurfaceSyntax(editMode).detectLineStyle(trimmed);
     } catch {
       return 'paragraph' as const;
     }
@@ -207,6 +207,66 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     setCursorScreenPosition,
   });
 
+  // Inline AI hint should only appear on click in the editor text area (not always-on).
+  useEffect(() => {
+    const el = editorContainerRef.current;
+    if (!el) return;
+
+    const clearTimer = () => {
+      if (inlineAIHintHideTimerRef.current) {
+        clearTimeout(inlineAIHintHideTimerRef.current);
+        inlineAIHintHideTimerRef.current = null;
+      }
+    };
+
+    const hide = () => {
+      clearTimer();
+      setInlineAIHintVisible(false);
+    };
+
+    const showSoonThenAutoHide = () => {
+      clearTimer();
+      setInlineAIHintVisible(true);
+      inlineAIHintHideTimerRef.current = setTimeout(() => {
+        setInlineAIHintVisible(false);
+        inlineAIHintHideTimerRef.current = null;
+      }, 2200);
+    };
+
+    const onPointerDown = (e: Event) => {
+      if (thinkPanelOpen || inlineAIChatOpen) return;
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      // Only show when clicking in the editor text area (next to text), not inside embedded widgets/toolbars.
+      const inEditorText = Boolean(target.closest('.cm-content') || target.closest('.cm-line'));
+      if (!inEditorText) return;
+      const inEmbedded =
+        Boolean(
+          target.closest('.cm-embedded-figure-grid') ||
+            target.closest('.cm-embedded-figure-card') ||
+            target.closest('.cm-embedded-table')
+        );
+      if (inEmbedded) return;
+
+      showSoonThenAutoHide();
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Any typing should dismiss the hint.
+      if (e.key && e.key.length === 1) hide();
+      if (e.key === 'Enter' || e.key === 'Backspace' || e.key === 'Delete') hide();
+    };
+
+    el.addEventListener('pointerdown', onPointerDown, true);
+    el.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      el.removeEventListener('pointerdown', onPointerDown, true);
+      el.removeEventListener('keydown', onKeyDown, true);
+      clearTimer();
+    };
+  }, [thinkPanelOpen, inlineAIChatOpen]);
+
   const { undoRedo, latexUndoRedo, changeTracking } = useEditorHistoryAndChangeTracking({
     content,
     latexDraft,
@@ -227,6 +287,12 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     setPendingChangeContent,
     cleanupInsertedSources,
     saveDocument,
+  });
+
+  const activeUndoRedo = pickUndoRedo({
+    editMode,
+    markdown: undoRedo,
+    latex: latexUndoRedo,
   });
 
   // Handle opening panel for a paragraph
@@ -273,74 +339,42 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           updateContent(value);
         },
         latex: () => {
-          // LaTeX edit surface -> LaTeX -> IR (canonical) -> XMD (derived content)
+          // LaTeX edit surface:
+          // - Persist the user-edited LaTeX (metadata.latex) via auto-save
+          // - Update canonical IR via the debounced LaTeX->IR effect (for preview/outline)
+          // - Do NOT derive or mutate XMD while typing LaTeX (only regenerate on explicit mode switch)
           const ensured = ensureLatexPreambleForLatexContent(value);
           const nextLatex = ensured.latex;
+          latexEditNonceRef.current++;
           setLatexDraft(nextLatex);
-          try {
-            const nextIr = parseLatexToIr({ docId: actualDocumentId || documentId, latex: nextLatex });
-            const nextXmd = irToXmd(nextIr);
-            const nextIrHash = computeDocIrHash(nextIr);
-            const nextMeta = {
-              ...(documentMetadata as any),
-              lastEditedFormat: 'latex',
-              latex: nextLatex,
-              // Keep mapping: this LaTeX draft corresponds to this IR hash.
-              ...(nextIrHash ? { latexIrHash: nextIrHash } : null),
-              // Keep mapping: the derived XMD also corresponds to the same IR hash.
-              ...(nextIrHash ? { xmdIrHash: nextIrHash } : null),
-            };
-            setDocumentMetadata(nextMeta);
-            // Avoid churn: only update XMD if it actually changes.
-            if (nextXmd !== content) updateContent(nextXmd);
-          } catch (err) {
-            // Never block typing; keep draft visible even if conversion fails.
-            console.error('Failed to parse LaTeX to IR:', err);
-            const nextMeta = { ...(documentMetadata as any), lastEditedFormat: 'latex', latex: nextLatex };
-            setDocumentMetadata(nextMeta);
+          setDocumentMetadata((prev) => ({ ...(prev as any), lastEditedFormat: 'latex', latex: nextLatex }));
+
+          if (latexAutoSaveTimeoutRef.current) {
+            clearTimeout(latexAutoSaveTimeoutRef.current);
           }
+          // Mirror the XMD auto-save delay so both editing surfaces persist changes similarly.
+          latexAutoSaveTimeoutRef.current = setTimeout(() => {
+            saveDocument(content, 'auto-save').catch(() => {});
+          }, 2000);
         },
       };
       handlers[editMode === 'latex' ? 'latex' : 'markdown']();
 
       // Add to undo history (debounced to avoid too many history entries)
       // Only add if not in change tracking mode (change tracking handles its own history)
-      if (!changeTracking.isTracking && editMode === 'markdown') {
-        if (debounceTimeoutRef.current) {
-          clearTimeout(debounceTimeoutRef.current);
-        }
-        debounceTimeoutRef.current = setTimeout(() => {
-          if (previousContentForHistoryRef.current !== value) {
-            // Capture current cursor position from editor if available
-            let currentCursorPos = cursorPosition;
-            if (editorViewRef.current && !currentCursorPos) {
-              try {
-                const selection = editorViewRef.current.state.selection.main;
-                const line = editorViewRef.current.state.doc.lineAt(selection.head);
-                currentCursorPos = { line: line.number, column: selection.head - line.from + 1 };
-              } catch {
-                // Failed to get cursor position, use stored value or null
-              }
-            }
-            
-            undoRedo.addToHistory({
-              content: value,
-              cursorPosition: currentCursorPos,
-              selection: currentSelectionRef.current,
-              timestamp: Date.now(),
-            });
-            previousContentForHistoryRef.current = value;
-          }
-        }, 300); // Debounce for 300ms
-      }
+      if (!changeTracking.isTracking) {
+        const history = getTypingHistoryAdapter({
+          editMode,
+          markdown: { debounceTimeoutRef, previousValueRef: previousContentForHistoryRef },
+          latex: { debounceTimeoutRef: latexDebounceTimeoutRef, previousValueRef: previousLatexForHistoryRef },
+        });
 
-      // Track undo/redo for LaTeX draft edits too (separate history from XMD).
-      if (!changeTracking.isTracking && editMode === 'latex') {
-        if (latexDebounceTimeoutRef.current) {
-          clearTimeout(latexDebounceTimeoutRef.current);
+        if (history.debounceTimeoutRef.current) {
+          clearTimeout(history.debounceTimeoutRef.current);
         }
-        latexDebounceTimeoutRef.current = setTimeout(() => {
-          if (previousLatexForHistoryRef.current !== value) {
+        history.debounceTimeoutRef.current = setTimeout(() => {
+          if (history.previousValueRef.current !== value) {
+            // Capture current cursor position from editor if available
             let currentCursorPos = cursorPosition;
             if (editorViewRef.current && !currentCursorPos) {
               try {
@@ -351,13 +385,13 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 // ignore
               }
             }
-            latexUndoRedo.addToHistory({
+            activeUndoRedo.addToHistory({
               content: value,
               cursorPosition: currentCursorPos,
               selection: currentSelectionRef.current,
               timestamp: Date.now(),
             });
-            previousLatexForHistoryRef.current = value;
+            history.previousValueRef.current = value;
           }
         }, 300);
       }
@@ -368,15 +402,15 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       selectedVersion,
       latestVersion,
       cursorPosition,
-      undoRedo,
       changeTracking.isTracking,
       editMode,
       actualDocumentId,
       documentId,
       documentMetadata,
       setDocumentMetadata,
-      latexUndoRedo,
       setLatexDraft,
+      saveDocument,
+      activeUndoRedo,
     ]
   );
 
@@ -394,11 +428,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     selectedVersion,
     latestVersion,
     changeTracking: { isTracking: changeTracking.isTracking, cancelTracking: changeTracking.cancelTracking },
-    editMode,
-    undoRedo,
-    latexUndoRedo,
+    undoRedo: activeUndoRedo,
     setViewMode,
-    handleEditModeChange: handleEditModeChange,
+    handleEditModeChange: handleEditModeChangeStable,
     content,
     saveDocument,
     thinkPanelOpen,
@@ -525,22 +557,20 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           editMode={editMode}
-          onEditModeChange={handleEditModeChange}
-          canUndo={editMode === 'latex' ? latexUndoRedo.canUndo : undoRedo.canUndo}
-          canRedo={editMode === 'latex' ? latexUndoRedo.canRedo : undoRedo.canRedo}
+          onEditModeChange={handleEditModeChangeStable}
+          canUndo={activeUndoRedo.canUndo}
+          canRedo={activeUndoRedo.canRedo}
           onUndo={() => {
             if (changeTracking.isTracking) {
               changeTracking.cancelTracking();
             }
-            if (editMode === 'latex') latexUndoRedo.undo();
-            else undoRedo.undo();
+            activeUndoRedo.undo();
           }}
           onRedo={() => {
             if (changeTracking.isTracking) {
               changeTracking.cancelTracking();
             }
-            if (editMode === 'latex') latexUndoRedo.redo();
-            else undoRedo.redo();
+            activeUndoRedo.redo();
           }}
         />
 
@@ -603,9 +633,10 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               {!thinkPanelOpen && !inlineAIChatOpen && cursorScreenPosition && cursorPosition && (
                 <InlineAIHint
                   position={cursorScreenPosition}
-                  visible={true}
+                  visible={inlineAIHintVisible}
                   onActivate={() => {
                     setInlineAIChatOpen(true);
+                    setInlineAIHintVisible(false);
                   }}
                 />
               )}
@@ -616,42 +647,24 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                   position={cursorScreenPosition}
                   documentId={actualDocumentId}
                   editMode={editMode}
-                  content={editMode === 'latex' ? latexDraft : content}
+                  content={getActiveEditorText({ editMode, content, latexDraft })}
                   cursorPosition={cursorPosition}
                   selection={currentSelectionRef.current}
                   scopeKind={currentSelectionRef.current?.text?.trim() ? 'selection' : 'cursor_paragraph'}
-                  scopeText={(() => {
-                    const sel = currentSelectionRef.current;
-                    if (sel && sel.text && sel.text.trim().length > 0) return sel.text;
-
-                    if (!cursorPosition) return '';
-                    if (editMode === 'latex') {
-                      const lines = latexDraft.split('\n');
-                      const idx = Math.max(0, Math.min(cursorPosition.line - 1, Math.max(0, lines.length - 1)));
-                      return (lines[idx] ?? '').trim();
-                    }
-
-                    const cursorLine = cursorPosition.line - 1;
-                    const { blocks, cursorBlockId } = buildInlineBlocksAroundCursor(content, cursorLine);
-                    const cursorBlock = blocks.find((b) => b.id === cursorBlockId);
-                    if (cursorBlock?.kind === 'paragraph') return cursorBlock.text;
-
-                    // Fallback: nearest previous paragraph in window
-                    const idx = blocks.findIndex((b) => b.id === cursorBlockId);
-                    for (let i = idx - 1; i >= 0; i--) {
-                      if (blocks[i]?.kind === 'paragraph') return blocks[i].text;
-                    }
-                    return cursorBlock?.text || '';
-                  })()}
+                  scopeText={getCursorScopeText({
+                    editMode,
+                    selectionText: currentSelectionRef.current?.text ?? null,
+                    cursorPosition,
+                    content,
+                    latexDraft,
+                  })}
                   documentStyle={documentStyle}
                   onClose={() => {
                     setInlineAIChatOpen(false);
                   }}
                   onPreviewInlineEdit={async ({ prompt, mode, scopeStrategy = 'selection-or-prev-paragraph' }) => {
-                    if (editMode === 'latex') {
-                      // Inline edits are currently markdown/XMD-only. Keep LaTeX surface stable.
-                      return { operations: [], previewText: '', newContent: latexDraft };
-                    }
+                    const caps = getSurfaceCapabilities(editMode);
+                    if (!caps.supportsInlineAiEdits) return { operations: [], previewText: '', newContent: latexDraft };
                     if (!cursorPosition) {
                       return { operations: [], previewText: '', newContent: content };
                     }
@@ -762,7 +775,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                     });
                   }}
                   onApplyInlinePreview={async (preview) => {
-                    if (editMode === 'latex') {
+                    const caps = getSurfaceCapabilities(editMode);
+                    if (!caps.supportsInlineAiEdits) {
                       handleContentChange(preview.newContent);
                       setInlineAIChatOpen(false);
                       return;
@@ -845,64 +859,23 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 />
               )}
 
-              {editMode === 'markdown' ? (
-                <AIEnhancedEditor
-                  value={pendingChangeContent?.new ?? content}
-                  onChange={handleContentChange}
-                  onSelectionChange={handleSelectionChange}
-                  onCursorPositionChange={handleCursorPositionChange}
-                  onDocumentAIMetricsChange={(payload) => setDocAIMetrics(payload)}
-                  model="auto"
-                  paragraphModes={paragraphModes}
-                  documentId={actualDocumentId}
-                  thinkPanelOpen={thinkPanelOpen}
-                  openParagraphId={openParagraphId}
-                  onOpenPanel={handleOpenPanel}
-                  onEditorViewReady={(view) => {
+              <ActiveEditorSurface
+                editMode={editMode}
+                markdown={{
+                  value: pendingChangeContent?.new ?? content,
+                  onChange: handleContentChange,
+                  onSelectionChange: handleSelectionChange,
+                  onCursorPositionChange: handleCursorPositionChange,
+                  onDocumentAIMetricsChange: (payload) => setDocAIMetrics(payload),
+                  paragraphModes,
+                  documentId: actualDocumentId,
+                  thinkPanelOpen,
+                  openParagraphId,
+                  onOpenPanel: handleOpenPanel,
+                  onEditorViewReady: (view) => {
                     editorViewRef.current = view;
-                  }}
-                  readOnly={(() => {
-                    // Disable editing when change tracking is active
-                    if (changeTracking.isTracking) {
-                      return true;
-                    }
-                    // Disable editing when Think panel is open
-                    if (thinkPanelOpen) {
-                      return true;
-                    }
-                    // Disable editing when inline AI chat is open
-                    if (inlineAIChatOpen) {
-                      return true;
-                    }
-                    // Handle undefined/null latestVersion and ensure it's a valid number
-                    let safeLatestVersion: number | null = null;
-                    if (latestVersion !== undefined && latestVersion !== null && !isNaN(Number(latestVersion))) {
-                      safeLatestVersion = Number(latestVersion);
-                    }
-                    const isReadOnly =
-                      selectedVersion !== null &&
-                      safeLatestVersion !== null &&
-                      Number(selectedVersion) !== Number(safeLatestVersion);
-                    return isReadOnly;
-                  })()}
-                  changes={changeTracking.mappedChanges}
-                  onAcceptChange={changeTracking.acceptChange}
-                  onRejectChange={changeTracking.rejectChange}
-                  onSaveWithType={async (contentToSave, changeType) => {
-                    await saveDocument(contentToSave, changeType);
-                  }}
-                />
-              ) : (
-                <CodeMirrorEditor
-                  value={latexDraft}
-                  onChange={handleContentChange}
-                  onCursorPositionChange={handleCursorPositionChange}
-                  onEditorViewReady={(view) => {
-                    editorViewRef.current = view;
-                  }}
-                  language="plain"
-                  enableFormatMenu={false}
-                  readOnly={(() => {
+                  },
+                  readOnly: (() => {
                     if (changeTracking.isTracking) return true;
                     if (thinkPanelOpen) return true;
                     if (inlineAIChatOpen) return true;
@@ -910,14 +883,42 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                     if (latestVersion !== undefined && latestVersion !== null && !isNaN(Number(latestVersion))) {
                       safeLatestVersion = Number(latestVersion);
                     }
-                    const isReadOnly =
+                    return (
                       selectedVersion !== null &&
                       safeLatestVersion !== null &&
-                      Number(selectedVersion) !== Number(safeLatestVersion);
-                    return isReadOnly;
-                  })()}
-                />
-              )}
+                      Number(selectedVersion) !== Number(safeLatestVersion)
+                    );
+                  })(),
+                  changes: changeTracking.mappedChanges,
+                  onAcceptChange: changeTracking.acceptChange,
+                  onRejectChange: changeTracking.rejectChange,
+                  onSaveWithType: async (contentToSave, changeType) => {
+                    await saveDocument(contentToSave, changeType);
+                  },
+                }}
+                latex={{
+                  value: latexDraft,
+                  onChange: handleContentChange,
+                  onCursorPositionChange: handleCursorPositionChange,
+                  onEditorViewReady: (view) => {
+                    editorViewRef.current = view;
+                  },
+                  readOnly: (() => {
+                    if (changeTracking.isTracking) return true;
+                    if (thinkPanelOpen) return true;
+                    if (inlineAIChatOpen) return true;
+                    let safeLatestVersion: number | null = null;
+                    if (latestVersion !== undefined && latestVersion !== null && !isNaN(Number(latestVersion))) {
+                      safeLatestVersion = Number(latestVersion);
+                    }
+                    return (
+                      selectedVersion !== null &&
+                      safeLatestVersion !== null &&
+                      Number(selectedVersion) !== Number(safeLatestVersion)
+                    );
+                  })(),
+                }}
+              />
               
             </div>
           )}

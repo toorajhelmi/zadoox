@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import type { EditorView } from '@codemirror/view';
 import type { FormatType } from './floating-format-menu';
+import { getSurfaceSyntax } from './editor-surface';
 
 type CursorPosition = { line: number; column: number } | null;
 type SelectionRefValue = { from: number; to: number; text: string } | null;
@@ -68,6 +69,7 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
       }
 
       // Formatting is a user edit: apply to the active edit surface (MD or LaTeX) and record history.
+      const syntax = getSurfaceSyntax(editMode);
       const applyUserEdit = (nextText: string) => {
         // Mark as user input so the "external content change" effect does not clear history
         isUserInputRef.current = true;
@@ -84,7 +86,7 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
           }
         }
 
-      if (editMode === 'latex') {
+        if (editMode === 'latex') {
           // Cancel any pending LaTeX typing history entry to avoid duplicates/out-of-order.
           if (latexDebounceTimeoutRef.current) {
             clearTimeout(latexDebounceTimeoutRef.current);
@@ -93,7 +95,7 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
           // Prevent the LaTeX typing debounce from adding another identical entry.
           previousLatexForHistoryRef.current = nextText;
 
-          // Apply to LaTeX surface (this also re-derives XMD).
+          // Apply to LaTeX surface.
           handleContentChange(nextText);
 
           if (!changeTracking.isTracking) {
@@ -151,29 +153,7 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
           lines.push({ from: l.from, to: l.to, text: l.text });
         }
 
-        const replaceLine = (lineText: string) => {
-          const trimmed = lineText.trimStart();
-      if (editMode === 'latex') {
-            // Strip existing heading-ish commands.
-            const stripLatex = (t: string) => {
-              const m =
-                /^\\(title|section|subsection|subsubsection)\{([\s\S]*)\}\s*$/.exec(t) ||
-                /^\\(title|section|subsection|subsubsection)\{([\s\S]*)\}\s*$/.exec(t.trim());
-              if (m) return String(m[2] ?? '');
-              return t.replace(/^\s+/, '');
-            };
-            const core = stripLatex(trimmed);
-            if (level === null) return core;
-            if (level === 0) return core;
-            const cmd = level === 1 ? '\\section' : level === 2 ? '\\subsection' : '\\subsubsection';
-            return `${cmd}{${core}}`;
-          }
-
-          const stripped = lineText.replace(/^\s*(?:@\s+|#{1,6}\s+)/, '');
-          if (level === null) return stripped; // "Normal"
-          const hashes = '#'.repeat(level);
-          return `${hashes} ${stripped}`;
-        };
+        const replaceLine = (lineText: string) => syntax.replaceLineAsHeading(lineText, level);
 
         // Build new document content by editing from bottom to top to keep indices valid.
         let next = baseContent;
@@ -190,17 +170,7 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
         const doc = view.state.doc;
         const pos = typeof from === 'number' ? from : view.state.selection.main.head;
         const l = doc.lineAt(pos);
-      if (editMode === 'latex') {
-          const stripped = l.text
-            .replace(/^\s*\\(title|section|subsection|subsubsection)\{/, '')
-            .replace(/\}\s*$/, '');
-          const replaced = `\\title{${stripped}}`;
-          const next = baseContent.slice(0, l.from) + replaced + baseContent.slice(l.to);
-          applyUserEdit(next);
-          return;
-        }
-        const stripped = l.text.replace(/^\s*(?:@\s+|#{1,6}\s+)/, '');
-        const replaced = `@ ${stripped}`;
+        const replaced = syntax.replaceLineAsTitle(l.text);
         const next = baseContent.slice(0, l.from) + replaced + baseContent.slice(l.to);
         applyUserEdit(next);
       };
@@ -215,32 +185,8 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
         // Format selected text using exact positions from CodeMirror
         let formattedText = '';
         const selectedText = baseContent.slice(from!, to!);
-        switch (format) {
-          case 'bold':
-            formattedText = editMode === 'latex' ? `\\textbf{${selectedText}}` : `**${selectedText}**`;
-            break;
-          case 'italic':
-            formattedText = editMode === 'latex' ? `\\emph{${selectedText}}` : `*${selectedText}*`;
-            break;
-          case 'underline':
-            formattedText = editMode === 'latex' ? `\\underline{${selectedText}}` : `<u>${selectedText}</u>`;
-            break;
-          case 'superscript':
-            formattedText = editMode === 'latex' ? `\\textsuperscript{${selectedText}}` : `<sup>${selectedText}</sup>`;
-            break;
-          case 'subscript':
-            formattedText = editMode === 'latex' ? `\\textsubscript{${selectedText}}` : `<sub>${selectedText}</sub>`;
-            break;
-          case 'code':
-            formattedText = editMode === 'latex' ? `\\texttt{${selectedText}}` : `\`${selectedText}\``;
-            break;
-          case 'link':
-            // Use an absolute placeholder so clicking in preview doesn't navigate the SPA route
-            formattedText =
-              editMode === 'latex'
-                ? `\\href{https://example.com}{${selectedText}}`
-                : `[${selectedText}](https://example.com)`;
-            break;
+        if (format === 'bold' || format === 'italic' || format === 'underline' || format === 'superscript' || format === 'subscript' || format === 'code' || format === 'link') {
+          formattedText = syntax.wrapInline(format, selectedText);
         }
 
         // Replace using exact positions from CodeMirror
@@ -255,28 +201,8 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
 
         // No selection - insert placeholder at cursor position (fallback to end)
         let placeholder = '';
-        switch (format) {
-          case 'bold':
-            placeholder = editMode === 'latex' ? '\\textbf{}' : '****';
-            break;
-          case 'italic':
-            placeholder = editMode === 'latex' ? '\\emph{}' : '**';
-            break;
-          case 'underline':
-            placeholder = editMode === 'latex' ? '\\underline{}' : '<u></u>';
-            break;
-          case 'superscript':
-            placeholder = editMode === 'latex' ? '\\textsuperscript{}' : '<sup></sup>';
-            break;
-          case 'subscript':
-            placeholder = editMode === 'latex' ? '\\textsubscript{}' : '<sub></sub>';
-            break;
-          case 'code':
-            placeholder = editMode === 'latex' ? '\\texttt{}' : '``';
-            break;
-          case 'link':
-            placeholder = editMode === 'latex' ? '\\href{https://example.com}{}' : '[]()';
-            break;
+        if (format === 'bold' || format === 'italic' || format === 'underline' || format === 'superscript' || format === 'subscript' || format === 'code' || format === 'link') {
+          placeholder = syntax.placeholderForInline(format);
         }
         const insertPos = cmSelection ? cmSelection.head : content.length;
         const safeInsertPos = Math.min(Math.max(0, insertPos), baseContent.length);

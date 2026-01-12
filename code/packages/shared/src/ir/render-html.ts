@@ -1,5 +1,6 @@
 import { renderMarkdownToHtml } from '../editor/markdown';
 import type { DocumentNode, GridNode, IrNode } from './types';
+import { getGridSpacingPreset } from './grid-spacing';
 
 /**
  * Render HTML from IR.
@@ -15,6 +16,118 @@ export function renderIrToHtml(ir: DocumentNode): string {
 
 function renderNodes(nodes: IrNode[]): string {
   return nodes.map(renderNode).filter(Boolean).join('');
+}
+
+function forceGridCellMediaToFill(html: string): string {
+  const s = String(html ?? '');
+  if (s.trim().length === 0) return s;
+
+  const styleHasExplicitWidth = (style: string): boolean => /\b(width|max-width)\s*:/i.test(style || '');
+
+  // Make figure wrappers fill the cell so percentage-based <img width:100%> resolves properly.
+  const withFigureInner = s
+    .replace(/<span([^>]*?)class="figure-inner"([^>]*?)>/g, (m, a, b) => {
+      const attrs = `${a || ''}${b || ''}`;
+      if (/\sstyle="/i.test(attrs)) {
+        return m.replace(/\sstyle="([^"]*)"/i, (_m2, style) => {
+          // Respect explicit widths set by the markdown figure renderer (e.g. width="50%").
+          if (styleHasExplicitWidth(style)) return ` style="${style}"`;
+          const next = `${style};display:block;width:100%;max-width:100%`;
+          return ` style="${next}"`;
+        });
+      }
+      return `<span${a || ''}class="figure-inner"${b || ''} style="display:block;width:100%;max-width:100%">`;
+    })
+    .replace(/<span([^>]*?)class="figure"([^>]*?)>/g, (m, a, b) => {
+      const attrs = `${a || ''}${b || ''}`;
+      if (/\sstyle="/i.test(attrs)) {
+        return m.replace(/\sstyle="([^"]*)"/i, (_m2, style) => {
+          // Respect explicit widths set by the markdown figure renderer (e.g. width="50%").
+          if (styleHasExplicitWidth(style)) return ` style="${style}"`;
+          const next = `${style};display:block;width:100%;max-width:100%`;
+          return ` style="${next}"`;
+        });
+      }
+      return `<span${a || ''}class="figure"${b || ''} style="display:block;width:100%;max-width:100%">`;
+    });
+
+  // Ensure images expand to the available cell width (removes the blank space beside images).
+  return withFigureInner.replace(/<img([^>]*?)>/g, (m, attrs) => {
+    const a = String(attrs || '');
+    const inject = 'display:block;max-width:100%;width:100%;height:auto';
+    if (/\sstyle="/i.test(a)) {
+      return `<img${a.replace(/\sstyle="([^"]*)"/i, (_m2, style) => {
+        // If the renderer already set width/max-width, don't override it.
+        if (styleHasExplicitWidth(style)) return ` style="${style}"`;
+        return ` style="${style};${inject}"`;
+      })}>`;
+    }
+    return `<img${a} style="${inject}">`;
+  });
+}
+
+function shrinkWrapGridCellMedia(html: string): string {
+  const s = String(html ?? '');
+  if (s.trim().length === 0) return s;
+
+  const removeWidth100Only = (style: string): string => {
+    const parts = String(style || '')
+      .split(';')
+      .map((p) => p.trim())
+      .filter(Boolean);
+    const kept: string[] = [];
+    for (const decl of parts) {
+      const idx = decl.indexOf(':');
+      if (idx <= 0) {
+        kept.push(decl);
+        continue;
+      }
+      const prop = decl.slice(0, idx).trim().toLowerCase();
+      const val = decl.slice(idx + 1).trim().toLowerCase();
+      if (prop === 'width' && val === '100%') continue;
+      kept.push(decl);
+    }
+    return kept.join(';');
+  };
+
+  // In grids, our markdown figure renderer uses block placement by default and sets:
+  //   <span class="figure" style="display:block;width:100%;text-align:...">
+  // That forces grid tables to expand to full width even for center/left/right alignments.
+  //
+  // For shrink-wrap grids we want figures to hug content, so strip width:100% and use inline-block.
+  let replacedFigure = 0;
+  let replacedImg = 0;
+  let sampleImgBefore: string | null = null;
+  let sampleImgAfter: string | null = null;
+  let out = s.replace(/<span([^>]*?)class="figure"([^>]*?)>/g, (m, a, b) => {
+    const attrs = `${a || ''}${b || ''}`;
+    if (!/\sstyle="/i.test(attrs)) return m;
+    replacedFigure++;
+    return m.replace(/\sstyle="([^"]*)"/i, (_m2, style) => {
+      let next = removeWidth100Only(String(style || ''));
+      next = next.replace(/(^|;)\s*display\s*:\s*block\s*(;|$)/gi, '$1display:inline-block$2');
+      next = next.replace(/(^|;)\s*float\s*:\s*(left|right|none)\s*(;|$)/gi, '$1float:none$3');
+      // Ensure it can still shrink, but never overflow the cell.
+      if (!/\bmax-width\s*:/i.test(next)) next += ';max-width:100%';
+      if (!/\bwidth\s*:/i.test(next)) next += ';width:fit-content';
+      return ` style="${next.replace(/;;+/g, ';')}"`;
+    });
+  });
+  // Also strip width:100% from <img> inside shrink-wrapped grids.
+  out = out.replace(/<img([^>]*?)>/g, (m, attrs) => {
+    const a = String(attrs || '');
+    if (!/\sstyle="/i.test(a)) return m;
+    replacedImg++;
+    return `<img${a.replace(/\sstyle="([^"]*)"/i, (_m2, style) => {
+      const raw = String(style || '');
+      if (!sampleImgBefore) sampleImgBefore = raw;
+      let next = removeWidth100Only(raw);
+      if (!/\bmax-width\s*:/i.test(next)) next += ';max-width:100%';
+      if (!sampleImgAfter) sampleImgAfter = next;
+      return ` style="${next.replace(/;;+/g, ';')}"`;
+    })}>`;
+  });
+  return out;
 }
 
 function sanitizeDomId(raw: string): string {
@@ -165,19 +278,29 @@ function renderNode(node: IrNode): string {
           ? g.cols
           : rows.reduce((m, r) => Math.max(m, (r ?? []).length), 0) || 1;
 
+      const align = g.align ?? 'left';
+      const isFullWidth = align === 'full';
+      const spacing = getGridSpacingPreset(g.margin ?? 'medium');
+
       const borderColor = (g.style?.borderColor ?? '').trim() || 'rgba(255,255,255,0.16)';
       const borderWidthRaw = g.style?.borderWidthPx;
       const borderNone = Number.isFinite(borderWidthRaw) && (borderWidthRaw as number) === 0;
       const borderWidth = Number.isFinite(borderWidthRaw) && (borderWidthRaw ?? 0) > 0 ? Math.round(borderWidthRaw!) : 1;
       const borderStyle = (g.style?.borderStyle ?? 'solid') as 'solid' | 'dotted' | 'dashed';
       const cellBorder = borderNone ? 'none' : `${borderWidth}px ${borderStyle} ${borderColor}`;
+      const tdWidthPct = Math.round((100 / cols) * 1000) / 1000;
 
       const body = rows
         .map((row) => {
           const cells = Array.from({ length: cols }).map((_, i) => {
             const cell = row?.[i];
-            const inner = renderNodes(cell?.children ?? []);
-            return `<td style="border:${cellBorder};padding:6px 10px;vertical-align:top">${inner}</td>`;
+            // Only force "fill cell" media sizing in full-width grids.
+            // For left/center/right we want the grid to shrink-wrap to its natural content.
+            const inner = isFullWidth
+              ? forceGridCellMediaToFill(renderNodes(cell?.children ?? []))
+              : shrinkWrapGridCellMedia(renderNodes(cell?.children ?? []));
+            const widthStyle = isFullWidth ? `width:${tdWidthPct}%;` : '';
+            return `<td style="${widthStyle}border:${cellBorder};padding:${spacing.previewCellPadY}px ${spacing.previewCellPadX}px;vertical-align:top">${inner}</td>`;
           });
           return `<tr>${cells.join('')}</tr>`;
         })
@@ -185,10 +308,13 @@ function renderNode(node: IrNode): string {
 
       const caption = String(g.caption ?? '').trim();
       const capHtml = caption.length > 0 ? `<div class="xmd-grid-caption">${escapeHtml(caption)}</div>` : '';
-      const align = g.align ?? 'left';
-      const alignCss = align === 'center' ? 'text-align:center' : align === 'right' ? 'text-align:right' : 'text-align:left';
-      const margin = g.margin ?? 'medium';
-      const pad = margin === 'small' ? 6 : margin === 'large' ? 14 : 10;
+      const alignCss =
+        align === 'center'
+          ? 'text-align:center'
+          : align === 'right'
+            ? 'text-align:right'
+            : 'text-align:left';
+      const pad = spacing.outerPadPx;
       const placement = g.placement ?? 'block';
       const canFloat = placement === 'inline' && (align === 'left' || align === 'right');
       const floatCss = canFloat
@@ -197,7 +323,27 @@ function renderNode(node: IrNode): string {
       const gridId = g.label ? ` id="grid-${sanitizeDomId(g.label)}"` : '';
       // NOTE: This enables wrap-around behavior in preview. The editor surface (CodeMirror)
       // cannot do true wrap-around for replacement widgets, so we only implement it here (IR->HTML).
-      return `<div class="xmd-grid"${gridId} style="${alignCss};padding:${pad}px;${floatCss}">${capHtml}<table style="border-collapse:collapse;width:100%"><tbody>${body}</tbody></table></div>`;
+
+      // Alignment model (matches editor intent):
+      // - align="full": grid occupies full available width
+      // - align=left|center|right: grid occupies ONLY its content width (plus padding/margins), not full line width
+      //
+      // IMPORTANT: previously we wrapped `.xmd-grid` in a full-width div for alignment, which made the grid
+      // appear full-width even when the table itself was shrink-wrapped. The UX requirement is that the grid
+      // should not take extra space beyond its content unless align="full".
+      const outerCss = (() => {
+        if (isFullWidth) return `display:block;width:100%;max-width:100%;padding:${pad}px;${floatCss}`;
+        // placement=inline uses floatCss (left/right) when applicable; in that case we should not apply auto margins.
+        if (floatCss && floatCss.includes('float:')) return `display:inline-block;width:fit-content;max-width:100%;padding:${pad}px;${floatCss}`;
+        // Use display:table for reliable shrink-to-fit centering (more consistent than width:fit-content on block).
+        if (align === 'center') return `display:table;max-width:100%;margin-left:auto;margin-right:auto;padding:${pad}px;`;
+        if (align === 'right') return `display:table;max-width:100%;margin-left:auto;margin-right:0;padding:${pad}px;`;
+        return `display:table;max-width:100%;margin-left:0;margin-right:auto;padding:${pad}px;`;
+      })();
+      const tableCss = isFullWidth
+        ? 'border-collapse:collapse;width:100%;table-layout:fixed'
+        : 'border-collapse:collapse;table-layout:auto;display:inline-table';
+      return `<div class="xmd-grid"${gridId} style="${alignCss};${outerCss}">${capHtml}<table style="${tableCss}"><tbody>${body}</tbody></table></div>`;
     }
     case 'raw_xmd_block':
       return renderMarkdownToHtml(node.xmd ?? '');

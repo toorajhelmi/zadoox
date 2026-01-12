@@ -13,6 +13,10 @@ import type {
   ParagraphNode,
   RawLatexBlockNode,
   SectionNode,
+  TableNode,
+  TableStyle,
+  TableRule,
+  TableColumnAlign,
 } from '../ir/types';
 
 /**
@@ -47,7 +51,17 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
   let dateCount = 0;
   type Counters = Record<string, number>;
   const countersStack: Counters[] = [
-    { section: 0, paragraph: 0, list: 0, code_block: 0, math_block: 0, figure: 0, grid: 0, raw_latex_block: 0 },
+    {
+      section: 0,
+      paragraph: 0,
+      list: 0,
+      code_block: 0,
+      math_block: 0,
+      figure: 0,
+      grid: 0,
+      table: 0,
+      raw_latex_block: 0,
+    },
   ];
   const sectionPathStack: string[] = [];
 
@@ -67,7 +81,17 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
     }
     appendToCurrentContainer(node);
     sectionStack.push(node);
-    countersStack.push({ section: 0, paragraph: 0, list: 0, code_block: 0, math_block: 0, figure: 0, grid: 0, raw_latex_block: 0 });
+    countersStack.push({
+      section: 0,
+      paragraph: 0,
+      list: 0,
+      code_block: 0,
+      math_block: 0,
+      figure: 0,
+      grid: 0,
+      table: 0,
+      raw_latex_block: 0,
+    });
   };
   const fullPath = (leaf: string) => (sectionPathStack.length ? `${sectionPathStack.join('/')}/${leaf}` : leaf);
 
@@ -199,7 +223,7 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
         const path = fullPath(`fig[${idx}]`);
         const node: FigureNode = {
           type: 'figure',
-          id: stableNodeId({ docId, nodeType: 'figure', path }),
+          id: b.id || stableNodeId({ docId, nodeType: 'figure', path }),
           src: b.src,
           caption: b.caption,
           ...(b.label ? { label: b.label } : null),
@@ -222,9 +246,12 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
 
         const grid: GridNode = {
           type: 'grid',
-          id: stableNodeId({ docId, nodeType: 'grid', path }),
+          id: b.id || stableNodeId({ docId, nodeType: 'grid', path }),
           cols: b.cols,
           caption: b.caption,
+          ...(b.label ? { label: b.label } : null),
+          ...(b.align ? { align: b.align as any } : null),
+          ...(b.style ? { style: b.style } : null),
           rows: (b.rows ?? []).map((row, r) =>
             (row ?? []).map((cell, c) => {
               if (!cell) return { children: [] };
@@ -236,7 +263,7 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
                 label: undefined,
                 align: undefined,
                 placement: undefined,
-                width: undefined,
+                width: cell.width,
                 desc: undefined,
                 raw: '',
                 blockIndex: b.blockIndex,
@@ -262,6 +289,27 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
         };
 
         appendToCurrentContainer(grid);
+        return;
+      }
+
+      if (b.kind === 'table') {
+        const idx = (counters as any).table ?? 0;
+        (counters as any).table = idx + 1;
+        const path = fullPath(`table[${idx}]`);
+        const node: TableNode = {
+          type: 'table',
+          id: b.id || stableNodeId({ docId, nodeType: 'table', path }),
+          ...(b.caption ? { caption: b.caption } : null),
+          ...(b.label ? { label: b.label } : null),
+          header: b.header,
+          rows: b.rows,
+          ...(b.colAlign ? { colAlign: b.colAlign } : null),
+          ...(b.vRules ? { vRules: b.vRules } : null),
+          ...(b.hRules ? { hRules: b.hRules } : null),
+          ...(b.style ? { style: b.style } : null),
+          source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
+        };
+        appendToCurrentContainer(node);
         return;
       }
 
@@ -301,25 +349,35 @@ function latexGraphicPathToSrc(pathArg: string): string {
 
 function latexWidthToXmdWidth(widthRaw: string): string | undefined {
   const w = String(widthRaw ?? '').trim();
-  // Convert <n>\textwidth to a % string (best-effort).
-  const m = /^(\d+(?:\.\d+)?)\\textwidth$/.exec(w);
-  if (m) {
-    const n = Number(m[1]);
+  const toPct = (n: number) => {
     if (!Number.isFinite(n) || n <= 0) return undefined;
     const pct = n * 100;
     const pretty = pct % 1 === 0 ? String(pct.toFixed(0)) : String(pct.toFixed(1));
     return `${pretty}%`;
-  }
+  };
+
+  // Convert <n>\textwidth / <n>\linewidth / <n>\columnwidth to a % string (best-effort).
+  // Our LaTeX generator uses \textwidth for standalone figures, and \linewidth for grid cells/subfigures.
+  const mText = /^(\d+(?:\.\d+)?)\\textwidth$/.exec(w);
+  if (mText) return toPct(Number(mText[1]));
+  const mLine = /^(\d+(?:\.\d+)?)\\linewidth$/.exec(w);
+  if (mLine) return toPct(Number(mLine[1]));
+  const mCol = /^(\d+(?:\.\d+)?)\\columnwidth$/.exec(w);
+  if (mCol) return toPct(Number(mCol[1]));
+
+  // Bare symbolic widths.
+  if (w === '\\linewidth' || w === '\\textwidth' || w === '\\columnwidth') return '100%';
   // Keep absolute dims as-is.
   if (/^\d+(\.\d+)?(cm|mm|in|pt)$/.test(w)) return w;
   return undefined;
 }
 
 function parseIncludegraphicsLine(line: string): { src?: string; width?: string } {
-  const t = String(line ?? '').trim();
-  // \includegraphics[width=...]{\detokenize{assets/...}}
-  const detok = /^\\includegraphics\s*(?:\[([^\]]*)\])?\s*\{\s*\\detokenize\{([\s\S]*?)\}\s*\}\s*$/.exec(t);
-  const plain = /^\\includegraphics\s*(?:\[([^\]]*)\])?\s*\{\s*([^{}]+?)\s*\}\s*$/.exec(t);
+  const raw = String(line ?? '');
+  // \includegraphics is often wrapped (e.g. \fbox{...}, \fcolorbox{...}{...}{...}),
+  // so we must match it as a substring and not require end-of-line anchors.
+  const detok = /\\includegraphics\s*(?:\[([^\]]*)\])?\s*\{\s*\\detokenize\{([\s\S]*?)\}\s*\}/.exec(raw);
+  const plain = /\\includegraphics\s*(?:\[([^\]]*)\])?\s*\{\s*([^{}]+?)\s*\}/.exec(raw);
   const m = detok ?? plain;
   if (!m) return {};
   const opt = String(m[1] ?? '').trim();
@@ -409,6 +467,7 @@ type Block =
       placement?: string;
       width?: string;
       desc?: string;
+      id?: string;
       raw: string;
       blockIndex: number;
       startOffset: number;
@@ -418,8 +477,28 @@ type Block =
       kind: 'grid';
       cols: number;
       caption?: string;
-      rows: Array<Array<{ src: string; caption: string } | null>>;
+      label?: string;
+      align?: 'left' | 'center' | 'right';
+      style?: TableStyle;
+      rows: Array<Array<{ src: string; caption: string; width?: string } | null>>;
       raw: string;
+      id?: string;
+      blockIndex: number;
+      startOffset: number;
+      endOffset: number;
+    }
+  | {
+      kind: 'table';
+      caption?: string;
+      label?: string;
+      header: string[];
+      rows: string[][];
+      colAlign?: TableColumnAlign[];
+      vRules?: TableRule[];
+      hRules?: TableRule[];
+      style?: TableStyle;
+      raw: string;
+      id?: string;
       blockIndex: number;
       startOffset: number;
       endOffset: number;
@@ -507,6 +586,97 @@ function parseBlocks(latex: string): Block[] {
     }
     if (/^\\+maketitle(?:\s*%.*)?$/.test(trimmed)) {
       i++;
+      blockIndex++;
+      continue;
+    }
+
+    // ZX markers: lossless block boundaries for generated content.
+    const zxBegin = /^%\s*ZX-BEGIN:([a-zA-Z0-9_]+)(?:\s+id=([^\s]+))?\s*$/.exec(trimmed);
+    if (zxBegin) {
+      const zxKind = zxBegin[1]?.toLowerCase();
+      const markerId = zxBegin[2];
+      let j = i + 1;
+      while (j < lines.length) {
+        const t = lines[j].line.trim();
+        if (new RegExp(`^%\\s*ZX-END:${zxBegin[1]}(?:\\s+id=${markerId})?\\s*$`).test(t)) break;
+        j++;
+      }
+      if (j >= lines.length) {
+        // No matching end; treat as raw and continue.
+        blocks.push({ kind: 'raw', latex: line, raw: line, blockIndex, startOffset: start, endOffset: end });
+        i++;
+        continue;
+      }
+      const seg = lines.slice(i, j + 1);
+      const raw = seg.map((l) => l.line).join('\n');
+      const startOffset = seg[0]?.start ?? start;
+      const endOffset = seg[seg.length - 1]?.end ?? end;
+
+      if (zxKind === 'grid') {
+        const parsed = parseFigureGridFromLatexRaw(raw) ?? parseFigureGridFromSubfigureRaw(raw);
+        if (parsed) {
+          const style = parseTabularRuleStyleFromRaw(raw);
+          const align = parseAlignFromRaw(raw);
+          // Grids may contain many subfigure captions. The *outer* grid caption is the last \caption{...}
+          // in the environment, emitted after the tabular.
+          const capMatches = Array.from(raw.matchAll(/\\caption\{([^}]*)\}/g));
+          const lastCap = capMatches.length ? capMatches[capMatches.length - 1] : null;
+          const caption = lastCap ? latexInlineToMarkdown(String(lastCap[1] ?? '').trim()) : undefined;
+          const labMatches = Array.from(raw.matchAll(/\\label\{([^}]*)\}/g));
+          const lastLab = labMatches.length ? labMatches[labMatches.length - 1] : null;
+          const label = lastLab ? latexInlineToMarkdown(String(lastLab[1] ?? '').trim()) : undefined;
+          blocks.push({
+            kind: 'grid',
+            cols: parsed.cols,
+            rows: parsed.rows,
+            raw,
+            id: markerId,
+            ...(align ? { align } : null),
+            ...(style ? { style } : null),
+            ...(caption ? { caption } : null),
+            ...(label ? { label } : null),
+            blockIndex,
+            startOffset,
+            endOffset,
+          });
+          i = j + 1;
+          blockIndex++;
+          continue;
+        }
+      }
+      if (zxKind === 'figure') {
+        const fig = parseFigureFromRaw(raw);
+        if (fig) {
+          blocks.push({
+            ...fig,
+            id: markerId,
+            blockIndex,
+            startOffset,
+            endOffset,
+          });
+          i = j + 1;
+          blockIndex++;
+          continue;
+        }
+      }
+      if (zxKind === 'table') {
+        const t = parseTableFromRaw(raw);
+        if (t) {
+          blocks.push({
+            ...t,
+            id: markerId,
+            blockIndex,
+            startOffset,
+            endOffset,
+          });
+          i = j + 1;
+          blockIndex++;
+          continue;
+        }
+      }
+      // Unknown zx-kind or parse failure: keep raw to avoid data loss.
+      blocks.push({ kind: 'raw', latex: raw, raw, blockIndex, startOffset, endOffset });
+      i = j + 1;
       blockIndex++;
       continue;
     }
@@ -882,18 +1052,101 @@ function latexInlineToMarkdown(text: string): string {
 }
 
 function countTabularCols(specRaw: string): number {
-  const spec = String(specRaw ?? '')
-    .replace(/@\{[^}]*\}/g, '')
-    .replace(/\|/g, '')
-    .trim();
+  const spec = String(specRaw ?? '').trim();
   if (!spec) return 0;
-  const parts = spec.match(/(c|l|r|X|p\{[^}]+\}|m\{[^}]+\}|b\{[^}]+\})/g);
-  return parts ? parts.length : 0;
+
+  // IMPORTANT:
+  // Column specs can contain commands inside braces, e.g. >{\raggedright\arraybackslash}X
+  // A naive regex will count the many "r" letters inside \raggedright as 'r' columns.
+  // We must only count real column tokens at brace depth 0.
+  let cols = 0;
+  let i = 0;
+  let depth = 0;
+
+  const skipBraceGroup = () => {
+    if (spec[i] !== '{') return;
+    depth++;
+    i++;
+    while (i < spec.length && depth > 0) {
+      const ch = spec[i];
+      if (ch === '{') depth++;
+      else if (ch === '}') depth--;
+      i++;
+    }
+  };
+
+  while (i < spec.length) {
+    const ch = spec[i];
+
+    // Track brace depth
+    if (ch === '{') {
+      depth++;
+      i++;
+      continue;
+    }
+    if (ch === '}') {
+      depth = Math.max(0, depth - 1);
+      i++;
+      continue;
+    }
+
+    // Only interpret tokens at depth 0
+    if (depth !== 0) {
+      i++;
+      continue;
+    }
+
+    // Ignore separators / whitespace
+    if (ch === '|' || ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') {
+      i++;
+      continue;
+    }
+
+    // Skip modifiers like >{...} and <{...}
+    if ((ch === '>' || ch === '<') && spec[i + 1] === '{') {
+      i += 1; // now at '{'
+      skipBraceGroup();
+      continue;
+    }
+
+    // Skip @{} expressions
+    if (ch === '@' && spec[i + 1] === '{') {
+      i += 1; // now at '{'
+      skipBraceGroup();
+      continue;
+    }
+
+    // Column tokens
+    if (ch === 'c' || ch === 'l' || ch === 'r' || ch === 'X') {
+      cols++;
+      i++;
+      continue;
+    }
+
+    // p{...} / m{...} / b{...}
+    if ((ch === 'p' || ch === 'm' || ch === 'b') && spec[i + 1] === '{') {
+      cols++;
+      i += 1; // now at '{'
+      skipBraceGroup();
+      continue;
+    }
+
+    // Unknown token; advance.
+    i++;
+  }
+
+  return cols;
 }
 
 function parseCellCaptionFromTabularCell(lines: string[]): string {
   for (const ln of lines) {
     const t = String(ln ?? '').trim();
+    // Support: \caption{Caption} inside subfigure cells (figure grids).
+    const cap = /^\\caption\{([^}]*)\}(?:\s*%.*)?$/.exec(t);
+    if (cap) return latexInlineToMarkdown(String(cap[1] ?? '').trim());
+    // Support: \captionof{figure}{Caption} inside minipage cells (non-figure grids).
+    const capOf = /^\\captionof\{figure\}\{([^}]*)\}(?:\s*%.*)?$/.exec(t);
+    if (capOf) return latexInlineToMarkdown(String(capOf[1] ?? '').trim());
     // Support: \\ \scriptsize Caption
     // Support: \\ {\scriptsize Caption}
     const m1 = /^\\\\\s*\\scriptsize\s+(.+)$/.exec(t);
@@ -904,7 +1157,277 @@ function parseCellCaptionFromTabularCell(lines: string[]): string {
   return '';
 }
 
-function parseFigureGridFromSubfigureRaw(raw: string): { cols: number; rows: Array<Array<{ src: string; caption: string } | null>> } | null {
+function parseFigureFromRaw(raw: string): Extract<Block, { kind: 'figure' }> | null {
+  const lines = String(raw ?? '').split('\n');
+  let src = '';
+  let caption = '';
+  let label = '';
+  let align = 'center';
+  let placement = '';
+  let width: string | undefined;
+  let desc: string | undefined;
+
+  for (const ln of lines) {
+    const t = ln.trim();
+    if (t === '\\raggedleft') align = 'right';
+    if (t === '\\raggedright') align = 'left';
+    if (t === '\\centering') align = 'center';
+
+    const ig = parseIncludegraphicsLine(t);
+    if (!src && ig.src) src = ig.src;
+    if (!width && ig.width) width = latexWidthToXmdWidth(ig.width);
+
+    const cap = /^\\caption\{([^}]*)\}(?:\s*%.*)?$/.exec(t);
+    if (cap) caption = latexInlineToMarkdown((cap[1] ?? '').trim());
+    const lab = /^\\label\{([^}]*)\}(?:\s*%.*)?$/.exec(t);
+    if (lab) label = latexInlineToMarkdown((lab[1] ?? '').trim());
+  }
+
+  if (!src) return null;
+  return {
+    kind: 'figure',
+    src,
+    caption,
+    label: label || undefined,
+    align,
+    placement,
+    width,
+    desc,
+    raw,
+    blockIndex: 0,
+    startOffset: 0,
+    endOffset: raw.length,
+  };
+}
+
+function parseAlignFromRaw(raw: string): 'left' | 'center' | 'right' | null {
+  const lines = String(raw ?? '').split('\n');
+  for (const ln of lines) {
+    const t = String(ln ?? '').trim();
+    if (t === '\\raggedleft') return 'right';
+    if (t === '\\raggedright') return 'left';
+    if (t === '\\centering') return 'center';
+  }
+  return null;
+}
+
+function parseTabularRuleStyleFromRaw(raw: string): TableStyle | null {
+  const text = String(raw ?? '');
+  const style: TableStyle = {};
+
+  // \setlength{\arrayrulewidth}{4pt}
+  const w = /\\setlength\{\\arrayrulewidth\}\{(\d+(?:\.\d+)?)pt\}/.exec(text);
+  if (w) {
+    const n = Number(w[1]);
+    if (Number.isFinite(n) && n >= 0) style.borderWidthPx = Math.round(n);
+  }
+
+  // Extract definecolor blocks so \arrayrulecolor{NAME} can be mapped back to a CSS-ish color.
+  // Supports: \definecolor{name}{HTML}{6B7280} and \definecolor{name}{rgb}{0.1,0.2,0.3}
+  const colorMap = new Map<string, string>();
+  const defineRe = /\\definecolor\{([^}]+)\}\{(HTML|rgb)\}\{([^}]+)\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = defineRe.exec(text))) {
+    const name = String(m[1] ?? '').trim();
+    const mode = String(m[2] ?? '').trim();
+    const val = String(m[3] ?? '').trim();
+    if (!name) continue;
+    if (mode === 'HTML') {
+      const hex = val.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+      if (hex.length === 6) colorMap.set(name, `#${hex}`);
+    } else if (mode === 'rgb') {
+      const parts = val.split(',').map((s) => Number(String(s).trim()));
+      if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) {
+        const [r, g, b] = parts.map((n) => Math.max(0, Math.min(1, n)));
+        const to255 = (x: number) => Math.round(x * 255);
+        colorMap.set(name, `rgb(${to255(r)},${to255(g)},${to255(b)})`);
+      }
+    }
+  }
+
+  const rc = /\\arrayrulecolor\{([^}]+)\}/.exec(text);
+  if (rc) {
+    const name = String(rc[1] ?? '').trim();
+    if (name) style.borderColor = colorMap.get(name) ?? name;
+  }
+
+  // LaTeX can't represent dotted/dashed table rules in a simple portable way; generated output is effectively solid.
+  if (typeof style.borderWidthPx === 'number' || (style.borderColor && style.borderColor.trim().length > 0)) {
+    style.borderStyle = 'solid';
+  }
+
+  return Object.keys(style).length ? style : null;
+}
+
+function parseTableColSpecToAlignAndVRules(specRaw: string, cols: number): { colAlign: TableColumnAlign[]; vRules: TableRule[] } {
+  const spec = String(specRaw ?? '');
+  const colAlign: TableColumnAlign[] = [];
+  const vRules: TableRule[] = [];
+
+  const readBars = (s: string, idx: number) => {
+    let n = 0;
+    while (idx < s.length && s[idx] === '|') {
+      n++;
+      idx++;
+    }
+    const rule: TableRule = n >= 2 ? 'double' : n === 1 ? 'single' : 'none';
+    return { rule, idx };
+  };
+
+  const bars0 = readBars(spec, 0);
+  vRules.push(bars0.rule);
+  let i = bars0.idx;
+
+  const inferAlignFromToken = (token: string): TableColumnAlign => {
+    const t = token.replace(/\s+/g, '');
+    if (t.includes('centering')) return 'center';
+    if (t.includes('raggedleft')) return 'right';
+    return 'left';
+  };
+
+  for (let c = 0; c < cols; c++) {
+    // Find next column token end. Our generator always includes an X (tabularx) token per column.
+    const xIdx = spec.indexOf('X', i);
+    const tokenEnd = xIdx >= 0 ? xIdx + 1 : i;
+    const token = spec.slice(i, tokenEnd);
+    colAlign.push(inferAlignFromToken(token));
+    i = tokenEnd;
+    const bars = readBars(spec, i);
+    vRules.push(bars.rule);
+    i = bars.idx;
+  }
+
+  // Normalize length.
+  while (colAlign.length < cols) colAlign.push('left');
+  if (colAlign.length > cols) colAlign.length = cols;
+  while (vRules.length < cols + 1) vRules.push('none');
+  if (vRules.length > cols + 1) vRules.length = cols + 1;
+
+  return { colAlign, vRules };
+}
+
+function parseTableFromRaw(raw: string): Extract<Block, { kind: 'table' }> | null {
+  const text = String(raw ?? '');
+
+  // Regex can't reliably capture the col-spec because it contains nested braces (e.g. >{\centering\arraybackslash}X).
+  // Parse by scanning for the opening and matching braces.
+  const beginNeedle = '\\begin{tabularx}{\\linewidth}{';
+  const beginIdx = text.indexOf(beginNeedle);
+  if (beginIdx < 0) return null;
+  let pos = beginIdx + beginNeedle.length;
+  let depth = 1;
+  const colStart = pos;
+  while (pos < text.length && depth > 0) {
+    const ch = text[pos];
+    if (ch === '{') depth++;
+    else if (ch === '}') depth--;
+    pos++;
+  }
+  if (depth !== 0) return null;
+  const colSpec = text.slice(colStart, pos - 1);
+  const endNeedle = '\\end{tabularx}';
+  const endIdx = text.indexOf(endNeedle, pos);
+  if (endIdx < 0) return null;
+  const body = text.slice(pos, endIdx);
+
+  const cols = countTabularCols(colSpec);
+  if (cols <= 0) return null;
+
+  const { colAlign, vRules } = parseTableColSpecToAlignAndVRules(colSpec, cols);
+
+  const style = parseTabularRuleStyleFromRaw(raw) ?? undefined;
+
+  const captionMatch = /\\caption\{([^}]*)\}/.exec(text);
+  const labelMatch = /\\label\{([^}]*)\}/.exec(text);
+  const caption = captionMatch ? latexInlineToMarkdown(String(captionMatch[1] ?? '').trim()) : undefined;
+  const label = labelMatch ? latexInlineToMarkdown(String(labelMatch[1] ?? '').trim()) : undefined;
+
+  const lines = body
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+    // Rule/color setup lines are emitted before hlines/rows; skip them so they don't become table content.
+    .filter((l) => !/^\\arrayrulecolor\{[^}]+\}(?:\s*%.*)?$/.test(l));
+
+  const toRule = (n: number): TableRule => (n >= 2 ? 'double' : n === 1 ? 'single' : 'none');
+  const toCellText = (s: string): string => {
+    const t = String(s ?? '').trim();
+    const b = /^\\textbf\{([\s\S]*)\}$/.exec(t);
+    return latexInlineToMarkdown((b ? b[1] : t) ?? '');
+  };
+
+  const hRules: TableRule[] = [];
+  const header: string[] = [];
+  const rows: string[][] = [];
+
+  let i = 0;
+  const readHLines = () => {
+    let n = 0;
+    while (i < lines.length && lines[i] === '\\hline') {
+      n++;
+      i++;
+    }
+    return n;
+  };
+
+  // boundary 0
+  hRules.push(toRule(readHLines()));
+
+  const readRow = (): string[] | null => {
+    if (i >= lines.length) return null;
+    // Row lines are emitted as: a & b & c \\
+    const rowLine = lines[i] ?? '';
+    i++;
+    const m = /^(.*)\\\\\s*$/.exec(rowLine);
+    const core = String((m ? m[1] : rowLine) ?? '').trim();
+    if (!core) return Array.from({ length: cols }).map(() => '');
+    const parts = core.split(/&(?![^{}]*\})/).map((p) => toCellText(p));
+    while (parts.length < cols) parts.push('');
+    if (parts.length > cols) parts.length = cols;
+    return parts;
+  };
+
+  const h = readRow();
+  if (!h) return null;
+  header.push(...h);
+
+  // boundary 1
+  hRules.push(toRule(readHLines()));
+
+  // body rows + boundaries after each row
+  while (i < lines.length) {
+    const r = readRow();
+    if (!r) break;
+    rows.push(r);
+    hRules.push(toRule(readHLines()));
+  }
+
+  // Normalize hRules length: (header+rows)+1
+  const totalRows = 1 + rows.length;
+  while (hRules.length < totalRows + 1) hRules.push('none');
+  if (hRules.length > totalRows + 1) hRules.length = totalRows + 1;
+
+  return {
+    kind: 'table',
+    caption,
+    label,
+    header,
+    rows,
+    colAlign,
+    vRules,
+    hRules,
+    ...(style ? { style } : null),
+    raw,
+    blockIndex: 0,
+    startOffset: 0,
+    endOffset: raw.length,
+  };
+}
+
+function parseFigureGridFromSubfigureRaw(raw: string): {
+  cols: number;
+  rows: Array<Array<{ src: string; caption: string; width?: string } | null>>;
+} | null {
   const lines = String(raw ?? '').split('\n');
   let inSubfigure = false;
   let subfigureDepth = 0;
@@ -918,10 +1441,12 @@ function parseFigureGridFromSubfigureRaw(raw: string): { cols: number; rows: Arr
 
     let src = '';
     let cap = '';
+    let width: string | undefined;
     for (const l of cellLines) {
       const t = String(l ?? '').trim();
       const ig = parseIncludegraphicsLine(t);
       if (!src && ig.src) src = ig.src;
+      if (!width && ig.width) width = latexWidthToXmdWidth(ig.width);
       const mCap = /^\\caption\{([^}]*)\}(?:\s*%.*)?$/.exec(t);
       if (mCap) cap = latexInlineToMarkdown(String(mCap[1] ?? '').trim());
     }
@@ -929,7 +1454,7 @@ function parseFigureGridFromSubfigureRaw(raw: string): { cols: number; rows: Arr
       currentRow.push(null);
       return;
     }
-    currentRow.push({ src, caption: cap });
+    currentRow.push({ src, caption: cap, ...(width ? { width } : null) });
   };
 
   const flushRow = () => {
@@ -984,101 +1509,51 @@ function parseFigureGridFromSubfigureRaw(raw: string): { cols: number; rows: Arr
   return { cols, rows: norm };
 }
 
-function parseFigureGridFromLatexRaw(raw: string): { cols: number; rows: Array<Array<{ src: string; caption: string } | null>> } | null {
-  const lines = String(raw ?? '').split('\n');
-  // Find outer tabular and capture its content, tracking nested tabular depth.
-  let outerColSpec = '';
-  let foundOuter = false;
-  let depth = 0;
-  const captured: string[] = [];
+function parseFigureGridFromLatexRaw(raw: string): {
+  cols: number;
+  rows: Array<Array<{ src: string; caption: string; width?: string } | null>>;
+} | null {
+  const text = String(raw ?? '');
+  // Extract outer tabular spec
+  const outerMatch = /\\begin\{tabular\}\{([^}]*)\}([\s\S]*?)\\end\{tabular\}/m.exec(text);
+  if (!outerMatch) return null;
+  const outerColSpec = outerMatch[1] ?? '';
+  const body = outerMatch[2] ?? '';
+  const cols = countTabularCols(outerColSpec);
+  if (cols <= 0) return null;
 
-  for (const ln of lines) {
-    const t = String(ln ?? '').trim();
-    const beginOuter = /^\\begin\{tabular\}\{([^}]*)\}\s*$/.exec(t);
-    const isBeginTabular = t.startsWith('\\begin{tabular}');
-    const isEndTabular = t === '\\end{tabular}';
-    if (beginOuter) {
-      if (!foundOuter) {
-        foundOuter = true;
-        outerColSpec = String(beginOuter[1] ?? '');
-        depth = 1;
+  // Split rows on \\ (outside braces as best effort)
+  const rowSegments = body.split(/\\\\/);
+  const rows: Array<Array<{ src: string; caption: string; width?: string } | null>> = [];
+
+  for (const rowSeg of rowSegments) {
+    const cellsRaw = rowSeg.split(/&(?![^{}]*\})/);
+    const row: Array<{ src: string; caption: string; width?: string } | null> = [];
+    for (const cellRaw of cellsRaw) {
+      const cellText = cellRaw.split('\n').map((l) => l.trim()).filter(Boolean);
+      let src = '';
+      let width: string | undefined;
+      for (const l of cellText) {
+        const ig = parseIncludegraphicsLine(l);
+        if (ig.src) {
+          src = ig.src;
+          if (!width && ig.width) width = latexWidthToXmdWidth(ig.width);
+          break;
+        }
+      }
+      if (!src) {
+        row.push(null);
         continue;
       }
+      const cap = parseCellCaptionFromTabularCell(cellText);
+      row.push({ src, caption: cap, ...(width ? { width } : null) });
     }
-    if (foundOuter && isBeginTabular) {
-      depth++;
-      captured.push(ln);
-      continue;
-    }
-    if (isEndTabular && foundOuter) {
-      depth--;
-      if (depth <= 0) break;
-      captured.push(ln);
-      continue;
-    }
-    if (foundOuter && depth >= 1) captured.push(ln);
+    // normalize row length
+    while (row.length < cols) row.push(null);
+    if (row.length > cols) row.length = cols;
+    if (row.some((c) => c && c.src)) rows.push(row);
   }
 
-  const cols = countTabularCols(outerColSpec);
-  if (!foundOuter || cols <= 0) return null;
-  if (captured.length === 0) return null;
-
-  // Split into rows/cells using separators that our wizard emits as standalone lines:
-  // - & on its own line between cells
-  // - \\ on its own line between rows
-  const rows: Array<Array<{ src: string; caption: string } | null>> = [];
-  let currentRow: Array<{ src: string; caption: string } | null> = [];
-  let currentCell: string[] = [];
-  let innerDepth = 0;
-
-  const flushCell = () => {
-    const cellLines = currentCell.slice();
-    currentCell = [];
-
-    // Extract first includegraphics src in the cell.
-    let src = '';
-    for (const l of cellLines) {
-      const ig = parseIncludegraphicsLine(String(l ?? '').trim());
-      if (ig.src) {
-        src = ig.src;
-        break;
-      }
-    }
-    if (!src) {
-      currentRow.push(null);
-      return;
-    }
-    const cap = parseCellCaptionFromTabularCell(cellLines);
-    currentRow.push({ src, caption: cap });
-  };
-
-  const flushRow = () => {
-    if (currentCell.length > 0 || currentRow.length > 0) flushCell();
-    // Normalize row width to cols
-    while (currentRow.length < cols) currentRow.push(null);
-    if (currentRow.length > cols) currentRow = currentRow.slice(0, cols);
-    if (currentRow.length > 0) rows.push(currentRow);
-    currentRow = [];
-  };
-
-  for (const ln of captured) {
-    const t = String(ln ?? '').trim();
-    if (t.startsWith('\\begin{tabular}')) innerDepth++;
-    if (t === '\\end{tabular}') innerDepth = Math.max(0, innerDepth - 1);
-
-    if (innerDepth === 0 && t === '&') {
-      flushCell();
-      continue;
-    }
-    if (innerDepth === 0 && t === '\\\\') {
-      flushRow();
-      continue;
-    }
-    currentCell.push(ln);
-  }
-  flushRow();
-
-  // Require at least 2 images to consider it a grid (avoid changing semantics of simple figures).
   const imgCount = rows.flat().filter((x) => x && x.src).length;
   if (imgCount < 2) return null;
 

@@ -19,7 +19,8 @@ export function IrPreview({ docId, content, ir }: IrPreviewProps) {
   const htmlOverride = useMemo(() => {
     if (!content.trim()) return '';
     if (!ir) return '';
-    return renderIrToHtml(ir);
+    const html = renderIrToHtml(ir);
+    return html;
   }, [content, ir]);
 
   return <MarkdownPreview content={content} htmlOverride={htmlOverride} />;

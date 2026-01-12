@@ -150,7 +150,7 @@ function renderNode(node: IrNode): string {
       const bw = (g as { style?: { borderWidthPx?: number } }).style?.borderWidthPx;
       if (Number.isFinite(bw) && (bw as number) >= 0) headerParts.push(`borderWidth="${Math.round(bw as number)}"`);
       const align = String(g.align ?? '').trim();
-      if (align === 'left' || align === 'center' || align === 'right') headerParts.push(`align="${align}"`);
+      if (align === 'left' || align === 'center' || align === 'right' || align === 'full') headerParts.push(`align="${align}"`);
       const placement = String(g.placement ?? '').trim();
       if (placement === 'inline' || placement === 'block') headerParts.push(`placement="${placement}"`);
       const margin = String(g.margin ?? '').trim();

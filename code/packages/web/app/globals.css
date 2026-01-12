@@ -195,17 +195,6 @@ code {
   color: #9aa0a6 !important;
 }
 
-/* Figure toolbar visibility (use CSS hover so it works reliably inside grids/widgets) */
-.cm-embedded-figure-card:hover .cm-embedded-figure-toolbar {
-  opacity: 1 !important;
-  pointer-events: auto !important;
-}
-
-.cm-embedded-figure-toolbar:hover {
-  opacity: 1 !important;
-  pointer-events: auto !important;
-}
-
 /* Extra safety: inline placement uses floats; keep toolbar on top */
 .cm-embedded-figure-toolbar {
   z-index: 50;

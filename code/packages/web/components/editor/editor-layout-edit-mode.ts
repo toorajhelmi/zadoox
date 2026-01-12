@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api/client';
 import type { DocumentNode } from '@zadoox/shared';
-import { irToLatexDocument, irToXmd, parseLatexToIr, parseXmdToIr } from '@zadoox/shared';
+import { irToLatexDocument, irToXmd } from '@zadoox/shared';
 import { computeDocIrHash } from './ir-hash';
 import { ensureLatexPreambleForLatexContent } from './latex-preamble';
 
@@ -18,12 +18,12 @@ export function useEditorEditMode(params: {
   actualDocumentId: string | undefined;
   documentId: string;
   content: string;
-  ir: DocumentNode | null;
+  getCurrentIr: () => DocumentNode | null;
   documentMetadata: EditorDocMetadata | undefined;
   setDocumentMetadata: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   updateContent: (next: string) => void;
 }) {
-  const { actualDocumentId, documentId, content, ir, documentMetadata, setDocumentMetadata, updateContent } = params;
+  const { actualDocumentId, documentId, content, getCurrentIr, documentMetadata, setDocumentMetadata, updateContent } = params;
 
   const [editMode, setEditMode] = useState<EditMode>('markdown');
   const [latexDraft, setLatexDraft] = useState<string>('');
@@ -57,24 +57,30 @@ export function useEditorEditMode(params: {
     } else if (last === 'latex' && !latexDraft) {
       // If last mode is LaTeX but we have no cached latex yet, derive it from IR/XMD.
       try {
-        if (ir) setLatexDraft(irToLatexDocument(ir));
+        const currentIr = getCurrentIr();
+        if (currentIr) setLatexDraft(irToLatexDocument(currentIr));
       } catch {
         // ignore
       }
     }
-  }, [actualDocumentId, documentId, documentMetadata, editMode, ir, latexDraft]);
+  }, [actualDocumentId, documentId, documentMetadata, editMode, getCurrentIr, latexDraft]);
 
   const handleEditModeChange = useCallback(
     async (next: EditMode) => {
       if (next === editMode) return;
-      if (!actualDocumentId || actualDocumentId === 'default') {
+      if (!actualDocumentId) {
         setEditMode(next);
         didInitModeRef.current = true;
         return;
       }
 
       try {
-        const currentIr = ir ?? parseXmdToIr({ docId: actualDocumentId, xmd: content });
+        const currentIr = getCurrentIr();
+        if (!currentIr) {
+          setEditMode(next);
+          didInitModeRef.current = true;
+          return;
+        }
         const currentIrHash = computeDocIrHash(currentIr);
         const meta: EditorDocMetadata = documentMetadata ?? {};
 
@@ -107,15 +113,35 @@ export function useEditorEditMode(params: {
           },
 
           markdown: async () => {
-            let nextContent = content;
-            let nextIrHash: string | null = null;
-            try {
-              const nextIr = parseLatexToIr({ docId: actualDocumentId, latex: latexDraft });
-              nextContent = irToXmd(nextIr);
-              nextIrHash = computeDocIrHash(nextIr);
-            } catch {
-              // If conversion fails, keep the last known XMD content (never block switching).
+            // Fast-path reuse: if we have matching hashes and the LaTeX draft wasn't changed,
+            // do not regenerate XMD (avoids lossy roundtrip for grids/tables).
+            const cachedLatex = typeof meta.latex === 'string' ? meta.latex : '';
+            const cachedLatexIrHash = typeof meta.latexIrHash === 'string' ? meta.latexIrHash : null;
+            const cachedXmdIrHash = typeof meta.xmdIrHash === 'string' ? meta.xmdIrHash : null;
+            const latexUnchanged = cachedLatex && cachedLatex === latexDraft;
+            const hashesMatch = cachedLatexIrHash && cachedXmdIrHash && cachedLatexIrHash === cachedXmdIrHash;
+            if (latexUnchanged && hashesMatch) {
+              setEditMode('markdown');
+              didInitModeRef.current = true;
+              const nextMeta: EditorDocMetadata = {
+                ...meta,
+                lastEditedFormat: 'markdown' as const,
+              };
+              setDocumentMetadata(nextMeta);
+              await api.documents.update(actualDocumentId, {
+                content,
+                metadata: nextMeta,
+                changeType: 'manual-save',
+                changeDescription: 'Switched editor to Markdown',
+              });
+              return;
             }
+
+            // Canonical IR is always kept up to date while editing. Switching modes should never parse;
+            // it only serializes the current canonical IR.
+            const nextIrHash = currentIrHash || null;
+            const canReuseXmd = Boolean(nextIrHash && cachedXmdIrHash && cachedXmdIrHash === nextIrHash);
+            const nextContent = canReuseXmd ? content : irToXmd(currentIr);
 
             setEditMode('markdown');
             didInitModeRef.current = true;
@@ -128,7 +154,7 @@ export function useEditorEditMode(params: {
             };
             setDocumentMetadata(nextMeta);
 
-            const contentChanged = nextContent !== content;
+            const contentChanged = !canReuseXmd && nextContent !== content;
 
             if (contentChanged) updateContent(nextContent);
             await api.documents.update(actualDocumentId, {
@@ -147,7 +173,7 @@ export function useEditorEditMode(params: {
         didInitModeRef.current = true;
       }
     },
-    [actualDocumentId, content, documentMetadata, editMode, ir, latexDraft, setDocumentMetadata, updateContent]
+    [actualDocumentId, content, documentMetadata, editMode, getCurrentIr, latexDraft, setDocumentMetadata, updateContent]
   );
 
   return { editMode, setEditMode, latexDraft, setLatexDraft, handleEditModeChange };

@@ -6,5 +6,6 @@ export * from './events';
 export * from './outline';
 export * from './to-xmd';
 export * from './render-html';
+export * from './grid-spacing';
 
 

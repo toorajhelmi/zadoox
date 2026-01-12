@@ -12,9 +12,7 @@ export function useEditorKeyboardShortcuts(opts: {
   changeTracking: { isTracking: boolean; cancelTracking: () => void };
 
   // routing
-  editMode: EditMode;
   undoRedo: { undo: () => void; redo: () => void };
-  latexUndoRedo: { undo: () => void; redo: () => void };
 
   // view/edit format switches
   setViewMode: (v: ViewMode) => void;
@@ -46,8 +44,7 @@ export function useEditorKeyboardShortcuts(opts: {
         if (opts.changeTracking.isTracking) {
           opts.changeTracking.cancelTracking();
         }
-        if (opts.editMode === 'latex') opts.latexUndoRedo.undo();
-        else opts.undoRedo.undo();
+        opts.undoRedo.undo();
         return;
       }
 
@@ -57,8 +54,7 @@ export function useEditorKeyboardShortcuts(opts: {
         if (opts.changeTracking.isTracking) {
           opts.changeTracking.cancelTracking();
         }
-        if (opts.editMode === 'latex') opts.latexUndoRedo.redo();
-        else opts.undoRedo.redo();
+        opts.undoRedo.redo();
         return;
       }
 
