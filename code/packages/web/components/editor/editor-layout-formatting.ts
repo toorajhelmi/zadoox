@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import type { EditorView } from '@codemirror/view';
 import type { FormatType } from './floating-format-menu';
 import { getSurfaceSyntax } from './editor-surface';
+import { ensureLatexPreambleForLatexContent } from './latex-preamble';
 
 type CursorPosition = { line: number; column: number } | null;
 type SelectionRefValue = { from: number; to: number; text: string } | null;
@@ -92,15 +93,21 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
             clearTimeout(latexDebounceTimeoutRef.current);
             latexDebounceTimeoutRef.current = null;
           }
+          // Keep LaTeX history + "external change" detection consistent with the actual LaTeX surface.
+          // EditorLayout will also run `ensureLatexPreambleForLatexContent` on change; do it here too so:
+          // - undo history entries match `latexDraft`
+          // - previousLatexForHistoryRef matches the final draft, preventing the history-clear effect
+          const ensured = ensureLatexPreambleForLatexContent(nextText);
+          const nextLatex = ensured.latex;
           // Prevent the LaTeX typing debounce from adding another identical entry.
-          previousLatexForHistoryRef.current = nextText;
+          previousLatexForHistoryRef.current = nextLatex;
 
           // Apply to LaTeX surface.
-          handleContentChange(nextText);
+          handleContentChange(nextLatex);
 
           if (!changeTracking.isTracking) {
             latexUndoRedo.addToHistory({
-              content: nextText,
+              content: nextLatex,
               cursorPosition: currentCursorPos,
               selection: currentSelectionRef.current,
               timestamp: Date.now(),
