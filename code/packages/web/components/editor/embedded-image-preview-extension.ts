@@ -29,8 +29,9 @@ const toolbarKeepVisibleUntilByKey = new Map<string, number>();
 function dispatchPreserveSelectionNoScroll(view: EditorView, spec: TransactionSpec): void {
   // Preserve scroll position explicitly. In split view, DOM/layout updates can cause CodeMirror
   // to re-scroll to the end if the browser selection/focus shifts during widget interactions.
-  const prevScrollTop = view.scrollDOM.scrollTop;
-  const prevScrollLeft = view.scrollDOM.scrollLeft;
+  const scrollEl = (view as unknown as { scrollDOM?: HTMLElement | null }).scrollDOM ?? null;
+  const prevScrollTop = scrollEl ? (scrollEl as any).scrollTop ?? 0 : 0;
+  const prevScrollLeft = scrollEl ? (scrollEl as any).scrollLeft ?? 0 : 0;
   const s = spec as any;
   view.dispatch({
     ...spec,
@@ -40,8 +41,9 @@ function dispatchPreserveSelectionNoScroll(view: EditorView, spec: TransactionSp
   // Restore scroll on next frame (after DOM/viewport measurement settles).
   requestAnimationFrame(() => {
     try {
-      view.scrollDOM.scrollTop = prevScrollTop;
-      view.scrollDOM.scrollLeft = prevScrollLeft;
+      if (!scrollEl) return;
+      (scrollEl as any).scrollTop = prevScrollTop;
+      (scrollEl as any).scrollLeft = prevScrollLeft;
     } catch {
       // ignore
     }
