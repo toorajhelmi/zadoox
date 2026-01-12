@@ -27,11 +27,24 @@ type ToolbarMenuItem = { label: string; svg?: string; selected?: boolean; onSele
 const toolbarKeepVisibleUntilByKey = new Map<string, number>();
 
 function dispatchPreserveSelectionNoScroll(view: EditorView, spec: TransactionSpec): void {
+  // Preserve scroll position explicitly. In split view, DOM/layout updates can cause CodeMirror
+  // to re-scroll to the end if the browser selection/focus shifts during widget interactions.
+  const prevScrollTop = view.scrollDOM.scrollTop;
+  const prevScrollLeft = view.scrollDOM.scrollLeft;
   const s = spec as any;
   view.dispatch({
     ...spec,
     ...(s.selection ? {} : { selection: view.state.selection }),
     ...(s.scrollIntoView === undefined ? { scrollIntoView: false } : {}),
+  });
+  // Restore scroll on next frame (after DOM/viewport measurement settles).
+  requestAnimationFrame(() => {
+    try {
+      view.scrollDOM.scrollTop = prevScrollTop;
+      view.scrollDOM.scrollLeft = prevScrollLeft;
+    } catch {
+      // ignore
+    }
   });
 }
 
@@ -243,6 +256,31 @@ function createToolbarShell(params: {
   let pinned = false;
   let hideTimer: number | null = null;
 
+  const adjustWithinViewport = () => {
+    try {
+      // If caller constrained both sides, do not override.
+      if (params.left && params.right) return;
+      const r = hoverBar.getBoundingClientRect();
+      const pad = 8;
+      const vw = window.innerWidth || 0;
+      if (!vw) return;
+
+      // If it overflows left, anchor to the left so it expands rightwards.
+      if (r.left < pad) {
+        hoverBar.style.left = '8px';
+        hoverBar.style.right = 'auto';
+        return;
+      }
+      // If it overflows right, anchor to the right so it expands leftwards.
+      if (r.right > vw - pad) {
+        hoverBar.style.right = '8px';
+        hoverBar.style.left = 'auto';
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   const applyVisible = (visible: boolean) => {
     if (showMode === 'opacity') {
       hoverBar.style.transition = 'opacity 120ms ease';
@@ -265,6 +303,8 @@ function createToolbarShell(params: {
       hideTimer = null;
     }
     applyVisible(true);
+    // After it becomes visible, ensure it isn't clipped off-screen (common for narrow figures near edges).
+    requestAnimationFrame(adjustWithinViewport);
   };
 
   const hideSoon = () => {

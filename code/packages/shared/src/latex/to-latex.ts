@@ -501,9 +501,25 @@ function wrapWithBorder(content: string, border: { enabled: boolean; widthPt: st
   return parts.join('\n');
 }
 
-function wrapWithZxMarkers(kind: string, id: string | undefined, body: string): string {
-  const markerId = id ? ` id=${id}` : '';
-  return [`% ZX-BEGIN:${kind}${markerId}`, body, `% ZX-END:${kind}${markerId}`].join('\n');
+function wrapWithZxMarkers(
+  kind: string,
+  id: string | undefined,
+  body: string,
+  attrs?: Record<string, string | undefined | null>
+): string {
+  const parts: string[] = [];
+  if (id) parts.push(`id=${id}`);
+  if (attrs) {
+    for (const [k, v] of Object.entries(attrs)) {
+      const vv = String(v ?? '').trim();
+      if (!vv) continue;
+      // Keep marker parsing simple: tokens are whitespace-separated key=value pairs, no quoting.
+      // Values should be short enums (e.g. align=left, placement=inline).
+      parts.push(`${k}=${vv}`);
+    }
+  }
+  const marker = parts.length ? ` ${parts.join(' ')}` : '';
+  return [`% ZX-BEGIN:${kind}${marker}`, body, `% ZX-END:${kind}${marker}`].join('\n');
 }
 
 function renderGrid(grid: GridNode): string {
@@ -559,10 +575,16 @@ function renderGrid(grid: GridNode): string {
     if (gridCaption.length > 0) wrapper.push(`\\caption{${escapeLatexText(gridCaption)}}`);
     if (gridLabel.length > 0) wrapper.push(`\\label{${escapeLatexText(gridLabel)}}`);
     wrapper.push('\\end{table}');
-    return wrapWithZxMarkers('grid', grid.id, wrapper.join('\n'));
+    return wrapWithZxMarkers('grid', grid.id, wrapper.join('\n'), {
+      align: grid.align,
+      placement: grid.placement,
+    });
   }
 
-  return wrapWithZxMarkers('grid', grid.id, out.join('\n'));
+  return wrapWithZxMarkers('grid', grid.id, out.join('\n'), {
+    align: grid.align,
+    placement: grid.placement,
+  });
 }
 
 function renderFigureGrid(grid: GridNode): string {
@@ -640,7 +662,10 @@ function renderFigureGrid(grid: GridNode): string {
   if (gridLabel.length > 0) out.push(`\\label{${escapeLatexText(gridLabel)}}`);
 
   out.push('\\end{figure}');
-  return wrapWithZxMarkers('grid', grid.id, out.join('\n'));
+  return wrapWithZxMarkers('grid', grid.id, out.join('\n'), {
+    align: grid.align,
+    placement: grid.placement,
+  });
 }
 
 function renderFigureInFigureGrid(node: FigureNode): string {

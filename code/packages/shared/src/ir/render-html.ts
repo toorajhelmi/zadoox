@@ -110,6 +110,25 @@ function shrinkWrapGridCellMedia(html: string): string {
       return ` style="${next.replace(/;;+/g, ';')}"`;
     });
   });
+  // In shrink-wrap grids, percent widths like width:50% should behave like "scale intrinsic size",
+  // NOT "half of the table cell". We can't know intrinsic size here, so we tag the element so the
+  // client preview can convert it to a pixel width after the image loads.
+  out = out.replace(/<span([^>]*?)class="figure-inner"([^>]*?)>/g, (m, a, b) => {
+    const attrs = `${a || ''}${b || ''}`;
+    const styleMatch = /\sstyle="([^"]*)"/i.exec(attrs);
+    if (!styleMatch) return m;
+    const style = String(styleMatch[1] || '');
+    const pct = /(^|;)\s*width\s*:\s*(\d+(?:\.\d+)?)%\s*(;|$)/i.exec(style);
+    if (!pct) return m;
+    const n = Number(pct[2]);
+    if (!Number.isFinite(n) || n <= 0 || n >= 100) return m;
+    const nextStyle = style.replace(pct[0], `${pct[1]}width:auto${pct[3]}`);
+    const injected = m
+      .replace(/\sstyle="([^"]*)"/i, ` style="${nextStyle.replace(/;;+/g, ';')}"`)
+      // add data-zx-width-pct if not already present
+      .replace(/>$/, ` data-zx-width-pct="${String(Math.round(n))}">`);
+    return injected;
+  });
   // Also strip width:100% from <img> inside shrink-wrapped grids.
   out = out.replace(/<img([^>]*?)>/g, (m, attrs) => {
     const a = String(attrs || '');
@@ -336,9 +355,12 @@ function renderNode(node: IrNode): string {
         if (align === 'right') return `display:table;max-width:100%;margin-left:auto;margin-right:0;padding:${pad}px;`;
         return `display:table;max-width:100%;margin-left:0;margin-right:auto;padding:${pad}px;`;
       })();
+      // IMPORTANT: preview CSS (both in-app and publish) sets `.markdown-content table { width: 100% }`.
+      // For shrink-wrapped grids (left/center/right), we must override that, otherwise the table becomes
+      // full-width and alignment is impossible.
       const tableCss = isFullWidth
         ? 'border-collapse:collapse;width:100%;table-layout:fixed'
-        : 'border-collapse:collapse;table-layout:auto;display:inline-table';
+        : 'border-collapse:collapse;table-layout:auto;display:inline-table;width:auto;max-width:100%';
       return `<div class="xmd-grid"${gridId} style="${alignCss};${outerCss}">${capHtml}<table style="${tableCss}"><tbody>${body}</tbody></table></div>`;
     }
     case 'raw_xmd_block':

@@ -478,7 +478,8 @@ type Block =
       cols: number;
       caption?: string;
       label?: string;
-      align?: 'left' | 'center' | 'right';
+      align?: 'left' | 'center' | 'right' | 'full';
+      placement?: 'inline' | 'block';
       style?: TableStyle;
       rows: Array<Array<{ src: string; caption: string; width?: string } | null>>;
       raw: string;
@@ -591,14 +592,28 @@ function parseBlocks(latex: string): Block[] {
     }
 
     // ZX markers: lossless block boundaries for generated content.
-    const zxBegin = /^%\s*ZX-BEGIN:([a-zA-Z0-9_]+)(?:\s+id=([^\s]+))?\s*$/.exec(trimmed);
+    const zxBegin = /^%\s*ZX-BEGIN:([a-zA-Z0-9_]+)(?:\s+(.+?))?\s*$/.exec(trimmed);
     if (zxBegin) {
       const zxKind = zxBegin[1]?.toLowerCase();
-      const markerId = zxBegin[2];
+      const tokenStr = String(zxBegin[2] ?? '').trim();
+      const tokens: Record<string, string> = {};
+      if (tokenStr) {
+        for (const tok of tokenStr.split(/\s+/g)) {
+          const eq = tok.indexOf('=');
+          if (eq <= 0) continue;
+          const k = tok.slice(0, eq).trim();
+          const v = tok.slice(eq + 1).trim();
+          if (!k || !v) continue;
+          tokens[k] = v;
+        }
+      }
+      const markerId = tokens.id;
       let j = i + 1;
       while (j < lines.length) {
         const t = lines[j].line.trim();
-        if (new RegExp(`^%\\s*ZX-END:${zxBegin[1]}(?:\\s+id=${markerId})?\\s*$`).test(t)) break;
+        // ZX-END matches on kind and (optionally) exact same token string.
+        // This stays compatible with older markers that only had id=... (or nothing).
+        if (new RegExp(`^%\\s*ZX-END:${zxBegin[1]}(?:\\s+.*)?\\s*$`).test(t)) break;
         j++;
       }
       if (j >= lines.length) {
@@ -616,7 +631,17 @@ function parseBlocks(latex: string): Block[] {
         const parsed = parseFigureGridFromLatexRaw(raw) ?? parseFigureGridFromSubfigureRaw(raw);
         if (parsed) {
           const style = parseTabularRuleStyleFromRaw(raw);
-          const align = parseAlignFromRaw(raw);
+          const alignFromToken = (() => {
+            const a = String(tokens.align ?? '').trim().toLowerCase();
+            if (a === 'left' || a === 'center' || a === 'right' || a === 'full') return a as 'left' | 'center' | 'right' | 'full';
+            return null;
+          })();
+          const align = alignFromToken ?? parseAlignFromRaw(raw);
+          const placement = (() => {
+            const p = String(tokens.placement ?? '').trim().toLowerCase();
+            if (p === 'inline' || p === 'block') return p as 'inline' | 'block';
+            return undefined;
+          })();
           // Grids may contain many subfigure captions. The *outer* grid caption is the last \caption{...}
           // in the environment, emitted after the tabular.
           const capMatches = Array.from(raw.matchAll(/\\caption\{([^}]*)\}/g));
@@ -632,6 +657,7 @@ function parseBlocks(latex: string): Block[] {
             raw,
             id: markerId,
             ...(align ? { align } : null),
+            ...(placement ? { placement } : null),
             ...(style ? { style } : null),
             ...(caption ? { caption } : null),
             ...(label ? { label } : null),
