@@ -48,7 +48,7 @@ type Block =
       kind: 'grid';
       cols?: number;
       caption?: string;
-      align?: 'left' | 'center' | 'right';
+      align?: 'left' | 'center' | 'right' | 'full';
       placement?: 'block' | 'inline';
       margin?: 'small' | 'medium' | 'large';
       body: string;
@@ -575,6 +575,8 @@ function parseBlocks(xmd: string): Block[] {
           const align =
             alignRaw === 'left' || alignRaw === 'center' || alignRaw === 'right'
               ? (alignRaw as 'left' | 'center' | 'right')
+              : alignRaw === 'full' || alignRaw === 'fullwidth' || alignRaw === 'full-width'
+                ? ('full' as const)
               : undefined;
           const placementRaw = String(attrs.placement ?? '').trim().toLowerCase();
           const placement =

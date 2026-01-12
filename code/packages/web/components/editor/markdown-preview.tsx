@@ -259,6 +259,73 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
     }
   }, []);
 
+  const applyGridIntrinsicPercentSizing = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const inners = Array.from(container.querySelectorAll('span.figure-inner')) as HTMLSpanElement[];
+    if (inners.length === 0) return;
+
+    const pctFromStyle = (s: string): number | null => {
+      const t = String(s || '');
+      const m = /\b(?:width|max-width)\s*:\s*(\d+(?:\.\d+)?)%\b/i.exec(t);
+      if (!m) return null;
+      const n = Number(m[1]);
+      if (!Number.isFinite(n) || n <= 0 || n >= 100) return null;
+      return Math.round(n);
+    };
+
+    for (const inner of inners) {
+      const inGrid = Boolean(inner.closest('.xmd-grid'));
+      if (!inGrid) continue;
+
+      const pct =
+        (() => {
+          const tagged = inner.getAttribute('data-zx-width-pct');
+          const nTagged = tagged ? Number(tagged) : NaN;
+          if (Number.isFinite(nTagged) && nTagged > 0 && nTagged < 100) return Math.round(nTagged);
+          const fromInner = pctFromStyle(inner.getAttribute('style') || '');
+          if (fromInner) return fromInner;
+          const img0 = inner.querySelector('img') as HTMLImageElement | null;
+          const fromImg = img0 ? pctFromStyle(img0.getAttribute('style') || '') : null;
+          return fromImg;
+        })() ?? NaN;
+      if (!Number.isFinite(pct) || pct <= 0 || pct >= 100) continue;
+
+      const img = inner.querySelector('img') as HTMLImageElement | null;
+      if (!img) continue;
+
+      const apply = () => {
+        const nw = img.naturalWidth || 0;
+        if (!Number.isFinite(nw) || nw <= 0) return;
+
+        // Match MD edit mode behavior:
+        // - % is intrinsic scaling
+        // - cap to available width (use the grid width when available)
+        const grid = inner.closest('.xmd-grid') as HTMLElement | null;
+        const baseW = grid ? grid.getBoundingClientRect().width : container.getBoundingClientRect().width;
+        const maxW = Math.max(1, Math.floor(baseW - 32));
+        const target = Math.max(1, Math.round((nw * pct) / 100));
+        const px = Math.min(target, maxW);
+
+        inner.style.width = `${px}px`;
+        inner.style.maxWidth = `${px}px`;
+        img.style.width = `${px}px`;
+        img.style.maxWidth = `${px}px`;
+        img.style.height = 'auto';
+      };
+
+      // Apply immediately if possible.
+      if (img.complete) apply();
+
+      // Ensure we re-apply when the real asset image loads (src may be swapped from placeholder).
+      if (img.getAttribute('data-zx-pct-listener') !== '1') {
+        img.setAttribute('data-zx-pct-listener', '1');
+        img.addEventListener('load', apply);
+      }
+    }
+  }, []);
+
   const resolveAssetImages = useCallback(async () => {
     const container = containerRef.current;
     if (!container) return;
@@ -305,6 +372,7 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
           // After setting the final src, clamp caption width to the rendered image width.
           // (The browser may scale the image by max-height, so measured width is what matters.)
           clampFigureCaptionsToImageWidth();
+          applyGridIntrinsicPercentSizing();
         } catch {
           // ignore
         } finally {
@@ -312,7 +380,7 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
         }
       })
     );
-  }, [accessToken, clampFigureCaptionsToImageWidth]);
+  }, [accessToken, clampFigureCaptionsToImageWidth, applyGridIntrinsicPercentSizing]);
 
   useEffect(() => {
     void resolveAssetImages();
@@ -327,18 +395,20 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
     const obs = new MutationObserver(() => {
       void resolveAssetImages();
       clampFigureCaptionsToImageWidth();
+      applyGridIntrinsicPercentSizing();
     });
     obs.observe(container, { childList: true, subtree: true });
 
     return () => {
       obs.disconnect();
     };
-  }, [resolveAssetImages, clampFigureCaptionsToImageWidth]);
+  }, [resolveAssetImages, clampFigureCaptionsToImageWidth, applyGridIntrinsicPercentSizing]);
 
   // Also clamp captions after each HTML change (non-asset images / already-loaded images).
   useEffect(() => {
     clampFigureCaptionsToImageWidth();
-  }, [html, clampFigureCaptionsToImageWidth]);
+    applyGridIntrinsicPercentSizing();
+  }, [html, clampFigureCaptionsToImageWidth, applyGridIntrinsicPercentSizing]);
 
   // Cleanup blob URLs + in-flight fetch on unmount
   useEffect(() => {

@@ -1,4 +1,5 @@
 import type { DocumentNode, FigureNode, GridNode, IrNode, TableNode, TableRule, TableStyle } from '../ir/types';
+import { getGridSpacingPreset } from '../ir/grid-spacing';
 
 /**
  * IR -> LaTeX string (best-effort, Phase 12).
@@ -301,10 +302,10 @@ function renderNode(node: IrNode): string {
       if (caption.trim().length > 0) lines.push(`\\caption{${caption}}`);
       if (label.trim().length > 0) lines.push(`\\label{${label}}`);
       lines.push('\\end{figure}');
-      return lines.join('\n');
+      return wrapWithZxMarkers('figure', node.id, lines.join('\n'));
     }
     case 'table': {
-      return renderTable(node as unknown as TableNode);
+      return wrapWithZxMarkers('table', (node as unknown as TableNode).id, renderTable(node as unknown as TableNode));
     }
     case 'grid': {
       const g = node as unknown as GridNode;
@@ -500,10 +501,32 @@ function wrapWithBorder(content: string, border: { enabled: boolean; widthPt: st
   return parts.join('\n');
 }
 
+function wrapWithZxMarkers(
+  kind: string,
+  id: string | undefined,
+  body: string,
+  attrs?: Record<string, string | undefined | null>
+): string {
+  const parts: string[] = [];
+  if (id) parts.push(`id=${id}`);
+  if (attrs) {
+    for (const [k, v] of Object.entries(attrs)) {
+      const vv = String(v ?? '').trim();
+      if (!vv) continue;
+      // Keep marker parsing simple: tokens are whitespace-separated key=value pairs, no quoting.
+      // Values should be short enums (e.g. align=left, placement=inline).
+      parts.push(`${k}=${vv}`);
+    }
+  }
+  const marker = parts.length ? ` ${parts.join(' ')}` : '';
+  return [`% ZX-BEGIN:${kind}${marker}`, body, `% ZX-END:${kind}${marker}`].join('\n');
+}
+
 function renderGrid(grid: GridNode): string {
   const figureOnly = gridIsFigureOnly([grid]);
   if (figureOnly) return renderFigureGrid(grid);
 
+  const spacing = getGridSpacingPreset(grid.margin ?? 'medium');
   const rows = grid.rows ?? [];
   const cols = grid.cols && Number.isFinite(grid.cols) && grid.cols > 0 ? grid.cols : rows.reduce((m, r) => Math.max(m, (r ?? []).length), 0);
   const safeCols = cols > 0 ? cols : 1;
@@ -520,6 +543,8 @@ function renderGrid(grid: GridNode): string {
   out.push('{');
   for (const ln of styleSetup.preambleLines) out.push(ln);
   if (ruleWidthLine) out.push(ruleWidthLine);
+  out.push(`\\setlength{\\tabcolsep}{${spacing.latexTabcolsepPt}pt}`);
+  out.push(`\\renewcommand{\\arraystretch}{${spacing.latexArraystretch.toFixed(2)}}`);
   out.push(`\\begin{tabularx}{\\linewidth}{${borderNone ? '' : '|'}${colSpec}${borderNone ? '' : '|' }}`);
   // IMPORTANT: \arrayrulecolor expands to \noalign, so it must be used *inside* the tabular alignment.
   if (ruleColorName) out.push(`\\arrayrulecolor{${ruleColorName}}`);
@@ -550,10 +575,16 @@ function renderGrid(grid: GridNode): string {
     if (gridCaption.length > 0) wrapper.push(`\\caption{${escapeLatexText(gridCaption)}}`);
     if (gridLabel.length > 0) wrapper.push(`\\label{${escapeLatexText(gridLabel)}}`);
     wrapper.push('\\end{table}');
-    return wrapper.join('\n');
+    return wrapWithZxMarkers('grid', grid.id, wrapper.join('\n'), {
+      align: grid.align,
+      placement: grid.placement,
+    });
   }
 
-  return out.join('\n');
+  return wrapWithZxMarkers('grid', grid.id, out.join('\n'), {
+    align: grid.align,
+    placement: grid.placement,
+  });
 }
 
 function renderFigureGrid(grid: GridNode): string {
@@ -563,12 +594,12 @@ function renderFigureGrid(grid: GridNode): string {
       ? grid.cols
       : rows.reduce((m, r) => Math.max(m, (r ?? []).length), 0) || 1;
 
-  const margin = grid.margin ?? 'medium';
+  const spacing = getGridSpacingPreset(grid.margin ?? 'medium');
   // Compute a reasonable subfigure width. Keep a little gutter so \hfill has room.
-  const gutter = margin === 'small' ? 0.005 : margin === 'large' ? 0.06 : 0.02;
+  const gutter = spacing.latexFigureGridGutter;
   const usable = Math.max(0.5, 1 - gutter * (cols - 1));
   const w = usable / cols;
-  const rowVspace = margin === 'small' ? '0.25em' : margin === 'large' ? '1.75em' : '0.75em';
+  const rowVspace = spacing.latexFigureGridRowVspace;
 
   const out: string[] = [];
   const align = grid.align ?? 'center';
@@ -589,6 +620,8 @@ function renderFigureGrid(grid: GridNode): string {
   out.push('{');
   for (const ln of styleSetup.preambleLines) out.push(ln);
   if (ruleWidthLine) out.push(ruleWidthLine);
+  out.push(`\\setlength{\\tabcolsep}{${spacing.latexTabcolsepPt}pt}`);
+  out.push(`\\renewcommand{\\arraystretch}{${spacing.latexArraystretch.toFixed(2)}}`);
 
   // IMPORTANT: Use a tabular to force stable row/column layout.
   // This avoids edge cases where \hfill + paragraphing can stack subfigures vertically in some templates.
@@ -629,7 +662,10 @@ function renderFigureGrid(grid: GridNode): string {
   if (gridLabel.length > 0) out.push(`\\label{${escapeLatexText(gridLabel)}}`);
 
   out.push('\\end{figure}');
-  return out.join('\n');
+  return wrapWithZxMarkers('grid', grid.id, out.join('\n'), {
+    align: grid.align,
+    placement: grid.placement,
+  });
 }
 
 function renderFigureInFigureGrid(node: FigureNode): string {

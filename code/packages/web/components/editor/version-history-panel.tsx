@@ -293,17 +293,6 @@ export function VersionHistoryPanel({ documentId, onRollback, onVersionSelect, r
               <div className="text-sm font-semibold text-vscode-text">
                 Restore version {confirmVersionNumber !== null ? `v${confirmVersionNumber}` : ''}
               </div>
-              <button
-                type="button"
-                className="text-xs px-2 py-1 rounded border border-vscode-border bg-vscode-buttonBg text-vscode-text hover:bg-vscode-buttonHoverBg transition-colors"
-                onClick={() => {
-                  setConfirmOpen(false);
-                  setConfirmVersionNumber(null);
-                }}
-                disabled={rollingBack !== null}
-              >
-                Close
-              </button>
             </div>
 
             <div className="px-4 py-3 text-xs text-vscode-text-secondary">

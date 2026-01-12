@@ -1,8 +1,9 @@
-import { StateEffect, StateField } from '@codemirror/state';
+import { StateEffect, StateField, type TransactionSpec } from '@codemirror/state';
 import { Decoration, type DecorationSet, WidgetType, EditorView } from '@codemirror/view';
 import { api } from '@/lib/api/client';
 import { createClient } from '@/lib/supabase/client';
 import { createAiIconEl } from '@/components/icons';
+import { getGridSpacingPreset } from '@zadoox/shared';
 import { finalizeComponentModelUpdate } from './component-ai-pipeline';
 import {
   buildComponentContext,
@@ -25,6 +26,30 @@ type ToolbarMenuItem = { label: string; svg?: string; selected?: boolean; onSele
 
 const toolbarKeepVisibleUntilByKey = new Map<string, number>();
 
+function dispatchPreserveSelectionNoScroll(view: EditorView, spec: TransactionSpec): void {
+  // Preserve scroll position explicitly. In split view, DOM/layout updates can cause CodeMirror
+  // to re-scroll to the end if the browser selection/focus shifts during widget interactions.
+  const scrollEl = (view as unknown as { scrollDOM?: HTMLElement | null }).scrollDOM ?? null;
+  const prevScrollTop = scrollEl ? (scrollEl as any).scrollTop ?? 0 : 0;
+  const prevScrollLeft = scrollEl ? (scrollEl as any).scrollLeft ?? 0 : 0;
+  const s = spec as any;
+  view.dispatch({
+    ...spec,
+    ...(s.selection ? {} : { selection: view.state.selection }),
+    ...(s.scrollIntoView === undefined ? { scrollIntoView: false } : {}),
+  });
+  // Restore scroll on next frame (after DOM/viewport measurement settles).
+  requestAnimationFrame(() => {
+    try {
+      if (!scrollEl) return;
+      (scrollEl as any).scrollTop = prevScrollTop;
+      (scrollEl as any).scrollLeft = prevScrollLeft;
+    } catch {
+      // ignore
+    }
+  });
+}
+
 function bumpToolbarKeepVisible(key: string, ms = 1200): void {
   toolbarKeepVisibleUntilByKey.set(key, Date.now() + ms);
 }
@@ -43,6 +68,16 @@ function createToolbarShell(params: {
   zIndex: string;
   showMode?: 'visibility' | 'opacity';
   hideDelayMs?: number;
+  /**
+   * When true, the toolbar won't open even on hover/show() calls.
+   * Useful to prevent nested toolbars (e.g. figure toolbars inside an open grid toolbar).
+   */
+  suppressWhen?: () => boolean;
+  /**
+   * When true, do NOT attach hover listeners. The caller is responsible for calling
+   * show()/hideSoon() or setPinned().
+   */
+  disableHover?: boolean;
   /**
    * Extra CSS styles to apply to the toolbar container.
    * Use either camelCase (e.g. maxWidth) or kebab-case (e.g. max-width).
@@ -223,18 +258,55 @@ function createToolbarShell(params: {
   let pinned = false;
   let hideTimer: number | null = null;
 
+  const adjustWithinViewport = () => {
+    try {
+      // If caller constrained both sides, do not override.
+      if (params.left && params.right) return;
+      const r = hoverBar.getBoundingClientRect();
+      const pad = 8;
+      const vw = window.innerWidth || 0;
+      if (!vw) return;
+
+      // If it overflows left, anchor to the left so it expands rightwards.
+      if (r.left < pad) {
+        hoverBar.style.left = '8px';
+        hoverBar.style.right = 'auto';
+        return;
+      }
+      // If it overflows right, anchor to the right so it expands leftwards.
+      if (r.right > vw - pad) {
+        hoverBar.style.right = '8px';
+        hoverBar.style.left = 'auto';
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const applyVisible = (visible: boolean) => {
+    if (showMode === 'opacity') {
+      hoverBar.style.transition = 'opacity 120ms ease';
+      hoverBar.style.opacity = visible ? '1' : '0';
+      hoverBar.style.pointerEvents = visible ? 'auto' : 'none';
+    } else {
+      hoverBar.style.visibility = visible ? 'visible' : 'hidden';
+      hoverBar.style.pointerEvents = visible ? 'auto' : 'none';
+    }
+  };
+
   const show = () => {
+    if (params.suppressWhen?.()) {
+      // Ensure we actively hide if we're currently suppressed.
+      applyVisible(false);
+      return;
+    }
     if (hideTimer !== null) {
       window.clearTimeout(hideTimer);
       hideTimer = null;
     }
-    if (showMode === 'opacity') {
-      hoverBar.style.opacity = '1';
-      hoverBar.style.pointerEvents = 'auto';
-    } else {
-      hoverBar.style.visibility = 'visible';
-      hoverBar.style.pointerEvents = 'auto';
-    }
+    applyVisible(true);
+    // After it becomes visible, ensure it isn't clipped off-screen (common for narrow figures near edges).
+    requestAnimationFrame(adjustWithinViewport);
   };
 
   const hideSoon = () => {
@@ -243,32 +315,21 @@ function createToolbarShell(params: {
     hideTimer = window.setTimeout(() => {
       if (pinned) return;
       if (anyMenuOpen) return;
-      if (showMode === 'opacity') {
-        hoverBar.style.opacity = '0';
-        hoverBar.style.pointerEvents = 'none';
-      } else {
-        hoverBar.style.visibility = 'hidden';
-        hoverBar.style.pointerEvents = 'none';
-      }
+      applyVisible(false);
       hideTimer = null;
     }, hideDelayMs);
   };
 
-  const startVisible = shouldToolbarStartVisible(params.keepOpenKey);
-  if (showMode === 'opacity') {
-    hoverBar.style.transition = 'opacity 120ms ease';
-    hoverBar.style.opacity = startVisible ? '1' : '0';
-    hoverBar.style.pointerEvents = startVisible ? 'auto' : 'none';
-  } else {
-    hoverBar.style.visibility = startVisible ? 'visible' : 'hidden';
-    hoverBar.style.pointerEvents = startVisible ? 'auto' : 'none';
-  }
+  const startVisible = shouldToolbarStartVisible(params.keepOpenKey) && !params.suppressWhen?.();
+  applyVisible(startVisible);
 
-  params.outer.addEventListener('pointerenter', show);
-  params.outer.addEventListener('pointermove', show);
-  params.outer.addEventListener('pointerleave', hideSoon);
-  hoverBar.addEventListener('pointerenter', show);
-  hoverBar.addEventListener('pointerleave', hideSoon);
+  if (!params.disableHover) {
+    params.outer.addEventListener('pointerenter', show);
+    params.outer.addEventListener('pointermove', show);
+    params.outer.addEventListener('pointerleave', hideSoon);
+    hoverBar.addEventListener('pointerenter', show);
+    hoverBar.addEventListener('pointerleave', hideSoon);
+  }
 
   return {
     bar: hoverBar,
@@ -866,7 +927,7 @@ class FigureCardWidget extends WidgetType {
     private readonly attrs: string | null,
     private readonly from: number,
     private readonly to: number,
-    private readonly opts?: { hidePlacement?: boolean; hideAlign?: boolean; inGrid?: boolean }
+    private readonly opts?: { hidePlacement?: boolean; hideAlign?: boolean; inGrid?: boolean; gridFill?: boolean }
   ) {
     super();
   }
@@ -901,9 +962,40 @@ class FigureCardWidget extends WidgetType {
     wrap.style.borderRadius = '8px';
     wrap.style.background = 'rgba(0,0,0,0.12)';
 
+    // Grid cells (especially margin="small") should not show extra chrome around the image.
+    // The grid cell itself provides the border/background when needed.
+    if (this.opts?.inGrid && !this.opts?.gridFill) {
+      wrap.style.margin = '0';
+      wrap.style.padding = '0';
+      wrap.style.border = 'none';
+      wrap.style.borderRadius = '0px';
+      wrap.style.background = 'transparent';
+      // IMPORTANT: in grids we want the figure to behave like an inline object (shrink-wrap),
+      // otherwise block-figure defaults (width:100%) can force max-content columns to expand and
+      // look like "extra right margin".
+      wrap.style.display = 'inline-block';
+      // Let the width be intrinsic to content unless an explicit width attr is set.
+      (wrap.style as unknown as { width?: string }).width = 'auto';
+      wrap.style.maxWidth = '100%';
+    }
+
     const baseAttrs = (this.attrs || '').trim();
-    const align = baseAttrs ? parseAttrValue(baseAttrs, 'align') : null; // left|center|right
+    let align = baseAttrs ? parseAttrValue(baseAttrs, 'align') : null; // left|center|right
+    if (this.opts?.inGrid && !align) {
+      align = 'center';
+    }
     const width = baseAttrs ? parseAttrValue(baseAttrs, 'width') : null; // e.g. 50% or 320px
+    // In shrink-wrapped grid cells, percentage widths behave badly (they become % of the column width,
+    // which can create "extra space" and make a 50% image look like it has huge margins).
+    // Treat `width="50%"` as a scale of the *intrinsic image size* instead.
+    const gridPctWidth = (() => {
+      if (!(this.opts?.inGrid && !this.opts?.gridFill)) return null;
+      const w = String(width || '').trim();
+      if (!w.endsWith('%')) return null;
+      const n = Number(w.slice(0, -1).trim());
+      if (!Number.isFinite(n) || n <= 0) return null;
+      return Math.min(100, Math.max(1, n));
+    })();
     const placement = baseAttrs ? parseAttrValue(baseAttrs, 'placement') : null; // inline|block
     const borderStyleRaw = baseAttrs ? parseAttrValue(baseAttrs, 'borderStyle') : null; // solid|dotted|dashed
     const borderColorRaw = baseAttrs ? parseAttrValue(baseAttrs, 'borderColor') : null; // any CSS color (prefer hex)
@@ -944,7 +1036,7 @@ class FigureCardWidget extends WidgetType {
     // - respect the configured width so the figure matches preview sizing
     // - show a visual hint that this figure will be inline/wrapped in preview
     if (placement === 'inline') {
-      if (width) {
+      if (width && !gridPctWidth) {
         wrap.style.width = width;
         wrap.style.maxWidth = width;
       }
@@ -976,8 +1068,11 @@ class FigureCardWidget extends WidgetType {
       }
     } else {
       // Block placement: the card should occupy the full editor width (prevents caret showing beside it).
-      wrap.style.width = '100%';
-      wrap.style.maxWidth = '100%';
+      // BUT: inside grids (non-full), we want true shrink-wrap.
+      if (!(this.opts?.inGrid && !this.opts?.gridFill)) {
+        wrap.style.width = '100%';
+        wrap.style.maxWidth = '100%';
+      }
       // Align the figure content (inner wrapper) within the full-width card.
       // This ensures align changes are visible even when width is not explicitly set.
       wrap.style.textAlign = align === 'center' ? 'center' : align === 'right' ? 'right' : 'left';
@@ -1065,15 +1160,60 @@ class FigureCardWidget extends WidgetType {
       inner.style.maxWidth = '100%';
       if (width) inner.style.width = '100%';
     } else {
-      inner.style.display = 'inline-block';
-      inner.style.maxWidth = '100%';
-      if (width) inner.style.width = width;
+      // Default: behave like the old figure renderer (shrink-to-fit unless explicitly sized).
+      // But inside grids, we want the figure to fill the cell width to avoid "blank space" next to images.
+      if (this.opts?.inGrid && this.opts?.gridFill && !width) {
+        inner.style.display = 'block';
+        inner.style.width = '100%';
+        inner.style.maxWidth = '100%';
+      } else {
+        inner.style.display = 'inline-block';
+        inner.style.maxWidth = '100%';
+        if (width && !gridPctWidth) inner.style.width = width;
+        // In grid + small margin with no explicit width, prevent inner from forcing extra slack.
+        if (this.opts?.inGrid && this.opts?.gridFill === false && !width) {
+          // Keep the figure truly shrink-wrapped to its contents.
+          // Using `fit-content` avoids percentage-width children (caption) creating a wider shrink-to-fit width.
+          inner.style.width = 'fit-content';
+          inner.style.maxWidth = '100%';
+        }
+      }
       // Alignment is handled by wrap.style.textAlign in block mode.
     }
 
     // Block + width: do NOT force width=100% on the image (it can conflict with maxHeight and squash aspect ratio).
     // Instead, let the image size naturally within the constrained inner wrapper.
     if (placement !== 'inline' && width) {
+      img.style.width = 'auto';
+      img.style.maxWidth = '100%';
+    }
+    // Apply intrinsic scaling for width="N%" inside shrink-wrapped grid cells.
+    if (gridPctWidth) {
+      const applyIntrinsicPct = () => {
+        try {
+          const nw = img.naturalWidth || 0;
+          // If src is populated later (e.g. zadoox-asset:// loaded async), `img.complete` can be true
+          // while naturalWidth is still 0. In that case, we must wait for a real `load` event.
+          if (!Number.isFinite(nw) || nw <= 0) {
+            img.addEventListener('load', applyIntrinsicPct, { once: true });
+            return;
+          }
+          const editorW = Math.max(1, Math.floor(view.dom.getBoundingClientRect().width - 32));
+          const target = Math.max(1, Math.floor((nw * gridPctWidth) / 100));
+          const px = Math.min(target, editorW);
+          img.style.width = `${px}px`;
+          img.style.maxWidth = `${px}px`;
+        } catch {
+          // ignore
+        }
+      };
+      applyIntrinsicPct();
+    }
+    // In grid cells, expand images to fill the cell width by default (matches preview table behavior).
+    if (this.opts?.inGrid && this.opts?.gridFill && placement !== 'inline' && !width) {
+      img.style.width = '100%';
+      img.style.maxWidth = '100%';
+    } else if (this.opts?.inGrid && !width) {
       img.style.width = 'auto';
       img.style.maxWidth = '100%';
     }
@@ -1089,7 +1229,15 @@ class FigureCardWidget extends WidgetType {
       // Product rule: caption text centered relative to the image width (via inner wrapper)
       caption.style.textAlign = 'center';
       caption.style.display = 'block';
-      caption.style.width = '100%';
+      // In grids (non-fill), avoid forcing the wrapper wider than the image.
+      if (this.opts?.inGrid && this.opts?.gridFill === false && !width) {
+        caption.style.width = 'fit-content';
+        caption.style.maxWidth = '100%';
+        caption.style.marginLeft = 'auto';
+        caption.style.marginRight = 'auto';
+      } else {
+        caption.style.width = '100%';
+      }
       // Ensure long captions wrap within the figure width (never overflow wider than the image).
       caption.style.whiteSpace = 'normal';
       (caption.style as unknown as { overflowWrap?: string }).overflowWrap = 'anywhere';
@@ -1100,6 +1248,8 @@ class FigureCardWidget extends WidgetType {
     if (caption) {
       const clampCaption = () => {
         try {
+          // In non-fill grids we want pure shrink-wrap; clamping can "lock in" a wider width than the final image.
+          if (this.opts?.inGrid && this.opts?.gridFill === false && !width) return;
           const w = img.getBoundingClientRect().width;
           if (!Number.isFinite(w) || w <= 0) return;
           caption.style.maxWidth = `${w}px`;
@@ -1128,6 +1278,9 @@ class FigureCardWidget extends WidgetType {
       zIndex: '20',
       showMode: 'opacity',
       hideDelayMs: 120,
+      // Disable automatic (hover) opening for figures everywhere.
+      // Toolbars are opened explicitly via the per-figure "Configure" (gear) button.
+      disableHover: true,
       style: {
         // Inside grid cells, the parent container can clip. Keep it within the card bounds.
         ...(this.opts?.inGrid
@@ -1140,6 +1293,82 @@ class FigureCardWidget extends WidgetType {
     const makeDropdownGroup = figToolbar.makeDropdownGroup;
 
     // No row helper: we build one linear toolbar with separators.
+
+    // Per-figure configure button (replaces hover-to-open toolbar).
+    {
+      const btnCfg = document.createElement('button');
+      btnCfg.type = 'button';
+      btnCfg.title = 'Configure image';
+      btnCfg.setAttribute('aria-label', 'Configure image');
+      btnCfg.style.position = 'absolute';
+      btnCfg.style.top = '6px';
+      btnCfg.style.right = '6px';
+      btnCfg.style.zIndex = '30';
+      btnCfg.style.width = '24px';
+      btnCfg.style.height = '24px';
+      btnCfg.style.display = 'flex';
+      btnCfg.style.alignItems = 'center';
+      btnCfg.style.justifyContent = 'center';
+      btnCfg.style.border = '1px solid rgba(255,255,255,0.14)';
+      btnCfg.style.borderRadius = '8px';
+      btnCfg.style.background = 'rgba(20,20,22,0.85)';
+      btnCfg.style.color = '#cfcfcf';
+      btnCfg.style.cursor = 'pointer';
+      btnCfg.style.pointerEvents = 'auto';
+      btnCfg.style.opacity = '0';
+      btnCfg.style.transition = 'opacity 120ms ease';
+      btnCfg.innerHTML =
+        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+        '<path d="M6.2 1.8l.6 1.4c.2.4.6.6 1 .6h.4c.4 0 .8-.2 1-.6l.6-1.4 1.8.8-.6 1.4c-.2.4-.1.9.2 1.2l.3.3c.3.3.8.4 1.2.2l1.4-.6.8 1.8-1.4.6c-.4.2-.6.6-.6 1v.4c0 .4.2.8.6 1l1.4.6-.8 1.8-1.4-.6c-.4-.2-.9-.1-1.2.2l-.3.3c-.3.3-.4.8-.2 1.2l.6 1.4-1.8.8-.6-1.4c-.2-.4-.6-.6-1-.6h-.4c-.4 0-.8.2-1 .6l-.6 1.4-1.8-.8.6-1.4c.2-.4.1-.9-.2-1.2l-.3-.3c-.3-.3-.8-.4-1.2-.2l-1.4.6-.8-1.8 1.4-.6c.4-.2.6-.6.6-1v-.4c0-.4-.2-.8-.6-1l-1.4-.6.8-1.8 1.4.6c.4.2.9.1 1.2-.2l.3-.3c.3-.3.4-.8.2-1.2l-.6-1.4 1.8-.8z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>' +
+        '<path d="M8 10.3a2.3 2.3 0 1 0 0-4.6 2.3 2.3 0 0 0 0 4.6z" stroke="currentColor" stroke-width="1.2"/>' +
+        '</svg>';
+
+      const figKey = `figure:${this.from}:${this.to}`;
+      let open = shouldToolbarStartVisible(figKey);
+      const setOpen = (v: boolean) => {
+        open = Boolean(v);
+        figToolbar.setPinned(open);
+        if (open) {
+          bumpToolbarKeepVisible(figKey, 2000);
+          figToolbar.show();
+        }
+        else figToolbar.hideSoon();
+        btnCfg.style.opacity = open ? '1' : btnCfg.style.opacity; // keep visible while open
+      };
+      if (open) {
+        figToolbar.setPinned(true);
+        figToolbar.show();
+        btnCfg.style.opacity = '1';
+      }
+
+      wrap.addEventListener('pointerenter', () => {
+        if (!open) btnCfg.style.opacity = '1';
+      });
+      wrap.addEventListener('pointerleave', () => {
+        if (!open) btnCfg.style.opacity = '0';
+      });
+
+      btnCfg.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setOpen(!open);
+      });
+      // Click-away closes the figure toolbar when open (within this card).
+      wrap.addEventListener(
+        'pointerdown',
+        (e) => {
+          if (!open) return;
+          const t = e.target as Node | null;
+          if (!t) return;
+          if (btnCfg.contains(t) || hoverBar.contains(t)) return;
+          setOpen(false);
+          btnCfg.style.opacity = '0';
+        },
+        true
+      );
+
+      wrap.appendChild(btnCfg);
+    }
 
     const applyAttrUpdate = (updates: {
       align?: string | null;
@@ -1174,7 +1403,7 @@ class FigureCardWidget extends WidgetType {
 
       const attrBlock = nextAttrs.trim().length > 0 ? `{${nextAttrs.trim()}}` : '';
       const nextText = `![${currentCaption}](${currentSrc})${attrBlock}`;
-      view.dispatch({ changes: { from: this.from, to: this.to, insert: nextText } });
+      dispatchPreserveSelectionNoScroll(view, { changes: { from: this.from, to: this.to, insert: nextText } });
     };
 
     const icon = {
@@ -1515,7 +1744,7 @@ class FigureCardWidget extends WidgetType {
         },
         getOriginal: () => ({ from: this.from, to: this.to, text: view.state.doc.sliceString(this.from, this.to) }),
         applyReplacement: (replacement) => {
-          view.dispatch({ changes: { from: this.from, to: this.to, insert: replacement } });
+          dispatchPreserveSelectionNoScroll(view, { changes: { from: this.from, to: this.to, insert: replacement } });
         },
       })
     );
@@ -1670,7 +1899,7 @@ class FigureCardWidget extends WidgetType {
       const nextCaption = captionInput.value.trim();
       const nextDesc = descInput.value;
       const nextText = rebuildMarkdown(this.rawUrl, nextCaption, nextDesc);
-      view.dispatch({ changes: { from: this.from, to: this.to, insert: nextText } });
+      dispatchPreserveSelectionNoScroll(view, { changes: { from: this.from, to: this.to, insert: nextText } });
     });
 
     btnDelete.addEventListener('click', (e) => {
@@ -1681,7 +1910,7 @@ class FigureCardWidget extends WidgetType {
       // Remove the entire line containing the figure markdown to avoid leaving behind blank lines.
       const from = line.from;
       const to = Math.min(doc.length, line.to + (line.to < doc.length ? 1 : 0));
-      view.dispatch({ changes: { from, to, insert: '' } });
+      dispatchPreserveSelectionNoScroll(view, { changes: { from, to, insert: '' } });
     });
 
     btnTrashIcon.addEventListener('click', (e) => {
@@ -1720,7 +1949,7 @@ class FigureCardWidget extends WidgetType {
         const nextCaption = (captionInput.value || this.alt || '').trim();
         const nextDesc = descInput.value || this.desc || '';
         const nextText = rebuildMarkdown(nextSrc, nextCaption, nextDesc);
-        view.dispatch({ changes: { from: this.from, to: this.to, insert: nextText } });
+        dispatchPreserveSelectionNoScroll(view, { changes: { from: this.from, to: this.to, insert: nextText } });
       } finally {
         setBusy(false);
       }
@@ -1796,6 +2025,8 @@ class FigureGridWidget extends WidgetType {
   toDOM(view: EditorView): HTMLElement {
     const outer = document.createElement('div');
     outer.className = 'cm-embedded-figure-grid';
+    const gridKey = `grid:${this.blockFrom}:${this.blockTo}`;
+    outer.setAttribute('data-zx-grid-key', gridKey);
 
     // Keep the toolbar open across re-renders triggered by selecting an option (which updates the header).
     // Without this, the widget is recreated and the toolbar "autocloses" even if the mouse is still over it.
@@ -1803,17 +2034,18 @@ class FigureGridWidget extends WidgetType {
     const spacing = (() => {
       const currentHeader = this.headerText;
       const m = (/\bmargin\s*=\s*"(small|medium|large)"/i.exec(currentHeader)?.[1] || 'medium').toLowerCase();
-      // Note: multiple nested paddings/margins contribute to perceived "spacing":
-      // - outer margin + padding
-      // - grid gap
-      // - cell padding
-      // - figure card padding
-      // - caption margin
-      if (m === 'small')
-        return { preset: 'small' as const, outerMargin: 2, pad: 2, gap: 4, cellPad: 2, cardPad: 2, capMb: 4 };
-      if (m === 'large')
-        return { preset: 'large' as const, outerMargin: 12, pad: 12, gap: 14, cellPad: 10, cardPad: 10, capMb: 12 };
-      return { preset: 'medium' as const, outerMargin: 6, pad: 8, gap: 10, cellPad: 6, cardPad: 6, capMb: 8 };
+      const preset = getGridSpacingPreset(m);
+      return {
+        preset: m === 'small' ? ('small' as const) : m === 'large' ? ('large' as const) : ('medium' as const),
+        outerMargin: preset.outerMarginPx,
+        pad: preset.outerPadPx,
+        gap: preset.gapPx,
+        cellPad: preset.cellPadPx,
+        cardPad: preset.cardPadPx,
+        capMb: preset.captionBottomPx,
+        previewCellPadX: preset.previewCellPadX,
+        previewCellPadY: preset.previewCellPadY,
+      };
     })();
 
     outer.style.margin = `${spacing.outerMargin}px 0`;
@@ -1843,7 +2075,8 @@ class FigureGridWidget extends WidgetType {
         return { enabled: false, css: '1px solid rgba(255,255,255,0.10)', w: 1, style: 'solid' as const, color: 'rgba(255,255,255,0.10)' };
       }
     })();
-    // In borderMode, don't add an extra rounded outer frame; let the cell borders form the table outline (like preview).
+    // Border mode: render using a real HTML table with collapsed borders.
+    // This avoids all the fragile "draw left/top/right/bottom per cell" hacks and fixes 1px gaps by construction.
     const borderMode = gridBorderInfo.enabled && gridBorderInfo.css !== 'none';
     outer.style.padding = borderMode ? '0px' : `${spacing.pad}px`;
     outer.style.border = borderMode ? 'none' : gridBorderInfo.css;
@@ -1859,22 +2092,46 @@ class FigureGridWidget extends WidgetType {
     // - large: fully fluid (grid fills full width with equal columns)
     try {
       const headerNow = view.state.doc.sliceString(this.headerFrom, this.headerTo);
-      const a = (/\balign\s*=\s*"(left|center|right)"/i.exec(headerNow)?.[1] || 'left').toLowerCase();
+      const aRaw = (/\balign\s*=\s*"(left|center|right|full)"/i.exec(headerNow)?.[1] || 'left').toLowerCase();
+      const a = aRaw === 'full' ? 'full' : aRaw === 'right' ? 'right' : aRaw === 'center' ? 'center' : 'left';
       outer.style.textAlign = a === 'center' ? 'center' : a === 'right' ? 'right' : 'left';
       const p = (/\bplacement\s*=\s*"(block|inline)"/i.exec(headerNow)?.[1] || 'block').toLowerCase();
+      const isFullWidth = a === 'full';
+
+      // Default layout:
+      // - align="full": occupy full width
+      // - left/center/right: shrink-wrap to content (no extra horizontal space)
+      if (isFullWidth) {
+        outer.style.display = 'block';
+        (outer.style as unknown as { width?: string }).width = '100%';
+        outer.style.maxWidth = '100%';
+        outer.style.margin = `${spacing.outerMargin}px 0`;
+      } else {
+        outer.style.display = 'block';
+        (outer.style as unknown as { width?: string }).width = 'fit-content';
+        outer.style.maxWidth = '100%';
+        // Explicitly set margin shorthand (top/right/bottom/left) so we don't inherit stale per-side settings.
+        if (a === 'center') outer.style.margin = `${spacing.outerMargin}px auto ${spacing.outerMargin}px auto`;
+        else if (a === 'right') outer.style.margin = `${spacing.outerMargin}px 0 ${spacing.outerMargin}px auto`;
+        else outer.style.margin = `${spacing.outerMargin}px auto ${spacing.outerMargin}px 0`;
+      }
+
       if (p === 'inline') {
         // Attempt to mimic inline figure behavior: float so subsequent text can wrap.
         // NOTE: This only works if the decoration is inserted as non-block (see buildDecorations).
-        outer.style.display = 'inline-block';
-        (outer.style as unknown as { width?: string }).width = 'fit-content';
-        outer.style.maxWidth = '100%';
-        outer.style.verticalAlign = 'top';
+        // Full-width + inline is not meaningful; keep it as a block.
+        if (!isFullWidth) {
+          outer.style.display = 'inline-block';
+          (outer.style as unknown as { width?: string }).width = 'fit-content';
+          outer.style.maxWidth = '100%';
+          outer.style.verticalAlign = 'top';
+        }
 
         // Float left/right based on align. Center+inline isn't meaningful for wrapping.
-        if (a === 'right') {
+        if (!isFullWidth && a === 'right') {
           (outer.style as unknown as { float?: string }).float = 'right';
           outer.style.margin = `${spacing.outerMargin}px 0 ${spacing.outerMargin}px 12px`;
-        } else if (a === 'left') {
+        } else if (!isFullWidth && a === 'left') {
           (outer.style as unknown as { float?: string }).float = 'left';
           outer.style.margin = `${spacing.outerMargin}px 12px ${spacing.outerMargin}px 0`;
         } else {
@@ -1892,7 +2149,7 @@ class FigureGridWidget extends WidgetType {
       borderStyle: 'solid' | 'dotted' | 'dashed' | null;
       borderColor: string | null;
       borderWidth: number | null;
-      align: 'left' | 'center' | 'right' | null;
+      align: 'left' | 'center' | 'right' | 'full' | null;
       placement: 'block' | 'inline' | null;
       margin: 'small' | 'medium' | 'large' | null;
     } => {
@@ -1913,8 +2170,8 @@ class FigureGridWidget extends WidgetType {
       const borderColor = borderColorMatch ? String(borderColorMatch[1] ?? '').trim() : null;
       const borderWidthMatch = /\bborderWidth\s*=\s*"(\d+)"/i.exec(txt);
       const borderWidth = borderWidthMatch ? Number(borderWidthMatch[1]) : null;
-      const alignMatch = /\balign\s*=\s*"(left|center|right)"/i.exec(txt);
-      const align = (alignMatch ? (String(alignMatch[1]) as any) : null) as 'left' | 'center' | 'right' | null;
+      const alignMatch = /\balign\s*=\s*"(left|center|right|full)"/i.exec(txt);
+      const align = (alignMatch ? (String(alignMatch[1]) as any) : null) as 'left' | 'center' | 'right' | 'full' | null;
       const placeMatch = /\bplacement\s*=\s*"(block|inline)"/i.exec(txt);
       const placement = (placeMatch ? (String(placeMatch[1]) as any) : null) as 'block' | 'inline' | null;
       const marginMatch = /\bmargin\s*=\s*"(small|medium|large)"/i.exec(txt);
@@ -1929,7 +2186,7 @@ class FigureGridWidget extends WidgetType {
       borderStyle: 'solid' | 'dotted' | 'dashed' | null;
       borderColor: string | null;
       borderWidth: number | null;
-      align: 'left' | 'center' | 'right' | null;
+      align: 'left' | 'center' | 'right' | 'full' | null;
       placement: 'block' | 'inline' | null;
       margin: 'small' | 'medium' | 'large' | null;
     }): string => {
@@ -1958,7 +2215,7 @@ class FigureGridWidget extends WidgetType {
         borderStyle: 'solid' | 'dotted' | 'dashed' | null;
         borderColor: string | null;
         borderWidth: number | null;
-        align: 'left' | 'center' | 'right' | null;
+        align: 'left' | 'center' | 'right' | 'full' | null;
         placement: 'block' | 'inline' | null;
         margin: 'small' | 'medium' | 'large' | null;
       }>
@@ -1977,7 +2234,7 @@ class FigureGridWidget extends WidgetType {
           placement: updates.placement !== undefined ? updates.placement : parsed.placement,
           margin: updates.margin !== undefined ? updates.margin : parsed.margin,
         });
-        view.dispatch({ changes: { from: this.headerFrom, to: this.headerTo, insert: next } });
+      dispatchPreserveSelectionNoScroll(view, { changes: { from: this.headerFrom, to: this.headerTo, insert: next } });
       } catch {
         // ignore
       }
@@ -1986,13 +2243,14 @@ class FigureGridWidget extends WidgetType {
     // Grid-level hover toolbar: alignment + placement + edit caption.
     const toolbar = createToolbarShell({
       outer,
-      keepOpenKey: `grid:${this.blockFrom}:${this.blockTo}`,
+      keepOpenKey: gridKey,
       className: 'cm-embedded-grid-toolbar',
       // Keep the hover toolbar below the always-visible "Show XMD" button area.
       top: '44px',
       right: '8px',
       zIndex: '4',
       showMode: 'visibility',
+      disableHover: true,
       style: {
     // Linear toolbar that wraps only if it becomes too wide.
         flexDirection: 'row',
@@ -2022,6 +2280,11 @@ class FigureGridWidget extends WidgetType {
       alignRight:
         '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
         '<path d="M2 3h12M6 7h8M3 11h11M8 15h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '</svg>',
+      alignFull:
+        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+        '<rect x="2.5" y="4" width="11" height="8" stroke="currentColor" stroke-width="1.5"/>' +
+        '<path d="M2.5 8h11" stroke="currentColor" stroke-width="1" opacity="0.35"/>' +
         '</svg>',
       inline:
         '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
@@ -2322,6 +2585,7 @@ class FigureGridWidget extends WidgetType {
         label: 'Align',
         currentBtn: alignGroupBtn,
         items: [
+          { label: 'Full width', svg: icon.alignFull, selected: currentAlign === 'full', onSelect: () => updateGridHeader({ align: 'full' }) },
           { label: 'Left', svg: icon.alignLeft, selected: currentAlign === 'left', onSelect: () => updateGridHeader({ align: 'left' }) },
           { label: 'Center', svg: icon.alignCenter, selected: currentAlign === 'center', onSelect: () => updateGridHeader({ align: 'center' }) },
           { label: 'Right', svg: icon.alignRight, selected: currentAlign === 'right', onSelect: () => updateGridHeader({ align: 'right' }) },
@@ -2479,30 +2743,83 @@ class FigureGridWidget extends WidgetType {
         },
         getOriginal: () => ({ from: this.blockFrom, to: this.blockTo, text: view.state.doc.sliceString(this.blockFrom, this.blockTo) }),
         applyReplacement: (replacement) => {
-          view.dispatch({ changes: { from: this.blockFrom, to: this.blockTo, insert: replacement } });
+          dispatchPreserveSelectionNoScroll(view, { changes: { from: this.blockFrom, to: this.blockTo, insert: replacement } });
         },
       })
     );
     outer.appendChild(hoverBar);
 
-    // Always-visible "Show XMD" button (top-left). Keep it even though we also provide a toolbar toggle
-    // so the user always has a stable, discoverable switch.
+    // Top-left button row (Show XMD + Configure) with no gap.
+    const btnRow = document.createElement('div');
+    btnRow.style.position = 'absolute';
+    btnRow.style.top = '8px';
+    btnRow.style.left = '8px';
+    btnRow.style.zIndex = '6';
+    btnRow.style.display = 'flex';
+    btnRow.style.gap = '0px';
+
     const btnShowXmdFixed = document.createElement('button');
     btnShowXmdFixed.type = 'button';
     btnShowXmdFixed.textContent = 'Show XMD';
     btnShowXmdFixed.className =
-      'text-xs px-2 py-1 rounded border border-vscode-border bg-vscode-buttonBg text-vscode-text ' +
+      'text-xs px-2 py-1 border border-vscode-border bg-vscode-buttonBg text-vscode-text ' +
       'hover:bg-vscode-buttonHoverBg transition-colors';
-    btnShowXmdFixed.style.position = 'absolute';
-    btnShowXmdFixed.style.top = '8px';
-    btnShowXmdFixed.style.left = '8px';
-    btnShowXmdFixed.style.zIndex = '6';
+    // Make the pair look like a single segmented control.
+    btnShowXmdFixed.style.borderTopRightRadius = '0px';
+    btnShowXmdFixed.style.borderBottomRightRadius = '0px';
+    btnShowXmdFixed.style.borderTopLeftRadius = '6px';
+    btnShowXmdFixed.style.borderBottomLeftRadius = '6px';
     btnShowXmdFixed.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
       view.dispatch({ effects: toggleRenderForRange.of({ from: this.blockFrom, to: this.blockTo }) });
     });
-    outer.appendChild(btnShowXmdFixed);
+
+    // Always-visible "Configure" button (next to Show XMD) to open the toolbar.
+    const btnConfigure = document.createElement('button');
+    btnConfigure.type = 'button';
+    btnConfigure.textContent = 'Configure';
+    btnConfigure.className =
+      'text-xs px-2 py-1 border border-vscode-border bg-vscode-buttonBg text-vscode-text ' +
+      'hover:bg-vscode-buttonHoverBg transition-colors';
+    // Remove the double border between the two buttons.
+    btnConfigure.style.borderLeft = '0px';
+    btnConfigure.style.borderTopLeftRadius = '0px';
+    btnConfigure.style.borderBottomLeftRadius = '0px';
+    btnConfigure.style.borderTopRightRadius = '6px';
+    btnConfigure.style.borderBottomRightRadius = '6px';
+    // Track open state per widget instance. On recreation, seed from keep-visible state so UI stays consistent.
+    let configureOpen = shouldToolbarStartVisible(gridKey);
+    outer.setAttribute('data-zx-grid-toolbar-open', configureOpen ? '1' : '0');
+    toolbar.setPinned(configureOpen);
+    if (configureOpen) toolbar.show();
+    btnConfigure.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      configureOpen = !configureOpen;
+      toolbar.setPinned(configureOpen);
+      if (configureOpen) toolbar.show();
+      else toolbar.hideSoon();
+      outer.setAttribute('data-zx-grid-toolbar-open', configureOpen ? '1' : '0');
+    });
+    // Click-away closes when configured open.
+    outer.addEventListener(
+      'pointerdown',
+      (e) => {
+        if (!configureOpen) return;
+        const t = e.target as Node | null;
+        if (!t) return;
+        if (btnConfigure.contains(t) || btnShowXmdFixed.contains(t) || hoverBar.contains(t)) return;
+        configureOpen = false;
+        toolbar.setPinned(false);
+        toolbar.hideSoon();
+        outer.setAttribute('data-zx-grid-toolbar-open', '0');
+      },
+      true
+    );
+    btnRow.appendChild(btnShowXmdFixed);
+    btnRow.appendChild(btnConfigure);
+    outer.appendChild(btnRow);
 
     const cap = String(this.gridCaption ?? '').trim();
     if (cap.length > 0) {
@@ -2535,117 +2852,171 @@ class FigureGridWidget extends WidgetType {
         return 'block';
       }
     })();
-    const forceShrinkWrap = placementNow === 'inline';
+    const alignNow = (() => {
+      try {
+        const h = this.headerText;
+        return (/\balign\s*=\s*"(left|center|right|full)"/i.exec(h)?.[1] || 'left').toLowerCase();
+      } catch {
+        return 'left';
+      }
+    })();
+    const isFullWidthAlign = alignNow === 'full';
+    const forceShrinkWrap = placementNow === 'inline' && !isFullWidthAlign;
 
-    if (forceShrinkWrap || spacing.preset === 'small') {
+    if (!isFullWidthAlign) {
       gridWrap.style.display = 'inline-block';
       gridWrap.style.maxWidth = '100%';
     } else {
-      // medium/large: fluid container
+      // Full-width alignment: fluid container
       gridWrap.style.display = 'block';
       gridWrap.style.width = '100%';
       gridWrap.style.maxWidth = '100%';
     }
 
-    const grid = document.createElement('div');
-    grid.style.display = 'grid';
-    if (forceShrinkWrap || spacing.preset === 'small') {
-      // Shrink-wrap: just enough width for content.
-      grid.style.gridTemplateColumns = `repeat(${Math.max(1, this.cols)}, auto)`;
-    } else if (spacing.preset === 'large') {
-      // Full width: equal columns.
-      grid.style.width = '100%';
-      grid.style.gridTemplateColumns = `repeat(${Math.max(1, this.cols)}, minmax(0, 1fr))`;
-    } else {
-      // Medium: fill width but keep a minimum cell width so it doesn't feel too stretched.
-      grid.style.width = '100%';
-      grid.style.gridTemplateColumns = `repeat(${Math.max(1, this.cols)}, minmax(220px, 1fr))`;
-    }
-    // In borderMode, remove gaps so borders read like a collapsed table (preview).
-    grid.style.gap = borderMode ? '0px' : `${spacing.gap}px`;
+    const colCount = Math.max(1, this.cols);
+    const shrinkWrapGrid = !isFullWidthAlign || forceShrinkWrap;
 
-    for (let i = 0; i < this.cells.length; i++) {
-      const cell = document.createElement('div');
-      if (borderMode) {
-        // Table-like borders without doubled inner strokes:
-        // draw only top+left for all cells, plus right for last column and bottom for last row.
-        const cols = Math.max(1, this.cols);
-        const rows = Math.max(1, Math.ceil(this.cells.length / cols));
-        const r = Math.floor(i / cols);
-        const c = i % cols;
-        const b = gridBorderInfo.css;
-        cell.style.border = 'none';
-        cell.style.borderLeft = b;
-        cell.style.borderTop = b;
-        if (c === cols - 1) cell.style.borderRight = b;
-        if (r === rows - 1) cell.style.borderBottom = b;
-        cell.style.borderRadius = '0px';
-        // Match preview-ish padding
-        cell.style.padding = '6px 10px';
-        cell.style.background = 'transparent';
-      } else {
-        cell.style.border = gridBorderInfo.css.replace('0.10', '0.08'); // slightly lighter default if using rgba defaults
-      cell.style.borderRadius = '8px';
-      cell.style.padding = `${spacing.cellPad}px`;
-      cell.style.background = 'rgba(0,0,0,0.12)';
-      }
-      // Allow nested figure toolbars (which are absolutely positioned) to extend beyond the cell box.
-      // Otherwise the toolbar can be clipped and appear "not showing".
-      cell.style.overflow = 'visible';
-      // Let per-item alignment position the figure card within the cell.
-      cell.style.display = 'flex';
-      cell.style.alignItems = 'flex-start';
+    // BorderMode: use <table> with border-collapse for perfect table-like borders.
+    // Non-borderMode keeps the existing <div> grid layout with gaps/cards.
+    let gridEl: HTMLElement;
+    if (borderMode) {
+      const table = document.createElement('table');
+      table.style.borderCollapse = 'collapse';
+      table.style.borderSpacing = '0';
+      table.style.border = gridBorderInfo.css;
+      table.style.width = shrinkWrapGrid ? 'auto' : '100%';
+      table.style.maxWidth = '100%';
+      table.style.tableLayout = shrinkWrapGrid ? 'auto' : 'fixed';
 
-      const c = this.cells[i];
-      if (c) {
-        const cellAlignRaw = (c.attrsInner ? parseAttrValue(c.attrsInner, 'align') : null) ?? 'left';
-        const cellAlign = cellAlignRaw === 'right' ? 'right' : cellAlignRaw === 'center' ? 'center' : 'left';
-        cell.style.justifyContent = cellAlign === 'right' ? 'flex-end' : cellAlign === 'center' ? 'center' : 'flex-start';
+      const tbody = document.createElement('tbody');
+      table.appendChild(tbody);
 
-        const card = new FigureCardWidget(
-          c.rawUrl,
-          c.displaySrc,
-          c.alt,
-          c.desc,
-          c.attrsInner,
-          c.from,
-          c.to,
-          // In grid mode: keep per-cell actions (edit/regen/delete/size),
-          // but hide non-applicable layout controls. Placement + alignment are grid-level.
-          { hidePlacement: true, hideAlign: false, inGrid: true }
-        ).toDOM(view);
-        // Grid mode: avoid floats/margins causing weird layout.
-        card.style.margin = '0';
-        (card.style as unknown as { float?: string }).float = 'none';
-        // Critical: don't force the card to fill the entire cell.
-        // Otherwise it looks like "huge margins" because the background/border span the whole cell.
-        if (spacing.preset === 'large') {
-          // In large mode we intentionally let cards fill the column so the grid reads as "full-width".
-          card.style.width = '100%';
-        } else {
-          (card.style as unknown as { width?: string }).width = 'fit-content';
+      const rows = Math.max(1, Math.ceil(this.cells.length / colCount));
+      let idx = 0;
+      for (let r = 0; r < rows; r++) {
+        const tr = document.createElement('tr');
+        tbody.appendChild(tr);
+        for (let cIdx = 0; cIdx < colCount; cIdx++) {
+          const td = document.createElement('td');
+          td.style.border = gridBorderInfo.css;
+          td.style.verticalAlign = 'top';
+          td.style.boxSizing = 'border-box';
+          td.style.padding =
+            shrinkWrapGrid && spacing.preset === 'small' ? '0px' : `${spacing.previewCellPadY}px ${spacing.previewCellPadX}px`;
+          td.style.background = 'transparent';
+
+          const cell = this.cells[idx++] ?? null;
+          if (cell) {
+            const card = new FigureCardWidget(
+              cell.rawUrl,
+              cell.displaySrc,
+              cell.alt,
+              cell.desc,
+              cell.attrsInner,
+              cell.from,
+              cell.to,
+              { hidePlacement: true, hideAlign: false, inGrid: true, gridFill: isFullWidthAlign }
+            ).toDOM(view);
+            card.style.margin = '0';
+            (card.style as unknown as { float?: string }).float = 'none';
+            (card.style as unknown as { width?: string }).width = 'auto';
+            card.style.maxWidth = '100%';
+            card.style.padding = `${spacing.cardPad}px`;
+            td.appendChild(card);
+          } else {
+            const ph = document.createElement('div');
+            ph.textContent = 'Empty cell';
+            ph.style.fontSize = '12px';
+            ph.style.color = '#9aa0a6';
+            ph.style.padding = '18px 8px';
+            ph.style.textAlign = 'center';
+            ph.style.border = '1px dashed rgba(255,255,255,0.12)';
+            ph.style.borderRadius = '6px';
+            td.appendChild(ph);
+          }
+          tr.appendChild(td);
         }
-        card.style.maxWidth = '100%';
-        // Tighten/expand inner padding based on grid margin preset (otherwise the default card padding dominates spacing).
-        card.style.padding = `${spacing.cardPad}px`;
-        cell.appendChild(card);
-      } else {
-        cell.style.justifyContent = 'center';
-        const ph = document.createElement('div');
-        ph.textContent = 'Empty cell';
-        ph.style.fontSize = '12px';
-        ph.style.color = '#9aa0a6';
-        ph.style.padding = '18px 8px';
-        ph.style.textAlign = 'center';
-        ph.style.border = '1px dashed rgba(255,255,255,0.12)';
-        ph.style.borderRadius = '6px';
-        cell.appendChild(ph);
       }
 
-      grid.appendChild(cell);
+      // Align the table inside the wrapper.
+      table.style.display = shrinkWrapGrid ? 'inline-table' : 'table';
+      gridEl = table;
+    } else {
+      const grid = document.createElement('div');
+      grid.style.display = shrinkWrapGrid ? 'inline-grid' : 'grid';
+      if (shrinkWrapGrid) {
+        grid.style.maxWidth = '100%';
+        grid.style.gridTemplateColumns = `repeat(${colCount}, max-content)`;
+        grid.style.justifyItems = 'start';
+        grid.style.gridAutoColumns = 'max-content';
+        grid.style.gridAutoRows = 'max-content';
+      } else {
+        grid.style.width = '100%';
+        grid.style.gridTemplateColumns = `repeat(${colCount}, minmax(0, 1fr))`;
+        grid.style.justifyItems = 'stretch';
+      }
+      grid.style.alignItems = 'start';
+      grid.style.gap = `${spacing.gap}px`;
+
+      for (let i = 0; i < this.cells.length; i++) {
+        const cellWrap = document.createElement('div');
+        cellWrap.style.boxSizing = 'border-box';
+        cellWrap.style.border = gridBorderInfo.css.replace('0.10', '0.08');
+        cellWrap.style.borderRadius = '8px';
+        cellWrap.style.padding = `${spacing.cellPad}px`;
+        cellWrap.style.background = 'rgba(0,0,0,0.12)';
+        cellWrap.style.overflow = 'visible';
+        cellWrap.style.display = shrinkWrapGrid ? 'block' : 'flex';
+        if (!shrinkWrapGrid) cellWrap.style.alignItems = 'flex-start';
+
+        const c = this.cells[i];
+        if (c) {
+          const cellAlignRaw = (c.attrsInner ? parseAttrValue(c.attrsInner, 'align') : null) ?? 'left';
+          const cellAlign = cellAlignRaw === 'right' ? 'right' : cellAlignRaw === 'center' ? 'center' : 'left';
+          if (!shrinkWrapGrid) {
+            cellWrap.style.justifyContent = cellAlign === 'right' ? 'flex-end' : cellAlign === 'center' ? 'center' : 'flex-start';
+          } else {
+            cellWrap.style.textAlign = cellAlign === 'right' ? 'right' : cellAlign === 'center' ? 'center' : 'left';
+          }
+
+          const card = new FigureCardWidget(
+            c.rawUrl,
+            c.displaySrc,
+            c.alt,
+            c.desc,
+            c.attrsInner,
+            c.from,
+            c.to,
+            { hidePlacement: true, hideAlign: false, inGrid: true, gridFill: isFullWidthAlign }
+          ).toDOM(view);
+          card.style.margin = '0';
+          (card.style as unknown as { float?: string }).float = 'none';
+          const explicitWidth = (c.attrsInner ? parseAttrValue(c.attrsInner, 'width') : null) ?? null;
+          const shouldFillCard = !shrinkWrapGrid && isFullWidthAlign && !explicitWidth;
+          if (shouldFillCard) card.style.width = '100%';
+          else (card.style as unknown as { width?: string }).width = 'auto';
+          card.style.maxWidth = '100%';
+          card.style.padding = `${spacing.cardPad}px`;
+          cellWrap.appendChild(card);
+        } else {
+          cellWrap.style.justifyContent = 'center';
+          const ph = document.createElement('div');
+          ph.textContent = 'Empty cell';
+          ph.style.fontSize = '12px';
+          ph.style.color = '#9aa0a6';
+          ph.style.padding = '18px 8px';
+          ph.style.textAlign = 'center';
+          ph.style.border = '1px dashed rgba(255,255,255,0.12)';
+          ph.style.borderRadius = '6px';
+          cellWrap.appendChild(ph);
+        }
+
+        grid.appendChild(cellWrap);
+      }
+      gridEl = grid;
     }
 
-    gridWrap.appendChild(grid);
+    gridWrap.appendChild(gridEl);
     outer.appendChild(gridWrap);
     return outer;
   }
@@ -3254,7 +3625,7 @@ export function embeddedImagePreviewExtension() {
           try {
             const hl = getHeaderLine();
             const next = buildNextHeaderLine(u);
-            view.dispatch({ changes: { from: hl.from, to: hl.to, insert: next } });
+            dispatchPreserveSelectionNoScroll(view, { changes: { from: hl.from, to: hl.to, insert: next } });
           } catch {
             // ignore
           }
@@ -3400,7 +3771,7 @@ export function embeddedImagePreviewExtension() {
               text: view.state.doc.sliceString(this.block.from, this.block.to),
             }),
             applyReplacement: (replacement) => {
-              view.dispatch({ changes: { from: this.block.from, to: this.block.to, insert: replacement } });
+              dispatchPreserveSelectionNoScroll(view, { changes: { from: this.block.from, to: this.block.to, insert: replacement } });
             },
           })
         );
@@ -3707,6 +4078,9 @@ export function embeddedImagePreviewExtension() {
           imgs++;
           if (alt) alts.push(alt);
         }
+        // Pad to full rows (needed for borderMode so the last-row bottom border is always complete).
+        const cols = Math.max(1, g.cols);
+        while (cells.length % cols !== 0) cells.push(null);
       }
 
       gridSummaries.push({ cols: g.cols, caption: g.caption, segs: segs.length, imgs, alts });

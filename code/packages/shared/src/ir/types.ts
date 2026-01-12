@@ -177,7 +177,7 @@ export interface GridNode extends BaseNode {
   /**
    * Optional grid-level alignment (applies to the grid block as a whole).
    */
-  align?: 'left' | 'center' | 'right';
+  align?: 'left' | 'center' | 'right' | 'full';
   /**
    * Optional grid-level placement. `inline` is intended to behave like wrap/flow in renderers that support it.
    */
