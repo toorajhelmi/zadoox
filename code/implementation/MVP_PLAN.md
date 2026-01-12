@@ -782,39 +782,39 @@ This phase implements undo/redo functionality for document editing, allowing use
 ### Phase 10: Web App - Editor Features ✅
 **Status**: In Progress
 
-- [ ] Extended Markdown support
-- [ ] Placeholder support ({REF}, {CH})
+- [x] Extended Markdown support
+- [x] Placeholder support ({REF}, {CH})
 - [x] Image upload/insertion
 - [x] Grid elements (XMD/IR `:::` grid block + IR→LaTeX rendering)
-- [ ] **Fix**: inline-placement element toolbars (figure toolbars inside grids not reliably showing in `placement="inline"`; stabilize hover/visibility)
-- [ ] **Table creation/editing (XMD Table v1)**:
-  - [ ] **Canonical XMD syntax (hand-typable)**:
-    - [ ] Table block fence: `::: ... :::` (no keyword)
-    - [ ] First non-empty line inside block: **column spec** (vertical borders + alignment), e.g. `|L||C|R|`
-      - [ ] `L|C|R` define column text alignment
-      - [ ] `|` / `||` define single/double vertical borders between columns (uniform across rows)
-    - [ ] Table-wide attributes on the opening `:::` line (no braces):
-      - [ ] `caption="..."`, `label="tbl:..."` (optional)
-      - [ ] `borderStyle="solid|dotted|dashed"` (single-line style only; double borders remain `double`)
-      - [ ] `borderColor="#RRGGBB"|...` (CSS color)
-      - [ ] `borderWidth="1"` (px)
-    - [ ] Row separators (uniform across columns) as standalone lines between rows:
-      - [ ] `.` = no rule, `-` = single rule, `=` = double rule
-    - [ ] Table body uses standard GFM pipe rows (header + separator row + data rows)
-  - [ ] **IR support**:
-    - [ ] Extend `TableNode` to include column spec + border rules + styling metadata (in `@zadoox/shared`)
-    - [ ] XMD→IR parser: parse `:::table` blocks into `TableNode` (including attrs + colSpec + row rules)
-    - [ ] IR→XMD renderer: emit `:::table` block (including colSpec + row rules) for derived surfaces (MD↔LaTeX switch)
-    - [ ] IR→HTML renderer: render borders/alignment/styles deterministically
-  - [ ] **Web editor UX**:
-    - [ ] Add **Insert Table Wizard** (like grid/figure wizard):
-      - [ ] Choose rows/cols
-      - [ ] Choose per-column alignment (L/C/R)
-      - [ ] Choose vertical borders between columns (none/single/double)
-      - [ ] Choose row rules between rows (none/single/double)
-      - [ ] Table-wide border style + color + width
-      - [ ] Insert generated `:::table` snippet at cursor
-- [ ] Basic formatting toolbar
+- [x] **Fix**: inline-placement element toolbars (figure toolbars inside grids not reliably showing in `placement="inline"`; stabilize hover/visibility)
+- [x] **Table creation/editing (XMD Table v1)**:
+  - [x] **Canonical XMD syntax (hand-typable)**:
+    - [x] Table block fence: `::: ... :::` (no keyword)
+    - [x] First non-empty line inside block: **column spec** (vertical borders + alignment), e.g. `|L||C|R|`
+      - [x] `L|C|R` define column text alignment
+      - [x] `|` / `||` define single/double vertical borders between columns (uniform across rows)
+    - [x] Table-wide attributes on the opening `:::` line (no braces):
+      - [x] `caption="..."`, `label="tbl:..."` (optional)
+      - [x] `borderStyle="solid|dotted|dashed"` (single-line style only; double borders remain `double`)
+      - [x] `borderColor="#RRGGBB"|...` (CSS color)
+      - [x] `borderWidth="1"` (px)
+    - [x] Row separators (uniform across columns) as standalone lines between rows:
+      - [x] `.` = no rule, `-` = single rule, `=` = double rule
+    - [x] Table body uses standard GFM pipe rows (header + separator row + data rows)
+  - [x] **IR support**:
+    - [x] Extend `TableNode` to include column spec + border rules + styling metadata (in `@zadoox/shared`)
+    - [x] XMD→IR parser: parse `:::table` blocks into `TableNode` (including attrs + colSpec + row rules)
+    - [x] IR→XMD renderer: emit `:::table` block (including colSpec + row rules) for derived surfaces (MD↔LaTeX switch)
+    - [x] IR→HTML renderer: render borders/alignment/styles deterministically
+  - [x] **Web editor UX**:
+    - [x] Add **Insert Table Wizard** (like grid/figure wizard):
+      - [x] Choose rows/cols
+      - [x] Choose per-column alignment (L/C/R)
+      - [x] Choose vertical borders between columns (none/single/double)
+      - [x] Choose row rules between rows (none/single/double)
+      - [x] Table-wide border style + color + width
+      - [x] Insert generated `:::table` snippet at cursor
+- [x] Basic formatting toolbar
 - [ ] Find/replace
 - [ ] Edit component with AI
   - [ ] **Checkpoint (MVP)**: Component AI edit
