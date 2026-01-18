@@ -303,6 +303,10 @@ export function CodeMirrorEditor({
         // ignore
       }
     };
+    if (!view.dom || typeof (view.dom as any).addEventListener !== 'function') {
+      pointerProbeAttachedRef.current = false;
+      return;
+    }
     pointerProbeHandlerRef.current = handler as any;
     // Use both pointerdown and mousedown capture:
     // - pointerdown gives us early visibility and better cross-input parity
