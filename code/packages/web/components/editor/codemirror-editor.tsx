@@ -437,7 +437,7 @@ export function CodeMirrorEditor({
         }, 150);
       }
     });
-  }, [onSelectionChange, onEditorViewReady, onCursorPositionChange, enableFormatMenu]);
+  }, [onSelectionChange, onEditorViewReady, onCursorPositionChange, enableFormatMenu, ensurePointerProbeAttached]);
 
   return (
     <div ref={editorContainerRef} className="h-full w-full relative">
