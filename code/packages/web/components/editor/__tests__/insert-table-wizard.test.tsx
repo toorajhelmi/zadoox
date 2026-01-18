@@ -48,11 +48,23 @@ describe('InsertTableWizard', () => {
     expect(insertArg).toContain(':::');
   });
 
-  it('disables insertion in LaTeX mode (for now)', async () => {
+  it('inserts a LaTeX table/tabularx snippet in LaTeX mode', async () => {
     const props = makeProps({ editMode: 'latex' });
     render(<InsertTableWizard {...(props as any)} />);
-    const btn = screen.getByRole('button', { name: 'Insert table' }) as HTMLButtonElement;
-    expect(btn.disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText('Columns'), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText('Rows'), { target: { value: '2' } });
+    fireEvent.change(screen.getByPlaceholderText('Optional caption'), { target: { value: 'Results' } });
+    fireEvent.change(screen.getByPlaceholderText('e.g. tbl:results'), { target: { value: 'tbl:results' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Insert table' }));
+    await waitFor(() => expect(props.onPreviewInsert).toHaveBeenCalled());
+
+    const insertArg = (props.onPreviewInsert as any).mock.calls[0][0].content as string;
+    expect(insertArg).toContain('\\begin{table}');
+    expect(insertArg).toContain('\\begin{tabularx}{\\linewidth}');
+    expect(insertArg).toContain('\\caption{Results}');
+    expect(insertArg).toContain('\\label{tbl:results}');
   });
 });
 

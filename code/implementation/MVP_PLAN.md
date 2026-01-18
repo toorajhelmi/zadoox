@@ -1328,6 +1328,14 @@ Phase 14 (Integration) ←──────────────────
 
 ---
 
+## Bugs
+
+### Active
+
+- Cursor jumps 1-2 lines below the click on the last wrapped lines of a paragraph (tall `.cm-line` in CodeMirror), often near inline figures or after wrapped inline content. Repro: click the final wrapped visual rows; caret lands below. Status: investigating; suspected CodeMirror hit-testing with wrapped lines and inline widget layout. Work ongoing in `code/packages/web/components/editor/codemirror-editor.tsx`.
+
+---
+
 ## Questions to Resolve
 
 - [ ] Express vs Fastify? → **Decision**: Fastify (better performance, TypeScript-first)

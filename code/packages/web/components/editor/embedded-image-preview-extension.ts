@@ -1275,7 +1275,8 @@ class FigureCardWidget extends WidgetType {
       className: 'cm-embedded-figure-toolbar',
       top: '8px',
       right: '8px',
-      zIndex: '20',
+      // Must be above the always-visible "Show XMD" button (z-index:25) when they overlap.
+      zIndex: '60',
       showMode: 'opacity',
       hideDelayMs: 120,
       // Disable automatic (hover) opening for figures everywhere.
@@ -1418,10 +1419,13 @@ class FigureCardWidget extends WidgetType {
         '<path d="M13 7a5 5 0 1 0 1 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
         '</svg>',
       trash:
+        // Cleaner trash icon (clear can + lid + inner slats)
         '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-        '<path d="M3 5h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
-        '<path d="M6 5v8m4-8v8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
-        '<path d="M6 3h4l1 2H5l1-2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>' +
+        '<path d="M3.5 4.5h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M6 2.75h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M5.25 4.5l.55 9.1c.04.66.58 1.15 1.24 1.15h1.9c.66 0 1.2-.5 1.24-1.15l.55-9.1" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>' +
+        '<path d="M7 7v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+        '<path d="M9 7v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
         '</svg>',
       alignLeft:
         '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
@@ -1761,6 +1765,7 @@ class FigureCardWidget extends WidgetType {
       btnShowXmd.style.position = 'absolute';
       btnShowXmd.style.top = '8px';
       btnShowXmd.style.left = '8px';
+      // Below the figure toolbar if they overlap.
       btnShowXmd.style.zIndex = '25';
       btnShowXmd.addEventListener('pointerdown', (e) => {
         e.preventDefault();
@@ -2248,7 +2253,8 @@ class FigureGridWidget extends WidgetType {
       // Keep the hover toolbar below the always-visible "Show XMD" button area.
       top: '44px',
       right: '8px',
-      zIndex: '4',
+      // Must be above the always-visible button row if they overlap.
+      zIndex: '60',
       showMode: 'visibility',
       disableHover: true,
       style: {
@@ -3539,7 +3545,8 @@ export function embeddedImagePreviewExtension() {
           className: 'cm-embedded-table-toolbar',
           top: '8px',
           right: '8px',
-          zIndex: '6',
+          // Keep above Show XMD if they overlap.
+          zIndex: '60',
           showMode: 'visibility',
           style: {
             maxWidth: '560px',

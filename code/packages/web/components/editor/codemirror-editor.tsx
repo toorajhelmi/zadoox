@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { EditorView, ViewUpdate, gutter, GutterMarker } from '@codemirror/view';
+import { Transaction } from '@codemirror/state';
 import { FloatingFormatMenu, type FormatType } from './floating-format-menu';
 
 // Dynamically import CodeMirror to avoid SSR issues
@@ -89,6 +90,8 @@ export function CodeMirrorEditor({
   const selectionRangeRef = useRef<{ from: number; to: number; text: string } | null>(null);
   const selectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const previousCursorPositionRef = useRef<{ line: number; column: number } | null>(null);
+  const pointerProbeAttachedRef = useRef(false);
+  const pointerProbeHandlerRef = useRef<((e: PointerEvent | MouseEvent) => void) | null>(null);
 
   // Clear placeholder on first edit
   useEffect(() => {
@@ -238,6 +241,83 @@ export function CodeMirrorEditor({
     return () => clearTimeout(timer);
   }, [displayValue, onEditorViewReady]);
 
+  // Capture pointerdown -> posAtCoords mapping to debug click-to-cursor line offsets.
+  // IMPORTANT: attach lazily when the EditorView is available (some mounts race).
+  const ensurePointerProbeAttached = useCallback((view: EditorView) => {
+    if (pointerProbeAttachedRef.current) return;
+    pointerProbeAttachedRef.current = true;
+
+    const handler = (e: PointerEvent | MouseEvent) => {
+      try {
+        // Only attempt correction on plain left-click/tap in the editor text surface.
+        if ((e as any).button !== 0) return;
+        if ((e as any).defaultPrevented) return;
+        const x = e.clientX;
+        const y = e.clientY;
+        const pos = view.posAtCoords({ x, y });
+        const coordsAt = typeof pos === 'number' ? view.coordsAtPos(pos) : null;
+        const deltaY = coordsAt ? Math.round(coordsAt.top - y) : null;
+        if (typeof deltaY === 'number' && Math.abs(deltaY) >= 10) {
+          // If the browser can provide a caret hit-test inside the editor DOM, prefer it when CM's
+          // posAtCoords clearly disagrees with the click y-position (common with tall wrapped lines
+          // and/or floated inline widgets).
+          try {
+            const anyDoc: any = typeof document !== 'undefined' ? document : null;
+            const native = anyDoc?.caretPositionFromPoint
+              ? anyDoc.caretPositionFromPoint(x, y)
+              : anyDoc?.caretRangeFromPoint
+                ? anyDoc.caretRangeFromPoint(x, y)
+                : null;
+            const node: Node | null =
+              native?.offsetNode ?? native?.startContainer ?? native?.range?.startContainer ?? null;
+            const offset: number | null =
+              typeof native?.offset === 'number'
+                ? native.offset
+                : typeof native?.startOffset === 'number'
+                  ? native.startOffset
+                  : typeof native?.range?.startOffset === 'number'
+                    ? native.range.startOffset
+                    : null;
+            const inEditorDom = Boolean(
+              node &&
+                view.dom.contains((node as any).nodeType === 1 ? (node as any) : (node as any)?.parentElement)
+            );
+            if (node && typeof offset === 'number' && inEditorDom) {
+              const nativePosAtDom = view.posAtDOM(node as any, offset);
+              if (typeof nativePosAtDom === 'number' && nativePosAtDom >= 0 && nativePosAtDom <= view.state.doc.length) {
+              e.preventDefault();
+              e.stopPropagation();
+              try { (e as any).stopImmediatePropagation?.(); } catch {}
+              view.dispatch({
+                selection: { anchor: nativePosAtDom, head: nativePosAtDom },
+                scrollIntoView: false,
+              });
+              return;
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+    pointerProbeHandlerRef.current = handler as any;
+    // Use both pointerdown and mousedown capture:
+    // - pointerdown gives us early visibility and better cross-input parity
+    // - CodeMirror selection is primarily driven off mousedown; intercepting only pointerdown is not sufficient
+    view.dom.addEventListener('pointerdown', handler as any, true);
+    view.dom.addEventListener('mousedown', handler as any, true);
+  }, []);
+
+  // Best-effort: attach when the view ref becomes available.
+  useEffect(() => {
+    const view = editorViewRef.current;
+    if (!view) return;
+    ensurePointerProbeAttached(view);
+  }, [ensurePointerProbeAttached, displayValue]);
+
   // Hide menu on click outside (but not on the menu itself)
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -276,6 +356,11 @@ export function CodeMirrorEditor({
         // Just update the ref, don't call the callback again
         editorViewRef.current = update.view;
       }
+
+      // Ensure the pointer probe is attached once we definitely have a view.
+      if (update.view) {
+        ensurePointerProbeAttached(update.view);
+      }
       
       // Track cursor position (line and column) - only when it actually changes
       if (update.view && onCursorPositionChange) {
@@ -293,7 +378,7 @@ export function CodeMirrorEditor({
           onCursorPositionChange(newPosition);
         }
       }
-      
+
       if (update.selectionSet && update.view) {
         const selection = update.state.selection.main;
         const selectedText = update.state.sliceDoc(selection.from, selection.to).trim();
