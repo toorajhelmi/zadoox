@@ -13,6 +13,29 @@ function escapeXmdAttr(s: string): string {
   return String(s ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').trim();
 }
 
+function escapeLatexTextLite(s: string): string {
+  // Minimal escaping for captions/labels; good enough for our wizard-generated placeholders.
+  return String(s ?? '')
+    .replace(/\\/g, '\\textbackslash{}')
+    .replace(/([%$#&_{}])/g, '\\$1')
+    .replace(/\^/g, '\\^{}')
+    .replace(/~/g, '\\textasciitilde{}')
+    .trim();
+}
+
+function hexToLatexColorDef(hexRaw: string): { name: string; defineLine: string; applyName: string } | null {
+  const t = String(hexRaw ?? '').trim();
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(t);
+  if (!m) return null;
+  const hex = (m[1] || '').toUpperCase();
+  const name = 'zxTableRuleColor';
+  return {
+    name,
+    defineLine: `\\definecolor{${name}}{HTML}{${hex}}`,
+    applyName: name,
+  };
+}
+
 function ruleChar(r: Rule): '.' | '-' | '=' {
   return r === 'double' ? '=' : r === 'single' ? '-' : '.';
 }
@@ -46,6 +69,8 @@ export function InsertTableWizard({ ctx, onCancel, onCloseAll, onPreviewInsert, 
 
   const [borderStyle, setBorderStyle] = useState<BorderStyle>('solid');
   const [borderColor, setBorderColor] = useState<string>('#6b7280');
+  // In our IR/LaTeX pipeline, "borderWidthPx" is treated as pt in LaTeX output.
+  // Allow 0 to disable borders completely.
   const [borderWidth, setBorderWidth] = useState<number>(1);
 
   const [aligns, setAligns] = useState<Align[]>(['L', 'C', 'R']);
@@ -102,11 +127,87 @@ export function InsertTableWizard({ ctx, onCancel, onCloseAll, onPreviewInsert, 
     if (label.trim()) attrs.push(`label="${escapeXmdAttr(label)}"`);
     if (borderStyle) attrs.push(`borderStyle="${escapeXmdAttr(borderStyle)}"`);
     if (borderColor.trim()) attrs.push(`borderColor="${escapeXmdAttr(borderColor)}"`);
-    if (Number.isFinite(borderWidth) && borderWidth > 0) attrs.push(`borderWidth="${Math.round(borderWidth)}"`);
+    if (Number.isFinite(borderWidth) && borderWidth >= 0) attrs.push(`borderWidth="${Math.round(borderWidth)}"`);
 
     const colSpec = buildColSpec({ aligns, vRules });
 
     const lines: string[] = [];
+    if (ctx.editMode === 'latex') {
+      const borderNone = Number.isFinite(borderWidth) && Math.round(borderWidth) === 0;
+      const bwPt = Number.isFinite(borderWidth) ? Math.max(0, Math.round(borderWidth)) : 1;
+      const colorDef = borderNone ? null : hexToLatexColorDef(borderColor);
+      // Dotted/dashed require extra packages; our exporter degrades to solid, so do the same here.
+      void borderStyle;
+
+      const v = vRules.length === safeCols + 1 ? vRules : Array.from({ length: safeCols + 1 }).map(() => 'none' as const);
+      const colToken = (a: Align) =>
+        a === 'C'
+          ? '>{\\centering\\arraybackslash}X'
+          : a === 'R'
+            ? '>{\\raggedleft\\arraybackslash}X'
+            : '>{\\raggedright\\arraybackslash}X';
+      const vTok = (r: Rule) => (r === 'double' ? '||' : r === 'single' ? '|' : '');
+      const colSpecLatex = (() => {
+        if (borderNone) return aligns.slice(0, safeCols).map((a) => colToken(a ?? 'L')).join('');
+        let s = '';
+        s += vTok(v[0] ?? 'none');
+        for (let i = 0; i < safeCols; i++) {
+          s += colToken(aligns[i] ?? 'L');
+          s += vTok(v[i + 1] ?? 'none');
+        }
+        return s;
+      })();
+
+      const totalRows = 1 + dataRows.length;
+      const hRules: Rule[] = [];
+      hRules.push(hTop);
+      hRules.push(hAfterHeader);
+      for (let i = 0; i < dataRows.length - 1; i++) hRules.push(hBetweenRows[i] ?? 'none');
+      hRules.push(hBottom);
+      while (hRules.length < totalRows + 1) hRules.push('none');
+      if (hRules.length > totalRows + 1) hRules.length = totalRows + 1;
+
+      const emitHLines = (r: Rule) => {
+        if (borderNone) return;
+        if (r === 'single') lines.push('\\hline');
+        else if (r === 'double') lines.push('\\hline', '\\hline');
+      };
+
+      const cap = caption.trim();
+      const lab = label.trim();
+
+      lines.push('\\begin{table}[h]');
+      lines.push('\\centering');
+      // Scope rule styling to this table only.
+      lines.push('{');
+      if (colorDef) lines.push(colorDef.defineLine);
+      if (!borderNone) lines.push(`\\setlength{\\arrayrulewidth}{${bwPt}pt}`);
+      lines.push(`\\begin{tabularx}{\\linewidth}{${colSpecLatex}}`);
+      if (colorDef) lines.push(`\\arrayrulecolor{${colorDef.applyName}}`);
+
+      // boundary 0
+      emitHLines(hRules[0] ?? 'none');
+      // header row
+      lines.push(`${header.map((h) => `\\textbf{${escapeLatexTextLite(h)}}`).join(' & ')} \\\\`);
+      // boundary 1
+      emitHLines(hRules[1] ?? 'none');
+      // body rows + boundaries after each row
+      for (let r = 0; r < dataRows.length; r++) {
+        const row = dataRows[r] ?? [];
+        const cells = Array.from({ length: safeCols }).map((_, i) => escapeLatexTextLite(String(row[i] ?? '').trim()));
+        lines.push(`${cells.join(' & ')} \\\\`);
+        emitHLines(hRules[2 + r] ?? 'none');
+      }
+
+      lines.push('\\end{tabularx}');
+      lines.push('}');
+      if (cap.length > 0) lines.push(`\\caption{${escapeLatexTextLite(cap)}}`);
+      if (lab.length > 0) lines.push(`\\label{${escapeLatexTextLite(lab)}}`);
+      lines.push('\\end{table}');
+      return `${lines.join('\n')}\n`;
+    }
+
+    // Markdown/XMD table v1
     lines.push(`:::${attrs.length ? ` ${attrs.join(' ')}` : ''}`);
     lines.push(colSpec);
     if (hTop !== 'none') lines.push(ruleChar(hTop));
@@ -127,9 +228,24 @@ export function InsertTableWizard({ ctx, onCancel, onCloseAll, onPreviewInsert, 
     if (hBottom !== 'none') lines.push(ruleChar(hBottom));
     lines.push(':::');
     return lines.join('\n');
-  }, [safeCols, safeRows, caption, label, borderStyle, borderColor, borderWidth, aligns, vRules, hTop, hAfterHeader, hBetweenRows, hBottom]);
+  }, [
+    ctx.editMode,
+    safeCols,
+    safeRows,
+    caption,
+    label,
+    borderStyle,
+    borderColor,
+    borderWidth,
+    aligns,
+    vRules,
+    hTop,
+    hAfterHeader,
+    hBetweenRows,
+    hBottom,
+  ]);
 
-  const canInsert = Boolean(onPreviewInsert) && ctx.editMode === 'markdown';
+  const canInsert = Boolean(onPreviewInsert);
 
   const doInsert = async () => {
     if (!onPreviewInsert) return;
@@ -165,12 +281,6 @@ export function InsertTableWizard({ ctx, onCancel, onCloseAll, onPreviewInsert, 
           Close
         </button>
       </div>
-
-      {ctx.editMode !== 'markdown' ? (
-        <div className="text-xs text-vscode-text-secondary">
-          Table wizard currently inserts XMD tables in <b>Markdown</b> mode only.
-        </div>
-      ) : null}
 
       <div className="grid grid-cols-2 gap-3">
         <label className="flex flex-col gap-1 text-xs text-vscode-text-secondary">
@@ -319,7 +429,7 @@ export function InsertTableWizard({ ctx, onCancel, onCloseAll, onPreviewInsert, 
           <input
             className="bg-vscode-editorWidgetBg border border-vscode-border rounded px-2 py-1 text-xs text-vscode-text"
             type="number"
-            min={1}
+            min={0}
             max={8}
             value={borderWidth}
             onChange={(e) => setBorderWidth(Number(e.target.value))}

@@ -138,7 +138,6 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
       const view = editorViewRef.current;
       const baseContent = view ? view.state.doc.toString() : content;
       const cmSelection = view?.state.selection.main ?? null;
-
       // Resolve a selection range in document coordinates (prefer stored selection, fallback to CodeMirror selection)
       const from = cmSelection ? Math.min(cmSelection.from, cmSelection.to) : null;
       const to = cmSelection ? Math.max(cmSelection.from, cmSelection.to) : null;
@@ -153,7 +152,6 @@ export function useEditorFormatHandler(params: EditorLayoutFormatHandlerParams) 
 
         const startLine = doc.lineAt(rangeFrom);
         const endLine = doc.lineAt(rangeTo);
-
         const lines: Array<{ from: number; to: number; text: string }> = [];
         for (let n = startLine.number; n <= endLine.number; n++) {
           const l = doc.line(n);
