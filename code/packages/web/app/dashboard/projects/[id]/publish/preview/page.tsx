@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { DashboardLayout, LoaderIcon } from '@/components/dashboard';
 import { api } from '@/lib/api/client';
 import { ArchiveBoxArrowDownIcon, ArrowDownTrayIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
@@ -15,11 +15,10 @@ const TRANSPARENT_PIXEL =
 export default function PublishPreviewPage() {
   const params = useParams();
   const router = useRouter();
-  const search = useSearchParams();
   const projectId = params.id as string;
 
-  const documentId = search.get('documentId') || '';
-  const source = (search.get('source') || 'markdown') as PublishSource;
+  const [documentId, setDocumentId] = useState<string>('');
+  const [source, setSource] = useState<PublishSource>('markdown');
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +47,12 @@ export default function PublishPreviewPage() {
   };
 
   const canLoad = useMemo(() => !!projectId && !!documentId, [projectId, documentId]);
+
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    setDocumentId(sp.get('documentId') || '');
+    setSource((sp.get('source') || 'markdown') as PublishSource);
+  }, []);
 
   useEffect(() => {
     if (!canLoad) {

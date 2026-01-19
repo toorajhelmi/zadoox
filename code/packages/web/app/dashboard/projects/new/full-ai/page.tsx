@@ -1,24 +1,24 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import type { CreateProjectInput } from '@zadoox/shared';
 import { api } from '@/lib/api/client';
 
 export default function NewProjectFullAIPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-
-  const initial = useMemo(() => {
-    const name = (searchParams.get('name') ?? '').trim();
-    const description = (searchParams.get('description') ?? '').trim();
-    return { name, description };
-  }, [searchParams]);
-
-  const [name, setName] = useState<string>(initial.name);
-  const [description, setDescription] = useState<string>(initial.description);
+  const [name, setName] = useState<string>('');
+  const [description, setDescription] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const qName = (sp.get('name') ?? '').trim();
+    const qDesc = (sp.get('description') ?? '').trim();
+    if (qName) setName(qName);
+    if (qDesc) setDescription(qDesc);
+  }, []);
 
   const createAndStart = async () => {
     setError(null);
