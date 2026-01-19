@@ -84,13 +84,43 @@ export function CreateProjectModal({ isOpen, onClose, onCreate, initialStartMode
     }
   };
 
-  const startFullAI = () => {
-    // Move to full-page Full-AI onboarding (not a modal). Pass along name/description.
-    const params = new URLSearchParams();
-    if (name.trim()) params.set('name', name.trim());
-    if (description.trim()) params.set('description', description.trim());
-    onClose();
-    router.push(`/dashboard/projects/new/full-ai${params.toString() ? `?${params.toString()}` : ''}`);
+  const createAndStartFullAI = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const project = await onCreate({
+        name: name.trim(),
+        description: description.trim() || undefined,
+        // Full-AI flow: project type will be refined during onboarding/chat.
+        type: 'other',
+      });
+
+      const docs = await api.documents.listByProject(project.id);
+      const docId =
+        docs.length > 0
+          ? docs[0]!.id
+          : (
+              await api.documents.create({
+                projectId: project.id,
+                title: 'Untitled Document',
+                content: '',
+                metadata: { type: 'standalone' },
+              })
+            ).id;
+
+      // Reset form
+      setName('');
+      setDescription('');
+      setType('academic');
+      onClose();
+
+      // Land in the editor with Full-AI chat opened/focused.
+      router.push(`/dashboard/projects/${project.id}/documents/${docId}?fullassist=true&focus=chat`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create project');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -264,12 +294,12 @@ export function CreateProjectModal({ isOpen, onClose, onCreate, initialStartMode
             ) : (
               <button
                 type="button"
-                onClick={startFullAI}
+                onClick={createAndStartFullAI}
                 disabled={loading || !name.trim()}
                 className="px-4 py-2 text-sm bg-[#a855f7] hover:bg-[#9333ea] text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 <WandIcon className="w-4 h-4 text-white" />
-                <span>Continue to Full‑AI</span>
+                <span>Create Project</span>
               </button>
             )}
           </div>
