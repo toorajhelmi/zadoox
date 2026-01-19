@@ -8,10 +8,16 @@ import {
   Project,
   CreateProjectInput,
   UpdateProjectInput,
+  ProjectSettings,
+  EditingMode,
   ProjectType,
 } from '@zadoox/shared';
 import { isValidProjectType } from '@zadoox/shared';
 import { generateId } from '@zadoox/shared';
+
+function normalizeEditingMode(value: unknown): EditingMode {
+  return value === 'full-ai' ? 'full-ai' : 'ai-assist';
+}
 
 export class ProjectService {
   constructor(private supabase: SupabaseClient) {}
@@ -38,7 +44,10 @@ export class ProjectService {
         defaultFormat: input.settings?.defaultFormat || 'latex',
         chapterNumbering: input.settings?.chapterNumbering ?? true,
         autoSync: input.settings?.autoSync ?? true,
-        editingMode: (input.settings as any)?.editingMode || (input.settings as any)?.onboardingMode || 'ai-assist',
+        editingMode: normalizeEditingMode(
+          (input.settings as Partial<ProjectSettings> & { onboardingMode?: unknown } | undefined)?.editingMode ??
+            (input.settings as Partial<ProjectSettings> & { onboardingMode?: unknown } | undefined)?.onboardingMode
+        ),
       },
     };
 
@@ -158,17 +167,19 @@ export class ProjectService {
    */
   private mapDbProjectToProject(dbProject: Record<string, unknown>): Project {
     const rawSettings = (dbProject.settings || {}) as Record<string, unknown>;
-    const editingMode =
-      (rawSettings.editingMode as string | undefined) ||
-      (rawSettings.onboardingMode as string | undefined) ||
-      'ai-assist';
+    const editingMode = normalizeEditingMode(rawSettings.editingMode ?? rawSettings.onboardingMode);
 
     return {
       id: dbProject.id as string,
       name: dbProject.name as string,
       description: (dbProject.description as string | null) || undefined,
       type: dbProject.type as ProjectType,
-      settings: { ...(rawSettings as any), editingMode } as Project['settings'],
+      settings: {
+        defaultFormat: (rawSettings.defaultFormat as ProjectSettings['defaultFormat']) || 'latex',
+        chapterNumbering: (rawSettings.chapterNumbering as boolean) ?? true,
+        autoSync: (rawSettings.autoSync as boolean) ?? true,
+        editingMode,
+      },
       ownerId: dbProject.owner_id as string,
       createdAt: new Date(dbProject.created_at as string),
       updatedAt: new Date(dbProject.updated_at as string),
