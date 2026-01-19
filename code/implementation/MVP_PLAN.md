@@ -1197,6 +1197,43 @@ Goal: manage project-level files (images, datasets, PDFs, etc.) as a real file t
 
 Goal: introduce a phase-aware authoring assistant that supports (A) initiation, (B) elaboration, (C) finalization — while minimizing full-document rescans via structured representations.
 
+#### Phase 15 Execution Plan (Linear Phases)
+We will implement Phase 15 in small vertical slices (each phase ends with a working loop + tests):
+
+##### Phase 15.1: SG Foundations (Schema + Persistence + Load) — Start Here
+- [ ] Define minimal **SemanticGraph (SG)** JSON schema + versioning
+- [ ] Persist SG per document (v1: serialized JSON)
+- [ ] Load SG into memory while editing (editor session state)
+- [ ] Add BG↔SG mapping scaffolding (NodeProvenance stub)
+- [ ] Add cost controls scaffolding: change detector + debounced trigger (no LLM calls yet)
+- [ ] Tests: SG persistence/load + basic smoke tests in web/backend
+
+##### Phase 15.2: Incremental Updates + Provenance
+- [ ] Incremental SG updates for small edits (block-scoped)
+- [ ] “Major edit” detection: rebuild SG (v1) and mark provenance resets
+- [ ] Implement `NodeProvenance` mapping (SG node ↔ BG block/span)
+- [ ] (Optional) `EdgeProvenance` mapping (SG edge ↔ BG block/span)
+
+##### Phase 15.3: Background Reviewer v0 (Suggestions Objects)
+- [ ] Background process (debounced) produces suggestions objects (no UI yet)
+- [ ] Persist suggestions and expose counts (per document)
+- [ ] Budget/rate limiting for background reviewer
+
+##### Phase 15.4: Suggestions UX (Preview/Apply/Dismiss)
+- [ ] Suggestions inbox (collapsible pane) + badges
+- [ ] Inline markers in doc; click → details + preview/apply/dismiss
+- [ ] Phase-aware grouping and basic filtering
+
+##### Phase 15.5: Blocking Decision Cards
+- [ ] Decision cards are **blocking** when chat changes prior decisions
+- [ ] SG-targeted impact set + semantic verification of top impacts (not graph traversal only)
+- [ ] UX actions: Preview / Apply / Dismiss
+
+##### Phase 15.6: Rules + Extensibility (Doc/Venue)
+- [ ] Rule interfaces over BG/SG (validators + suggesters)
+- [ ] Seed rule set: Academic evidence expectations (simple)
+- [ ] Venue preset scaffolding (e.g., Nature) for future expansion
+
 #### Core Concepts
 - **BlockGraph (BG)**:
   - Block-level canonical representation of the document (text + non-text: figure/table/grid/etc.)
