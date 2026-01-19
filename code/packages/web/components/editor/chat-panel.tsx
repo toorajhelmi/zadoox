@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { MicIcon, ArrowRightIcon } from '@/components/icons';
+import { SemanticGraphPanel } from './sg/semantic-graph-panel';
 
 export function ChatPanel(props: {
   isOpen: boolean;
@@ -9,12 +10,15 @@ export function ChatPanel(props: {
   onOpen: () => void;
   onClose: () => void;
   inputRef?: React.MutableRefObject<HTMLTextAreaElement | null>;
+  documentMetadata?: Record<string, any>;
+  saveMetadataPatch?: (patch: Record<string, any>, changeType?: 'auto-save' | 'ai-action') => void;
 }) {
-  const { isOpen, isFullAI, onOpen, onClose, inputRef } = props;
+  const { isOpen, isFullAI, onOpen, onClose, inputRef, documentMetadata, saveMetadataPatch } = props;
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [sending, setSending] = useState(false);
+  const [sgOpen, setSgOpen] = useState(false);
 
   const handleSend = useCallback(() => {
     const msg = inputValue.trim();
@@ -72,6 +76,22 @@ export function ChatPanel(props: {
           </div>
         ) : (
           <div>Open chat to ask for help, generate structure, or draft content.</div>
+        )}
+
+        {/* Phase 15.2 (interactive validation): SG panel persisted in document metadata */}
+        {documentMetadata && saveMetadataPatch && (
+          <div className="mt-4">
+            <button
+              type="button"
+              className="w-full flex items-center justify-between px-3 py-2 rounded border border-[#3e3e42] bg-[#252526] hover:bg-[#2d2d30] transition-colors"
+              onClick={() => setSgOpen((v) => !v)}
+              aria-expanded={sgOpen}
+            >
+              <span className="text-[11px] font-mono uppercase text-[#cccccc]">Semantic Graph</span>
+              <span className="text-xs text-[#969696]">{sgOpen ? 'Hide' : 'Show'}</span>
+            </button>
+            {sgOpen && <SemanticGraphPanel documentMetadata={documentMetadata} saveMetadataPatch={saveMetadataPatch} />}
+          </div>
         )}
       </div>
 

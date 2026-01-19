@@ -1025,6 +1025,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             isOpen={rightAiChatOpen}
             isFullAI={isFullAI}
             inputRef={rightAiInputRef}
+            documentMetadata={documentMetadata as any}
+            saveMetadataPatch={saveMetadataPatch}
             onOpen={() => {
               setRightAiChatOpen(true);
               requestAnimationFrame(() => rightAiInputRef.current?.focus());
