@@ -8,8 +8,11 @@ import { clampEdgeWeight, createEmptySemanticGraph, makeSgId, SEMANTIC_NODE_TYPE
 export function SemanticGraphPanel(props: {
   documentMetadata: Record<string, any>;
   saveMetadataPatch: (patch: Record<string, any>, changeType?: 'auto-save' | 'ai-action') => void;
+  isPinned: boolean;
+  onTogglePinned: () => void;
+  onRequestClose?: () => void;
 }) {
-  const { documentMetadata, saveMetadataPatch } = props;
+  const { documentMetadata, saveMetadataPatch, isPinned, onTogglePinned, onRequestClose } = props;
 
   const sg = (documentMetadata as any)?.[SG_METADATA_KEY] as SemanticGraph | undefined;
   const hasSg = Boolean(sg);
@@ -41,18 +44,40 @@ export function SemanticGraphPanel(props: {
   const ensureSg = (): SemanticGraph => sg ?? createEmptySemanticGraph();
 
   return (
-    <div className="mt-3 rounded border border-[#3e3e42] bg-[#1e1e1e]">
+    <div className="rounded border border-[#3e3e42] bg-[#1e1e1e]">
       <div className="px-3 py-2 border-b border-[#3e3e42] flex items-center justify-between">
         <div className="text-[11px] font-mono uppercase text-[#cccccc]">Semantic Graph (alpha)</div>
-        {!hasSg && (
+        <div className="flex items-center gap-2">
+          {!hasSg && (
+            <button
+              type="button"
+              className="text-xs px-2 py-1 rounded bg-[#3e3e42] hover:bg-[#464647] text-white transition-colors"
+              onClick={() => persist(createEmptySemanticGraph())}
+            >
+              Create
+            </button>
+          )}
+
           <button
             type="button"
-            className="text-xs px-2 py-1 rounded bg-[#3e3e42] hover:bg-[#464647] text-white transition-colors"
-            onClick={() => persist(createEmptySemanticGraph())}
+            className="text-xs px-2 py-1 rounded bg-[#252526] border border-[#3e3e42] hover:bg-[#2d2d30] text-white transition-colors"
+            onClick={onTogglePinned}
+            title={isPinned ? 'Unpin (show in side rail)' : 'Pin (dock in panel)'}
           >
-            Create
+            {isPinned ? 'Unpin' : 'Pin'}
           </button>
-        )}
+
+          {!isPinned && onRequestClose && (
+            <button
+              type="button"
+              className="text-xs px-2 py-1 rounded bg-[#252526] border border-[#3e3e42] hover:bg-[#2d2d30] text-white transition-colors"
+              onClick={onRequestClose}
+              title="Close"
+            >
+              Close
+            </button>
+          )}
+        </div>
       </div>
 
       {hasSg ? (

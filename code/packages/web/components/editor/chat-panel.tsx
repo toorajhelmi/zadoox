@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { MicIcon, ArrowRightIcon } from '@/components/icons';
 import { SemanticGraphPanel } from './sg/semantic-graph-panel';
 
@@ -18,7 +18,11 @@ export function ChatPanel(props: {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [sending, setSending] = useState(false);
-  const [sgOpen, setSgOpen] = useState(false);
+  const [sgPinned, setSgPinned] = useState(false);
+  const [sgPopoverOpen, setSgPopoverOpen] = useState(false);
+  const [sgDockOpen, setSgDockOpen] = useState(true);
+  const sgPopoverRef = useRef<HTMLDivElement | null>(null);
+  const sgRailButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const handleSend = useCallback(() => {
     const msg = inputValue.trim();
@@ -34,6 +38,21 @@ export function ChatPanel(props: {
     // TODO: wire to real chat backend; for now, just stop "sending" immediately.
     setTimeout(() => setSending(false), 150);
   }, [inputValue, sending]);
+
+  useEffect(() => {
+    if (!sgPopoverOpen || sgPinned) return;
+    function onPointerDown(e: PointerEvent) {
+      const pop = sgPopoverRef.current;
+      const railBtn = sgRailButtonRef.current;
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (pop && pop.contains(target)) return;
+      if (railBtn && railBtn.contains(target)) return;
+      setSgPopoverOpen(false);
+    }
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => window.removeEventListener('pointerdown', onPointerDown);
+  }, [sgPopoverOpen, sgPinned]);
 
   if (!isOpen) {
     return (
@@ -69,30 +88,82 @@ export function ChatPanel(props: {
         </button>
       </div>
 
-      <div className="flex-1 overflow-auto p-3 text-sm text-vscode-text-secondary">
-        {isFullAI ? (
-          <div className="text-vscode-text">
-            Guided chat will appear here. Tell Zadoox what you’re creating and we’ll produce the first draft.
-          </div>
-        ) : (
-          <div>Open chat to ask for help, generate structure, or draft content.</div>
-        )}
-
-        {/* Phase 15.2 (interactive validation): SG panel persisted in document metadata */}
-        {documentMetadata && saveMetadataPatch && (
-          <div className="mt-4">
+      <div className="flex-1 flex overflow-hidden">
+        {/* VS Code-style tool rail */}
+        <div className="w-9 border-r border-vscode-border bg-[#252526] flex flex-col items-center py-2 gap-2">
+          {documentMetadata && saveMetadataPatch && (
             <button
+              ref={sgRailButtonRef}
               type="button"
-              className="w-full flex items-center justify-between px-3 py-2 rounded border border-[#3e3e42] bg-[#252526] hover:bg-[#2d2d30] transition-colors"
-              onClick={() => setSgOpen((v) => !v)}
-              aria-expanded={sgOpen}
+              className={`w-7 h-7 rounded border text-[10px] font-mono uppercase transition-colors ${
+                sgPinned
+                  ? 'border-[#a855f7]/40 bg-[#a855f7]/10 text-[#e9d5ff]'
+                  : sgPopoverOpen
+                    ? 'border-[#3e3e42] bg-[#1e1e1e] text-[#cccccc]'
+                    : 'border-transparent hover:border-[#3e3e42] hover:bg-[#1e1e1e] text-[#969696] hover:text-[#cccccc]'
+              }`}
+              title={sgPinned ? 'Semantic Graph (pinned)' : 'Semantic Graph'}
+              onClick={() => {
+                if (sgPinned) {
+                  setSgDockOpen((v) => !v);
+                  return;
+                }
+                setSgPopoverOpen((v) => !v);
+              }}
+              aria-label="Semantic Graph"
             >
-              <span className="text-[11px] font-mono uppercase text-[#cccccc]">Semantic Graph</span>
-              <span className="text-xs text-[#969696]">{sgOpen ? 'Hide' : 'Show'}</span>
+              SG
             </button>
-            {sgOpen && <SemanticGraphPanel documentMetadata={documentMetadata} saveMetadataPatch={saveMetadataPatch} />}
+          )}
+        </div>
+
+        <div className="flex-1 relative">
+          {/* Unpinned SG popover */}
+          {documentMetadata && saveMetadataPatch && !sgPinned && sgPopoverOpen && (
+            <div
+              ref={sgPopoverRef}
+              className="absolute z-50 top-3 left-3 right-3 max-h-[70%] overflow-auto rounded shadow-lg"
+            >
+              <SemanticGraphPanel
+                documentMetadata={documentMetadata}
+                saveMetadataPatch={saveMetadataPatch}
+                isPinned={false}
+                onTogglePinned={() => {
+                  setSgPinned(true);
+                  setSgDockOpen(true);
+                  setSgPopoverOpen(false);
+                }}
+                onRequestClose={() => setSgPopoverOpen(false)}
+              />
+            </div>
+          )}
+
+          {/* Main scrollable content */}
+          <div className="h-full overflow-auto p-3 text-sm text-vscode-text-secondary">
+            {isFullAI ? (
+              <div className="text-vscode-text">
+                Guided chat will appear here. Tell Zadoox what you’re creating and we’ll produce the first draft.
+              </div>
+            ) : (
+              <div>Open chat to ask for help, generate structure, or draft content.</div>
+            )}
+
+            {/* Pinned SG dock */}
+            {documentMetadata && saveMetadataPatch && sgPinned && sgDockOpen && (
+              <div className="mt-4">
+                <SemanticGraphPanel
+                  documentMetadata={documentMetadata}
+                  saveMetadataPatch={saveMetadataPatch}
+                  isPinned={true}
+                  onTogglePinned={() => {
+                    setSgPinned(false);
+                    setSgPopoverOpen(false);
+                  }}
+                />
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* Input Area - same command-bar style as Think panel chat */}
