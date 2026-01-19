@@ -6,6 +6,7 @@ import { ApiError } from '@/lib/api/client';
 import type { ParagraphMode } from '@zadoox/shared';
 
 const AUTO_SAVE_DELAY = 2000; // 2 seconds after last edit
+const AUTO_SAVE_METADATA_DELAY = 2000; // metadata-only debounce
 
 function deriveTitleFromXmd(xmd: string): string | null {
   const lines = xmd.split('\n');
@@ -40,6 +41,7 @@ export function useDocumentState(documentId: string, projectId: string) {
   const [paragraphModes, setParagraphModes] = useState<Record<string, ParagraphMode>>({});
   const [documentMetadata, setDocumentMetadata] = useState<Record<string, any>>({});
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const saveMetadataTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load document content (or create "Untitled Document" if project has no documents)
   useEffect(() => {
@@ -166,8 +168,96 @@ export function useDocumentState(documentId: string, projectId: string) {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
+      if (saveMetadataTimeoutRef.current) {
+        clearTimeout(saveMetadataTimeoutRef.current);
+      }
     };
   }, []);
+
+  const saveMetadataPatch = useCallback(
+    (patch: Record<string, any>, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      // Keep the latest patch/localMeta available to the debounced callback without relying
+      // on React state having updated synchronously.
+      const localMetaSnapshot = (documentMetadata || {}) as Record<string, any>;
+      const patchSnapshot = (patch || {}) as Record<string, any>;
+
+      if (saveMetadataTimeoutRef.current) {
+        clearTimeout(saveMetadataTimeoutRef.current);
+      }
+
+      // Don't save if we don't have an actual document ID yet
+      if (!actualDocumentId) return;
+
+      // Optimistically update local metadata immediately
+      setDocumentMetadata((prev) => ({ ...(prev || {}), ...patchSnapshot }));
+
+      saveMetadataTimeoutRef.current = setTimeout(async () => {
+        setIsSaving(true);
+        try {
+          const currentDocument = await api.documents.get(actualDocumentId);
+          const serverMeta = (currentDocument.metadata || {}) as Record<string, any>;
+          const localMeta = localMetaSnapshot;
+
+          const mergedMetadata: Record<string, any> = {
+            ...serverMeta,
+            ...localMeta,
+            ...patchSnapshot,
+            paragraphModes: paragraphModes,
+          };
+
+          // Preserve server LaTeX fields if local is missing them (same rule as content autosave)
+          const serverLatex = typeof serverMeta.latex === 'string' ? serverMeta.latex : null;
+          const localLatex = typeof localMeta.latex === 'string' ? localMeta.latex : null;
+          const localHasLatex = typeof localLatex === 'string' && localLatex.trim().length > 0;
+          const serverHasLatex = typeof serverLatex === 'string' && serverLatex.trim().length > 0;
+          if (!localHasLatex && serverHasLatex) {
+            mergedMetadata.latex = serverMeta.latex;
+            mergedMetadata.latexIrHash = serverMeta.latexIrHash;
+            mergedMetadata.lastEditedFormat = serverMeta.lastEditedFormat;
+          }
+
+          const document = await api.documents.update(actualDocumentId, {
+            metadata: mergedMetadata,
+            changeType,
+          });
+          setLastSaved(new Date(document.updatedAt));
+          setParagraphModes(document.metadata?.paragraphModes || {});
+          setDocumentMetadata(document.metadata || {});
+        } catch (error) {
+          console.error('Failed to save document metadata:', error);
+        } finally {
+          setIsSaving(false);
+        }
+      }, AUTO_SAVE_METADATA_DELAY);
+    },
+    [actualDocumentId, documentMetadata, paragraphModes]
+  );
 
   // Handle mode toggle
   const handleModeToggle = useCallback(
@@ -222,6 +312,7 @@ export function useDocumentState(documentId: string, projectId: string) {
     paragraphModes,
     documentMetadata,
     setDocumentMetadata,
+    saveMetadataPatch,
     handleModeToggle,
     saveDocument: async (contentToSave: string, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
       await saveDocument(contentToSave, changeType);

@@ -8,3 +8,4 @@ export * from './document';
 export * from './api';
 export * from './version';
 export * from './editor';
+export * from './semantic-graph';

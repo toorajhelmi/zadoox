@@ -37,6 +37,7 @@ import { ensureLatexPreambleForLatexContent } from './latex-preamble';
 import { ActiveEditorSurface } from './active-editor-surface';
 import { useCanonicalIrState } from './editor-layout-canonical-ir';
 import { getActiveEditorText, getCursorScopeText, getSurfaceCapabilities, getSurfaceSyntax, getTypingHistoryAdapter, pickUndoRedo } from './editor-surface';
+import { useSemanticGraph } from './sg/use-semantic-graph';
 
 interface EditorLayoutProps {
   projectId: string;
@@ -70,6 +71,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     handleModeToggle: handleModeToggleFromHook,
     documentMetadata,
     setDocumentMetadata,
+    saveMetadataPatch,
   } = useDocumentState(documentId, projectId);
   
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -118,6 +120,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     if (!isFullAI && !shouldFocusChat) return;
     requestAnimationFrame(() => rightAiInputRef.current?.focus());
   }, [rightAiChatOpen, isFullAI, shouldFocusChat]);
+
+  // Phase 15.1: SG subsystem (kept isolated under ./sg/)
+  useSemanticGraph({ documentMetadata, saveMetadataPatch, enabled: true });
 
   // Chat send UX is encapsulated in `ChatPanel`.
   const [openParagraphId, setOpenParagraphId] = useState<string | null>(null);
