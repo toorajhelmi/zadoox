@@ -1,11 +1,26 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { DashboardLayout, LoaderIcon } from '@/components/dashboard';
 import { api } from '@/lib/api/client';
 import type { EditingMode, Project } from '@zadoox/shared';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
+
+const EDITING_MODE_OPTIONS: Array<{ mode: EditingMode; label: string; hint: string; className: string }> = [
+  {
+    mode: 'ai-assist',
+    label: 'AI‑ASSIST',
+    hint: 'Start from a blank doc; use AI as needed',
+    className: 'border-[#007acc]/40 bg-[#007acc]/10 text-[#bfe3ff] hover:bg-[#007acc]/20',
+  },
+  {
+    mode: 'full-ai',
+    label: 'FULL‑AI',
+    hint: 'Guided chat-first drafting flow',
+    className: 'border-[#a855f7]/40 bg-[#a855f7]/10 text-[#e9d5ff] hover:bg-[#a855f7]/20',
+  },
+];
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -139,9 +154,8 @@ export default function ProjectDetailPage() {
     );
   }
 
-  const editingMode = project.settings?.editingMode === 'full-ai' ? 'full-ai' : 'ai-assist';
-
-  const editingModeUi = useMemo(() => {
+  const editingMode: EditingMode = project.settings?.editingMode === 'full-ai' ? 'full-ai' : 'ai-assist';
+  const editingModeUi = (() => {
     const label = editingMode === 'full-ai' ? 'FULL‑AI' : 'AI‑ASSIST';
     const badgeClass =
       editingMode === 'full-ai'
@@ -149,26 +163,7 @@ export default function ProjectDetailPage() {
         : 'border-[#007acc]/40 bg-[#007acc]/10 text-[#bfe3ff] hover:bg-[#007acc]/20';
     const title = editingMode === 'full-ai' ? 'Full-AI editing mode' : 'AI-Assist editing mode';
     return { label, badgeClass, title };
-  }, [editingMode]);
-
-  const modeOptions = useMemo(
-    () =>
-      [
-        {
-          mode: 'ai-assist' as const,
-          label: 'AI‑ASSIST',
-          hint: 'Start from a blank doc; use AI as needed',
-          className: 'border-[#007acc]/40 bg-[#007acc]/10 text-[#bfe3ff] hover:bg-[#007acc]/20',
-        },
-        {
-          mode: 'full-ai' as const,
-          label: 'FULL‑AI',
-          hint: 'Guided chat-first drafting flow',
-          className: 'border-[#a855f7]/40 bg-[#a855f7]/10 text-[#e9d5ff] hover:bg-[#a855f7]/20',
-        },
-      ] satisfies Array<{ mode: EditingMode; label: string; hint: string; className: string }>,
-    []
-  );
+  })();
 
   return (
     <DashboardLayout>
@@ -238,7 +233,7 @@ export default function ProjectDetailPage() {
                       Switch editing mode
                     </div>
                     <div className="mt-1 space-y-1">
-                      {modeOptions.map((opt) => {
+                      {EDITING_MODE_OPTIONS.map((opt) => {
                         const active = opt.mode === editingMode;
                         return (
                           <button
