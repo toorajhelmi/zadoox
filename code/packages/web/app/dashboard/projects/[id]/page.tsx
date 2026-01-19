@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { DashboardLayout, LoaderIcon } from '@/components/dashboard';
 import { api } from '@/lib/api/client';
-import type { Project } from '@zadoox/shared';
+import type { EditingMode, Project } from '@zadoox/shared';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 
 export default function ProjectDetailPage() {
@@ -15,6 +15,9 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editingModeMenuOpen, setEditingModeMenuOpen] = useState(false);
+  const [editingModeSaving, setEditingModeSaving] = useState(false);
+  const editingModeMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const loadProject = async () => {
@@ -43,6 +46,18 @@ export default function ProjectDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
+  useEffect(() => {
+    if (!editingModeMenuOpen) return;
+    function onPointerDown(e: PointerEvent) {
+      const el = editingModeMenuRef.current;
+      if (!el) return;
+      if (el.contains(e.target as Node)) return;
+      setEditingModeMenuOpen(false);
+    }
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => window.removeEventListener('pointerdown', onPointerDown);
+  }, [editingModeMenuOpen]);
+
   const handleEdit = async () => {
     // Prefer existing documents; fallback to creating an untitled doc.
     const docs = await api.documents.listByProject(projectId);
@@ -60,6 +75,33 @@ export default function ProjectDetailPage() {
     }
     if (docId) {
       router.push(`/dashboard/projects/${projectId}/documents/${docId}`);
+    }
+  };
+
+  const handleChangeEditingMode = async (nextMode: EditingMode) => {
+    if (!project) return;
+    if (editingModeSaving) return;
+    if ((project.settings?.editingMode || 'ai-assist') === nextMode) {
+      setEditingModeMenuOpen(false);
+      return;
+    }
+
+    try {
+      setEditingModeSaving(true);
+      await api.projects.update(projectId, {
+        settings: {
+          ...(project.settings || {}),
+          editingMode: nextMode,
+        },
+      });
+      const updated = await api.projects.get(projectId);
+      setProject(updated);
+      setEditingModeMenuOpen(false);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to update editing mode');
+      console.error('Failed to update editing mode:', err);
+    } finally {
+      setEditingModeSaving(false);
     }
   };
 
@@ -98,11 +140,35 @@ export default function ProjectDetailPage() {
   }
 
   const editingMode = project.settings?.editingMode === 'full-ai' ? 'full-ai' : 'ai-assist';
-  const editingModeLabel = editingMode === 'full-ai' ? 'FULL‑AI' : 'AI‑ASSIST';
-  const editingModeBadgeClass =
-    editingMode === 'full-ai'
-      ? 'border-[#a855f7]/40 bg-[#a855f7]/10 text-[#e9d5ff]'
-      : 'border-[#007acc]/40 bg-[#007acc]/10 text-[#bfe3ff]';
+
+  const editingModeUi = useMemo(() => {
+    const label = editingMode === 'full-ai' ? 'FULL‑AI' : 'AI‑ASSIST';
+    const badgeClass =
+      editingMode === 'full-ai'
+        ? 'border-[#a855f7]/40 bg-[#a855f7]/10 text-[#e9d5ff] hover:bg-[#a855f7]/20'
+        : 'border-[#007acc]/40 bg-[#007acc]/10 text-[#bfe3ff] hover:bg-[#007acc]/20';
+    const title = editingMode === 'full-ai' ? 'Full-AI editing mode' : 'AI-Assist editing mode';
+    return { label, badgeClass, title };
+  }, [editingMode]);
+
+  const modeOptions = useMemo(
+    () =>
+      [
+        {
+          mode: 'ai-assist' as const,
+          label: 'AI‑ASSIST',
+          hint: 'Start from a blank doc; use AI as needed',
+          className: 'border-[#007acc]/40 bg-[#007acc]/10 text-[#bfe3ff] hover:bg-[#007acc]/20',
+        },
+        {
+          mode: 'full-ai' as const,
+          label: 'FULL‑AI',
+          hint: 'Guided chat-first drafting flow',
+          className: 'border-[#a855f7]/40 bg-[#a855f7]/10 text-[#e9d5ff] hover:bg-[#a855f7]/20',
+        },
+      ] satisfies Array<{ mode: EditingMode; label: string; hint: string; className: string }>,
+    []
+  );
 
   return (
     <DashboardLayout>
@@ -150,14 +216,53 @@ export default function ProjectDetailPage() {
         <div className="flex-1 overflow-auto p-6">
           <div className="max-w-4xl mx-auto">
             <div className="relative p-6 bg-[#252526] border border-[#3e3e42] rounded mb-6">
-              <div
-                className={
-                  'absolute top-4 right-4 text-[10px] font-mono uppercase px-2 py-1 rounded border ' +
-                  editingModeBadgeClass
-                }
-                title={editingMode === 'full-ai' ? 'Full-AI editing mode' : 'AI-Assist editing mode'}
-              >
-                {editingModeLabel}
+              <div ref={editingModeMenuRef} className="absolute top-4 right-4">
+                <button
+                  type="button"
+                  className={
+                    'text-[10px] font-mono uppercase px-2 py-1 rounded border transition-colors ' +
+                    editingModeUi.badgeClass +
+                    (editingModeSaving ? ' opacity-60 cursor-wait' : ' cursor-pointer')
+                  }
+                  title={editingModeUi.title + ' (click to switch)'}
+                  aria-label="Edit mode (click to switch)"
+                  onClick={() => setEditingModeMenuOpen((v) => !v)}
+                  disabled={editingModeSaving}
+                >
+                  {editingModeUi.label}
+                </button>
+
+                {editingModeMenuOpen && (
+                  <div className="mt-2 w-[280px] rounded border border-[#3e3e42] bg-[#1e1e1e] shadow-lg p-2">
+                    <div className="px-2 py-1 text-[10px] font-mono uppercase text-[#969696]">
+                      Switch editing mode
+                    </div>
+                    <div className="mt-1 space-y-1">
+                      {modeOptions.map((opt) => {
+                        const active = opt.mode === editingMode;
+                        return (
+                          <button
+                            key={opt.mode}
+                            type="button"
+                            className={
+                              'w-full text-left px-2 py-2 rounded border transition-colors ' +
+                              (active ? opt.className : 'border-transparent hover:border-[#3e3e42] hover:bg-[#252526]')
+                            }
+                            onClick={() => void handleChangeEditingMode(opt.mode)}
+                            disabled={editingModeSaving}
+                            aria-current={active ? 'true' : undefined}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-[11px] font-mono uppercase text-white">{opt.label}</div>
+                              {active && <div className="text-[10px] text-[#969696]">Current</div>}
+                            </div>
+                            <div className="mt-1 text-xs text-[#969696]">{opt.hint}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
               <h2 className="text-lg font-semibold text-white mb-4">Project Details</h2>
               <dl className="space-y-3">
