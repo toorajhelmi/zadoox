@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronRightIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
-import { MicIcon, ArrowRightIcon } from '@/components/icons';
+import { RightAiChatPanel } from './right-ai-chat-panel';
 import { EditorSidebar } from './editor-sidebar';
 import { EditorToolbar } from './editor-toolbar';
 import { EditorStatusBar } from './editor-status-bar';
@@ -102,9 +102,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [thinkPanelOpen, setThinkPanelOpen] = useState(false);
   const [rightAiChatOpen, setRightAiChatOpen] = useState(false);
   const rightAiInputRef = useRef<HTMLTextAreaElement | null>(null);
-  const rightAiTextareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const [rightAiInputValue, setRightAiInputValue] = useState('');
-  const [rightAiSending, setRightAiSending] = useState(false);
 
   const isFullAI = fullAssist || projectEditingMode === 'full-ai';
 
@@ -122,18 +119,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     requestAnimationFrame(() => rightAiInputRef.current?.focus());
   }, [rightAiChatOpen, isFullAI, shouldFocusChat]);
 
-  const handleRightAiSend = useCallback(() => {
-    const msg = rightAiInputValue.trim();
-    if (!msg || rightAiSending) return;
-    setRightAiSending(true);
-    setRightAiInputValue('');
-    // Reset textarea height after sending (matches Think panel chat UX)
-    if (rightAiTextareaRef.current) {
-      rightAiTextareaRef.current.style.height = 'auto';
-    }
-    // TODO: wire to real chat backend; for now, just stop "sending" immediately.
-    setTimeout(() => setRightAiSending(false), 150);
-  }, [rightAiInputValue, rightAiSending]);
+  // Right chat send UX is encapsulated in `RightAiChatPanel`.
   const [openParagraphId, setOpenParagraphId] = useState<string | null>(null);
   const [inlineAIChatOpen, setInlineAIChatOpen] = useState(false);
   const [inlineAIHintVisible, setInlineAIHintVisible] = useState(false);
@@ -1030,106 +1016,16 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           )}
 
           {/* Right-side AI chat panel */}
-          {rightAiChatOpen ? (
-            <div className="w-[360px] min-w-[320px] max-w-[420px] h-full border-l border-vscode-border bg-vscode-sidebar flex flex-col">
-              <div
-                className={`px-3 py-2 border-b border-vscode-border flex items-center justify-between ${
-                  isFullAI ? 'bg-[#a855f7]/10' : 'bg-[#007acc]/10'
-                }`}
-              >
-                <div className="text-xs font-mono text-vscode-text-secondary">{isFullAI ? 'FULL‑AI' : 'AI‑ASSIST'}</div>
-                <button
-                  type="button"
-                  className="text-xs text-vscode-text-secondary hover:text-vscode-text transition-colors"
-                  onClick={() => setRightAiChatOpen(false)}
-                >
-                  Hide
-                </button>
-              </div>
-              <div className="flex-1 overflow-auto p-3 text-sm text-vscode-text-secondary">
-                {isFullAI ? (
-                  <div className="text-vscode-text">
-                    Guided chat will appear here. Tell Zadoox what you’re creating and we’ll produce the first draft.
-                  </div>
-                ) : (
-                  <div>Open chat to ask for help, generate structure, or draft content.</div>
-                )}
-              </div>
-              {/* Input Area - same command-bar style as Think panel chat */}
-              <div className="p-3 border-t border-vscode-border">
-                <div className="rounded-lg bg-black border border-gray-800">
-                  <div className="px-4 pt-4 pb-3">
-                    <textarea
-                      ref={(el) => {
-                        rightAiTextareaRef.current = el;
-                        rightAiInputRef.current = el;
-                      }}
-                      value={rightAiInputValue}
-                      onChange={(e) => {
-                        setRightAiInputValue(e.target.value);
-                        // Auto-resize textarea
-                        const textarea = e.target;
-                        textarea.style.height = 'auto';
-                        textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          handleRightAiSend();
-                        }
-                      }}
-                      placeholder={isFullAI ? 'Describe what you want to write…' : 'Ask anything…'}
-                      rows={1}
-                      className="w-full text-xs bg-transparent text-gray-200 placeholder-gray-500 focus:outline-none resize-none overflow-y-auto"
-                      disabled={rightAiSending}
-                      style={{ minHeight: '20px', maxHeight: '200px' }}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between px-4 pb-3 pt-2 border-t border-gray-900">
-                    <div className="flex items-center gap-3" />
-                    <div className="flex items-center gap-2">
-                      {rightAiSending && (
-                        <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
-                      )}
-                      <button
-                        type="button"
-                        onClick={handleRightAiSend}
-                        disabled={rightAiSending}
-                        className={`p-1.5 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center ${
-                          rightAiInputValue.trim()
-                            ? isFullAI
-                              ? 'bg-[#a855f7] hover:bg-[#9333ea] text-white'
-                              : 'bg-vscode-blue hover:bg-blue-600 text-white'
-                            : 'bg-gray-800 hover:bg-gray-700 text-white'
-                        }`}
-                        title={rightAiInputValue.trim() ? 'Send message' : 'Start conversation'}
-                      >
-                        {rightAiInputValue.trim() ? (
-                          <ArrowRightIcon className="w-4 h-4" />
-                        ) : (
-                          <MicIcon className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setRightAiChatOpen(true)}
-              className={`absolute right-2 bottom-3 px-3 py-2 rounded border border-vscode-border text-xs transition-colors ${
-                isFullAI
-                  ? 'bg-[#a855f7]/10 hover:bg-[#a855f7]/20 text-[#e9d5ff]'
-                  : 'bg-[#007acc]/10 hover:bg-[#007acc]/20 text-[#bfe3ff]'
-              }`}
-              title="Open AI chat"
-            >
-              {isFullAI ? 'Open Full‑AI' : 'Open AI chat'}
-            </button>
-          )}
+          <RightAiChatPanel
+            isOpen={rightAiChatOpen}
+            isFullAI={isFullAI}
+            inputRef={rightAiInputRef}
+            onOpen={() => {
+              setRightAiChatOpen(true);
+              requestAnimationFrame(() => rightAiInputRef.current?.focus());
+            }}
+            onClose={() => setRightAiChatOpen(false)}
+          />
         </div>
 
         {/* Status Bar */}
