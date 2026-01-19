@@ -18,6 +18,7 @@ export const createProjectSchema = z.object({
       defaultFormat: z.enum(['latex', 'markdown']).optional(),
       chapterNumbering: z.boolean().optional(),
       autoSync: z.boolean().optional(),
+      onboardingMode: z.enum(['ai-assist', 'full-ai']).optional(),
     })
     .optional(),
 });
@@ -31,6 +32,7 @@ export const updateProjectSchema = z.object({
       defaultFormat: z.enum(['latex', 'markdown']).optional(),
       chapterNumbering: z.boolean().optional(),
       autoSync: z.boolean().optional(),
+      onboardingMode: z.enum(['ai-assist', 'full-ai']).optional(),
     })
     .optional(),
 });

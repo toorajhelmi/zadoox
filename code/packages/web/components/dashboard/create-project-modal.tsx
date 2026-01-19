@@ -56,6 +56,7 @@ export function CreateProjectModal({ isOpen, onClose, onCreate, initialStartMode
         name: name.trim(),
         description: description.trim() || undefined,
         type,
+        settings: { onboardingMode: 'ai-assist' },
       });
       // Create/route to an initial document, then land in the editor.
       const docs = await api.documents.listByProject(project.id);
@@ -94,6 +95,7 @@ export function CreateProjectModal({ isOpen, onClose, onCreate, initialStartMode
         // Full-AI flow: project type will be refined during onboarding/chat.
         // Backend currently enforces a strict allowed set; default to a valid type.
         type: 'academic',
+        settings: { onboardingMode: 'full-ai' },
       });
 
       const docs = await api.documents.listByProject(project.id);

@@ -30,6 +30,7 @@ export default function NewProjectFullAIPage() {
         // Full-AI flow: project type will be refined during onboarding/chat.
         // Backend currently enforces a strict allowed set; default to a valid type.
         type: 'academic',
+        settings: { onboardingMode: 'full-ai' },
       };
       const project = await api.projects.create(input);
 

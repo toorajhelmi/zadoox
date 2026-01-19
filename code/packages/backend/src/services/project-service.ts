@@ -38,6 +38,7 @@ export class ProjectService {
         defaultFormat: input.settings?.defaultFormat || 'latex',
         chapterNumbering: input.settings?.chapterNumbering ?? true,
         autoSync: input.settings?.autoSync ?? true,
+        onboardingMode: input.settings?.onboardingMode || 'ai-assist',
       },
     };
 
