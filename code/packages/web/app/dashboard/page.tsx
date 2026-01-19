@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { DashboardLayout, CreateProjectModal, ProjectCard, PlusIcon } from '@/components/dashboard';
 import { api } from '@/lib/api/client';
 import type { Project, CreateProjectInput } from '@zadoox/shared';
 
 export default function DashboardPage() {
+  const searchParams = useSearchParams();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -27,8 +29,9 @@ export default function DashboardPage() {
   }, []);
 
   const handleCreateProject = async (input: CreateProjectInput) => {
-    await api.projects.create(input);
+    const created = await api.projects.create(input);
     await loadProjects();
+    return created;
   };
 
   const handleDuplicateProject = async (project: Project) => {
@@ -47,6 +50,12 @@ export default function DashboardPage() {
   };
 
   const recentProjects = projects.slice(0, 6);
+  const initialStartMode = (() => {
+    const v = (searchParams.get('fullassist') ?? '').toLowerCase();
+    if (v === 'true' || v === '1' || v === 'yes') return 'full' as const;
+    if (v === 'false' || v === '0' || v === 'no') return 'assist' as const;
+    return 'assist' as const;
+  })();
 
   return (
     <DashboardLayout>
@@ -117,6 +126,7 @@ export default function DashboardPage() {
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onCreate={handleCreateProject}
+        initialStartMode={initialStartMode}
       />
     </DashboardLayout>
   );

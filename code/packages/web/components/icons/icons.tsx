@@ -104,6 +104,16 @@ export function SparkleIcon({ className = 'w-4 h-4', strokeWidth = 1.5 }: IconPr
   );
 }
 
+export function WandIcon({ className = 'w-4 h-4', strokeWidth = 1.5 }: IconProps) {
+  return (
+    <svg className={className} {...baseIconProps} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 20l9-9" />
+      <path d="M14.5 4.5l1 2.5 2.5 1-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1 1-2.5z" />
+      <path d="M17.5 11l.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5-1.5-.6 1.5-.6.6-1.5z" />
+    </svg>
+  );
+}
+
 /**
  * Common Icons
  */

@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { DashboardLayout, ProjectCard, CreateProjectModal, ProjectsIcon, PlusIcon, SparkleIcon, LoaderIcon, ChevronLeftIcon } from '@/components/dashboard';
 import { api } from '@/lib/api/client';
 import type { Project, CreateProjectInput } from '@zadoox/shared';
 
 export default function ProjectsPage() {
+  const searchParams = useSearchParams();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,8 +33,9 @@ export default function ProjectsPage() {
   }, []);
 
   const handleCreateProject = async (input: CreateProjectInput) => {
-    await api.projects.create(input);
+    const created = await api.projects.create(input);
     await loadProjects(); // Reload projects after creation
+    return created;
   };
 
   const handleDuplicateProject = async (project: Project) => {
@@ -149,6 +152,12 @@ export default function ProjectsPage() {
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onCreate={handleCreateProject}
+        initialStartMode={(() => {
+          const v = (searchParams.get('fullassist') ?? '').toLowerCase();
+          if (v === 'true' || v === '1' || v === 'yes') return 'full' as const;
+          if (v === 'false' || v === '0' || v === 'no') return 'assist' as const;
+          return 'assist' as const;
+        })()}
       />
     </DashboardLayout>
   );

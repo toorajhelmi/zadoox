@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronRightIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
 import { EditorSidebar } from './editor-sidebar';
 import { EditorToolbar } from './editor-toolbar';
@@ -47,6 +47,13 @@ type ViewMode = 'edit' | 'preview' | 'split' | 'ir';
 type SidebarTab = 'outline' | 'history';
 
 export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
+  const searchParams = useSearchParams();
+  const fullAssist = useMemo(() => {
+    const v = (searchParams.get('fullassist') ?? '').toLowerCase();
+    return v === 'true' || v === '1' || v === 'yes';
+  }, [searchParams]);
+  const shouldFocusChat = useMemo(() => (searchParams.get('focus') ?? '').toLowerCase() === 'chat', [searchParams]);
+
   const {
     content,
     documentTitle,
@@ -90,6 +97,18 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [cursorPosition, setCursorPosition] = useState<{ line: number; column: number } | null>(null);
   const [cursorScreenPosition, setCursorScreenPosition] = useState<{ top: number; left: number } | null>(null);
   const [thinkPanelOpen, setThinkPanelOpen] = useState(false);
+  const [rightAiChatOpen, setRightAiChatOpen] = useState(false);
+  const rightAiInputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (fullAssist) setRightAiChatOpen(true);
+  }, [fullAssist]);
+
+  useEffect(() => {
+    if (!rightAiChatOpen) return;
+    if (!fullAssist && !shouldFocusChat) return;
+    requestAnimationFrame(() => rightAiInputRef.current?.focus());
+  }, [rightAiChatOpen, fullAssist, shouldFocusChat]);
   const [openParagraphId, setOpenParagraphId] = useState<string | null>(null);
   const [inlineAIChatOpen, setInlineAIChatOpen] = useState(false);
   const [inlineAIHintVisible, setInlineAIHintVisible] = useState(false);
@@ -978,6 +997,69 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 <div className="text-sm text-gray-400">{busyOverlayMessage}</div>
               </div>
             </div>
+          )}
+
+          {/* Right-side AI chat panel */}
+          {rightAiChatOpen ? (
+            <div className="w-[360px] min-w-[320px] max-w-[420px] h-full border-l border-vscode-border bg-vscode-sidebar flex flex-col">
+              <div
+                className={`px-3 py-2 border-b border-vscode-border flex items-center justify-between ${
+                  fullAssist ? 'bg-[#a855f7]/10' : 'bg-[#007acc]/10'
+                }`}
+              >
+                <div className="text-xs font-mono text-vscode-text-secondary">{fullAssist ? 'FULL‑AI' : 'AI‑ASSIST'}</div>
+                <button
+                  type="button"
+                  className="text-xs text-vscode-text-secondary hover:text-vscode-text transition-colors"
+                  onClick={() => setRightAiChatOpen(false)}
+                >
+                  Hide
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto p-3 text-sm text-vscode-text-secondary">
+                {fullAssist ? (
+                  <div className="text-vscode-text">
+                    Guided chat will appear here. Tell Zadoox what you’re creating and we’ll produce the first draft.
+                  </div>
+                ) : (
+                  <div>Open chat to ask for help, generate structure, or draft content.</div>
+                )}
+              </div>
+              <div className="p-3 border-t border-vscode-border">
+                <textarea
+                  ref={(el) => {
+                    rightAiInputRef.current = el;
+                  }}
+                  placeholder={fullAssist ? 'Describe what you want to write…' : 'Ask AI…'}
+                  rows={3}
+                  className="w-full bg-vscode-editorWidgetBg border border-vscode-border rounded px-3 py-2 text-sm text-vscode-text placeholder:text-vscode-text-secondary focus:outline-none"
+                />
+                <div className="flex justify-end mt-2">
+                  <button
+                    type="button"
+                    className={`px-3 py-1.5 text-xs rounded text-white transition-colors ${
+                      fullAssist ? 'bg-[#a855f7] hover:bg-[#9333ea]' : 'bg-[#007acc] hover:bg-[#1a8cd8]'
+                    }`}
+                    onClick={() => rightAiInputRef.current?.focus()}
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setRightAiChatOpen(true)}
+              className={`absolute right-2 bottom-3 px-3 py-2 rounded border border-vscode-border text-xs transition-colors ${
+                fullAssist
+                  ? 'bg-[#a855f7]/10 hover:bg-[#a855f7]/20 text-[#e9d5ff]'
+                  : 'bg-[#007acc]/10 hover:bg-[#007acc]/20 text-[#bfe3ff]'
+              }`}
+              title="Open AI chat"
+            >
+              {fullAssist ? 'Open Full‑AI' : 'Open AI chat'}
+            </button>
           )}
         </div>
 
