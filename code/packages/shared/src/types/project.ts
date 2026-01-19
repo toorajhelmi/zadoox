@@ -17,16 +17,17 @@ export interface Project {
 
 export type DocumentStyle = 'academic' | 'whitepaper' | 'technical-docs' | 'blog' | 'other';
 export type CitationFormat = 'apa' | 'mla' | 'chicago' | 'ieee' | 'numbered' | 'footnote';
-export type OnboardingMode = 'ai-assist' | 'full-ai';
+export type EditingMode = 'ai-assist' | 'full-ai';
 
 export interface ProjectSettings {
   defaultFormat: 'latex' | 'markdown';
   chapterNumbering: boolean;
   autoSync: boolean;
   /**
-   * How the project was started (used for UX defaults, e.g. opening the right-side chat panel).
+   * How the project should default its editing experience (used for UX defaults,
+   * e.g. opening the right-side chat panel).
    */
-  onboardingMode?: OnboardingMode;
+  editingMode?: EditingMode;
   documentStyle?: DocumentStyle; // Document style (academic, whitepaper, etc.)
   citationFormat?: CitationFormat; // Citation format (APA, MLA, etc.)
 }

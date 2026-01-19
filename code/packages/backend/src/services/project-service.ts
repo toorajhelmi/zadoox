@@ -38,7 +38,7 @@ export class ProjectService {
         defaultFormat: input.settings?.defaultFormat || 'latex',
         chapterNumbering: input.settings?.chapterNumbering ?? true,
         autoSync: input.settings?.autoSync ?? true,
-        onboardingMode: input.settings?.onboardingMode || 'ai-assist',
+        editingMode: (input.settings as any)?.editingMode || (input.settings as any)?.onboardingMode || 'ai-assist',
       },
     };
 
@@ -157,12 +157,18 @@ export class ProjectService {
    * Map database project to Project type
    */
   private mapDbProjectToProject(dbProject: Record<string, unknown>): Project {
+    const rawSettings = (dbProject.settings || {}) as Record<string, unknown>;
+    const editingMode =
+      (rawSettings.editingMode as string | undefined) ||
+      (rawSettings.onboardingMode as string | undefined) ||
+      'ai-assist';
+
     return {
       id: dbProject.id as string,
       name: dbProject.name as string,
       description: (dbProject.description as string | null) || undefined,
       type: dbProject.type as ProjectType,
-      settings: dbProject.settings as Project['settings'],
+      settings: { ...(rawSettings as any), editingMode } as Project['settings'],
       ownerId: dbProject.owner_id as string,
       createdAt: new Date(dbProject.created_at as string),
       updatedAt: new Date(dbProject.updated_at as string),
