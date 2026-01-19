@@ -176,32 +176,6 @@ export function useDocumentState(documentId: string, projectId: string) {
 
   const saveMetadataPatch = useCallback(
     (patch: Record<string, any>, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
       // Keep the latest patch/localMeta available to the debounced callback without relying
       // on React state having updated synchronously.
       const localMetaSnapshot = (documentMetadata || {}) as Record<string, any>;
