@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronRightIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
+import { MicIcon, ArrowRightIcon } from '@/components/icons';
 import { EditorSidebar } from './editor-sidebar';
 import { EditorToolbar } from './editor-toolbar';
 import { EditorStatusBar } from './editor-status-bar';
@@ -101,6 +102,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [thinkPanelOpen, setThinkPanelOpen] = useState(false);
   const [rightAiChatOpen, setRightAiChatOpen] = useState(false);
   const rightAiInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const rightAiTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [rightAiInputValue, setRightAiInputValue] = useState('');
+  const [rightAiSending, setRightAiSending] = useState(false);
 
   const isFullAI = fullAssist || projectEditingMode === 'full-ai';
 
@@ -117,6 +121,19 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     if (!isFullAI && !shouldFocusChat) return;
     requestAnimationFrame(() => rightAiInputRef.current?.focus());
   }, [rightAiChatOpen, isFullAI, shouldFocusChat]);
+
+  const handleRightAiSend = useCallback(() => {
+    const msg = rightAiInputValue.trim();
+    if (!msg || rightAiSending) return;
+    setRightAiSending(true);
+    setRightAiInputValue('');
+    // Reset textarea height after sending (matches Think panel chat UX)
+    if (rightAiTextareaRef.current) {
+      rightAiTextareaRef.current.style.height = 'auto';
+    }
+    // TODO: wire to real chat backend; for now, just stop "sending" immediately.
+    setTimeout(() => setRightAiSending(false), 150);
+  }, [rightAiInputValue, rightAiSending]);
   const [openParagraphId, setOpenParagraphId] = useState<string | null>(null);
   const [inlineAIChatOpen, setInlineAIChatOpen] = useState(false);
   const [inlineAIHintVisible, setInlineAIHintVisible] = useState(false);
@@ -1033,25 +1050,64 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                   <div>Open chat to ask for help, generate structure, or draft content.</div>
                 )}
               </div>
+              {/* Input Area - same command-bar style as Think panel chat */}
               <div className="p-3 border-t border-vscode-border">
-                <textarea
-                  ref={(el) => {
-                    rightAiInputRef.current = el;
-                  }}
-                  placeholder={isFullAI ? 'Describe what you want to write…' : 'Ask AI…'}
-                  rows={3}
-                  className="w-full bg-vscode-editorWidgetBg border border-vscode-border rounded px-3 py-2 text-sm text-vscode-text placeholder:text-vscode-text-secondary focus:outline-none"
-                />
-                <div className="flex justify-end mt-2">
-                  <button
-                    type="button"
-                    className={`px-3 py-1.5 text-xs rounded text-white transition-colors ${
-                      isFullAI ? 'bg-[#a855f7] hover:bg-[#9333ea]' : 'bg-[#007acc] hover:bg-[#1a8cd8]'
-                    }`}
-                    onClick={() => rightAiInputRef.current?.focus()}
-                  >
-                    Send
-                  </button>
+                <div className="rounded-lg bg-black border border-gray-800">
+                  <div className="px-4 pt-4 pb-3">
+                    <textarea
+                      ref={(el) => {
+                        rightAiTextareaRef.current = el;
+                        rightAiInputRef.current = el;
+                      }}
+                      value={rightAiInputValue}
+                      onChange={(e) => {
+                        setRightAiInputValue(e.target.value);
+                        // Auto-resize textarea
+                        const textarea = e.target;
+                        textarea.style.height = 'auto';
+                        textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleRightAiSend();
+                        }
+                      }}
+                      placeholder={isFullAI ? 'Describe what you want to write…' : 'Ask anything…'}
+                      rows={1}
+                      className="w-full text-xs bg-transparent text-gray-200 placeholder-gray-500 focus:outline-none resize-none overflow-y-auto"
+                      disabled={rightAiSending}
+                      style={{ minHeight: '20px', maxHeight: '200px' }}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between px-4 pb-3 pt-2 border-t border-gray-900">
+                    <div className="flex items-center gap-3" />
+                    <div className="flex items-center gap-2">
+                      {rightAiSending && (
+                        <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleRightAiSend}
+                        disabled={rightAiSending}
+                        className={`p-1.5 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center ${
+                          rightAiInputValue.trim()
+                            ? isFullAI
+                              ? 'bg-[#a855f7] hover:bg-[#9333ea] text-white'
+                              : 'bg-vscode-blue hover:bg-blue-600 text-white'
+                            : 'bg-gray-800 hover:bg-gray-700 text-white'
+                        }`}
+                        title={rightAiInputValue.trim() ? 'Send message' : 'Start conversation'}
+                      >
+                        {rightAiInputValue.trim() ? (
+                          <ArrowRightIcon className="w-4 h-4" />
+                        ) : (
+                          <MicIcon className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
