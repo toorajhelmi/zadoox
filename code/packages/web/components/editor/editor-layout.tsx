@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronRightIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
+import { ChatPanel } from './chat-panel';
 import { EditorSidebar } from './editor-sidebar';
 import { EditorToolbar } from './editor-toolbar';
 import { EditorStatusBar } from './editor-status-bar';
@@ -15,7 +16,7 @@ import { useDocumentState } from '@/hooks/use-document-state';
 import { useIrDocument } from '@/hooks/use-ir-document';
 import { api } from '@/lib/api/client';
 import type { FormatType } from './floating-format-menu';
-import type { ResearchSource, DocumentStyle, DocumentNode } from '@zadoox/shared';
+import type { ResearchSource, DocumentStyle, DocumentNode, EditingMode } from '@zadoox/shared';
 import type { InlineEditBlock, InlineEditOperation } from '@zadoox/shared';
 import type { QuickOption } from '@/lib/services/context-options';
 import { irToLatexDocument, irToXmd } from '@zadoox/shared';
@@ -36,6 +37,7 @@ import { ensureLatexPreambleForLatexContent } from './latex-preamble';
 import { ActiveEditorSurface } from './active-editor-surface';
 import { useCanonicalIrState } from './editor-layout-canonical-ir';
 import { getActiveEditorText, getCursorScopeText, getSurfaceCapabilities, getSurfaceSyntax, getTypingHistoryAdapter, pickUndoRedo } from './editor-surface';
+import { useSemanticGraph } from './sg/use-semantic-graph';
 
 interface EditorLayoutProps {
   projectId: string;
@@ -47,6 +49,15 @@ type ViewMode = 'edit' | 'preview' | 'split' | 'ir';
 type SidebarTab = 'outline' | 'history';
 
 export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
+  const searchParams = useSearchParams();
+  const fullAssist = useMemo(() => {
+    const v = (searchParams.get('fullassist') ?? '').toLowerCase();
+    return v === 'true' || v === '1' || v === 'yes';
+  }, [searchParams]);
+  const shouldFocusChat = useMemo(() => (searchParams.get('focus') ?? '').toLowerCase() === 'chat', [searchParams]);
+  const [projectEditingMode, setProjectEditingMode] = useState<EditingMode>('ai-assist');
+  const didAutoOpenRightChatRef = useRef(false);
+
   const {
     content,
     documentTitle,
@@ -60,6 +71,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     handleModeToggle: handleModeToggleFromHook,
     documentMetadata,
     setDocumentMetadata,
+    saveMetadataPatch,
   } = useDocumentState(documentId, projectId);
   
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -90,6 +102,29 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [cursorPosition, setCursorPosition] = useState<{ line: number; column: number } | null>(null);
   const [cursorScreenPosition, setCursorScreenPosition] = useState<{ top: number; left: number } | null>(null);
   const [thinkPanelOpen, setThinkPanelOpen] = useState(false);
+  const [rightAiChatOpen, setRightAiChatOpen] = useState(false);
+  const rightAiInputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const isFullAI = fullAssist || projectEditingMode === 'full-ai';
+
+  useEffect(() => {
+    // Auto-open once on load if this is a Full-AI project (or deep-link).
+    if (didAutoOpenRightChatRef.current) return;
+    if (!isFullAI) return;
+    didAutoOpenRightChatRef.current = true;
+    setRightAiChatOpen(true);
+  }, [isFullAI]);
+
+  useEffect(() => {
+    if (!rightAiChatOpen) return;
+    if (!isFullAI && !shouldFocusChat) return;
+    requestAnimationFrame(() => rightAiInputRef.current?.focus());
+  }, [rightAiChatOpen, isFullAI, shouldFocusChat]);
+
+  // Phase 15.1: SG subsystem (kept isolated under ./sg/)
+  useSemanticGraph({ documentMetadata, saveMetadataPatch, enabled: true });
+
+  // Chat send UX is encapsulated in `ChatPanel`.
   const [openParagraphId, setOpenParagraphId] = useState<string | null>(null);
   const [inlineAIChatOpen, setInlineAIChatOpen] = useState(false);
   const [inlineAIHintVisible, setInlineAIHintVisible] = useState(false);
@@ -194,7 +229,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     originalSaveDocument,
   });
 
-  useProjectDocumentStyle({ projectId, setProjectName, setDocumentStyle });
+  useProjectDocumentStyle({ projectId, setProjectName, setDocumentStyle, setEditingMode: setProjectEditingMode });
 
   const { getCursorScreenPosition } = useEditorCursorScreenPosition({
     editorViewRef,
@@ -576,6 +611,11 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           onFormat={handleFormat}
           viewMode={viewMode}
           currentStyle={currentTextStyle}
+          showFullAiChatButton={isFullAI && !rightAiChatOpen}
+          onOpenFullAiChat={() => {
+            setRightAiChatOpen(true);
+            requestAnimationFrame(() => rightAiInputRef.current?.focus());
+          }}
         />
 
         {/* Change Tracking Banner - shown at top when tracking is active */}
@@ -979,6 +1019,20 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               </div>
             </div>
           )}
+
+          {/* Right-side AI chat panel */}
+          <ChatPanel
+            isOpen={rightAiChatOpen}
+            isFullAI={isFullAI}
+            inputRef={rightAiInputRef}
+            documentMetadata={documentMetadata as any}
+            saveMetadataPatch={saveMetadataPatch}
+            onOpen={() => {
+              setRightAiChatOpen(true);
+              requestAnimationFrame(() => rightAiInputRef.current?.focus());
+            }}
+            onClose={() => setRightAiChatOpen(false)}
+          />
         </div>
 
         {/* Status Bar */}

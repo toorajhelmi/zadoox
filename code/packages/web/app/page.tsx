@@ -9,14 +9,8 @@ export default function Home() {
         <p className="text-xl text-vscode-text-secondary mb-12">AI-powered documentation platform</p>
         <div className="flex gap-4 justify-center">
           <Link
-            href="/dashboard"
-            className="px-6 py-3 bg-vscode-blue text-white font-medium rounded-md hover:bg-vscode-blue-hover transition-colors focus:outline-none focus:ring-2 focus:ring-vscode-blue focus:ring-offset-2 focus:ring-offset-vscode-bg"
-          >
-            Go to Dashboard
-          </Link>
-          <Link
             href="/auth/login"
-            className="px-6 py-3 bg-vscode-input text-vscode-text font-medium rounded-md border border-vscode-input-border hover:bg-vscode-hover transition-colors focus:outline-none focus:ring-2 focus:ring-vscode-blue focus:ring-offset-2 focus:ring-offset-vscode-bg"
+            className="px-6 py-3 bg-vscode-blue text-white font-medium rounded-md hover:bg-vscode-blue-hover transition-colors focus:outline-none focus:ring-2 focus:ring-vscode-blue focus:ring-offset-2 focus:ring-offset-vscode-bg"
           >
             Sign In
           </Link>

@@ -32,6 +32,7 @@ export function ProjectCard({ project, onDuplicate, onDelete, onRename }: Projec
   const canDuplicate = !!onDuplicate;
   const canDelete = !!onDelete;
   const canRename = !!onRename;
+  const isFullAI = project.settings?.editingMode === 'full-ai';
 
   const handleDuplicate = async () => {
     if (!onDuplicate || busy) return;
@@ -83,7 +84,12 @@ export function ProjectCard({ project, onDuplicate, onDelete, onRename }: Projec
   };
 
   return (
-    <div className="relative bg-[#252526] border border-[#3e3e42] rounded hover:border-[#007acc] hover:bg-[#2a2d2e] transition-all group">
+    <div
+      className={
+        'relative bg-[#252526] border border-[#3e3e42] rounded hover:bg-[#2a2d2e] transition-all group ' +
+        (isFullAI ? 'hover:border-[#a855f7]' : 'hover:border-[#007acc]')
+      }
+    >
       <Link href={`/dashboard/projects/${project.id}`} className="block p-4 flex flex-col min-h-[140px]">
         <div className="flex items-start justify-between mb-2">
           <div className="flex items-center gap-2">
@@ -122,7 +128,12 @@ export function ProjectCard({ project, onDuplicate, onDelete, onRename }: Projec
               </div>
             ) : (
               <div className="flex items-center gap-1">
-                <h3 className="font-semibold text-white group-hover:text-[#007acc] transition-colors">
+                <h3
+                  className={
+                    'font-semibold text-white transition-colors ' +
+                    (isFullAI ? 'group-hover:text-[#a855f7]' : 'group-hover:text-[#007acc]')
+                  }
+                >
                   {project.name}
                 </h3>
                 {canRename && (
@@ -200,7 +211,12 @@ export function ProjectCard({ project, onDuplicate, onDelete, onRename }: Projec
           <div className="flex items-center gap-3">
             <span>Updated {formatDate(project.updatedAt)}</span>
           </div>
-          <div className="flex items-center gap-1 text-[#007acc] opacity-0 group-hover:opacity-100 transition-opacity">
+          <div
+            className={
+              'flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ' +
+              (isFullAI ? 'text-[#a855f7]' : 'text-[#007acc]')
+            }
+          >
             <ChevronRightIcon className="w-3 h-3" />
           </div>
         </div>

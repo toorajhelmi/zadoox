@@ -375,4 +375,60 @@ describe('useDocumentState - Core Functionality', () => {
 
     // Removed: "default" documentId handling (we always require a real UUID now).
   });
+
+  it(
+    'should persist metadata-only patches without changing content',
+    async () => {
+    const mockDocument: Document = {
+      id: 'doc-1',
+      projectId: 'project-1',
+      title: 'Test Document',
+      content: 'Test content',
+      metadata: { type: 'standalone', foo: 'bar' },
+      createdAt: new Date('2024-01-01'),
+      updatedAt: new Date('2024-01-02'),
+    };
+
+    // Initial load
+    vi.mocked(api.documents.get).mockResolvedValueOnce(mockDocument);
+    // saveMetadataPatch path calls get() again inside the debounced callback
+    vi.mocked(api.documents.get).mockResolvedValueOnce(mockDocument);
+    vi.mocked(api.documents.update).mockResolvedValueOnce({
+      ...mockDocument,
+      metadata: { ...mockDocument.metadata, semanticGraph: { version: 1, nodes: [], edges: [], updatedAt: '2024-01-03T00:00:00.000Z' } },
+      updatedAt: new Date('2024-01-03'),
+    });
+
+    const { result } = renderHook(() => useDocumentState('doc-1', 'project-1'));
+
+    await waitFor(
+      () => {
+        expect(result.current.isLoading).toBe(false);
+      },
+      { timeout: 10000 }
+    );
+
+    // Switch to fake timers only for the debounced metadata save.
+    vi.useFakeTimers();
+
+    act(() => {
+      result.current.saveMetadataPatch({
+        semanticGraph: { version: 1, nodes: [], edges: [], updatedAt: '2024-01-03T00:00:00.000Z' },
+      });
+    });
+
+    // Debounced metadata save should trigger update after delay.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+
+    expect(vi.mocked(api.documents.update)).toHaveBeenCalled();
+
+    const updateArg = vi.mocked(api.documents.update).mock.calls[0]?.[1] as any;
+    expect(updateArg?.content).toBeUndefined();
+    expect(updateArg?.metadata?.foo).toBe('bar');
+    expect(updateArg?.metadata?.semanticGraph?.version).toBe(1);
+    },
+    15000
+  );
 });

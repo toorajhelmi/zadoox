@@ -10,6 +10,7 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [initialStartMode, setInitialStartMode] = useState<'full' | 'assist'>('assist');
 
   const loadProjects = async () => {
     try {
@@ -26,9 +27,16 @@ export default function DashboardPage() {
     loadProjects();
   }, []);
 
+  useEffect(() => {
+    const v = (new URLSearchParams(window.location.search).get('fullassist') ?? '').toLowerCase();
+    if (v === 'true' || v === '1' || v === 'yes') setInitialStartMode('full');
+    else if (v === 'false' || v === '0' || v === 'no') setInitialStartMode('assist');
+  }, []);
+
   const handleCreateProject = async (input: CreateProjectInput) => {
-    await api.projects.create(input);
+    const created = await api.projects.create(input);
     await loadProjects();
+    return created;
   };
 
   const handleDuplicateProject = async (project: Project) => {
@@ -117,6 +125,7 @@ export default function DashboardPage() {
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onCreate={handleCreateProject}
+        initialStartMode={initialStartMode}
       />
     </DashboardLayout>
   );

@@ -1192,6 +1192,113 @@ Goal: manage project-level files (images, datasets, PDFs, etc.) as a real file t
 
 ---
 
+### Phase 15: Guided Authoring (Chat Panel + BlockGraph/SemanticGraph) 💬🧠
+**Status**: In Progress
+
+Goal: introduce a phase-aware authoring assistant that supports (A) initiation, (B) elaboration, (C) finalization — while minimizing full-document rescans via structured representations.
+
+#### Phase 15 Execution Plan (Linear Phases)
+We will implement Phase 15 in small vertical slices (each phase ends with a working loop + tests):
+
+##### Phase 15.1: SG Foundations (Schema + Persistence + Load) — Start Here
+- [ ] Define minimal **SemanticGraph (SG)** JSON schema + versioning
+- [ ] Persist SG per document (v1: serialized JSON)
+- [ ] Load SG into memory while editing (editor session state)
+- [ ] Add BG↔SG mapping scaffolding (NodeProvenance stub)
+- [ ] Add cost controls scaffolding: change detector + debounced trigger (no LLM calls yet)
+- [ ] Tests: SG persistence/load + basic smoke tests in web/backend
+
+##### Phase 15.2: Incremental Updates + Provenance
+- [ ] Incremental SG updates for small edits (block-scoped)
+- [ ] “Major edit” detection: rebuild SG (v1) and mark provenance resets
+- [ ] Implement `NodeProvenance` mapping (SG node ↔ BG block/span)
+- [ ] (Optional) `EdgeProvenance` mapping (SG edge ↔ BG block/span)
+
+##### Phase 15.3: Background Reviewer v0 (Suggestions Objects)
+- [ ] Background process (debounced) produces suggestions objects (no UI yet)
+- [ ] Persist suggestions and expose counts (per document)
+- [ ] Budget/rate limiting for background reviewer
+
+##### Phase 15.4: Suggestions UX (Preview/Apply/Dismiss)
+- [ ] Suggestions inbox (collapsible pane) + badges
+- [ ] Inline markers in doc; click → details + preview/apply/dismiss
+- [ ] Phase-aware grouping and basic filtering
+
+##### Phase 15.5: Blocking Decision Cards
+- [ ] Decision cards are **blocking** when chat changes prior decisions
+- [ ] SG-targeted impact set + semantic verification of top impacts (not graph traversal only)
+- [ ] UX actions: Preview / Apply / Dismiss
+
+##### Phase 15.6: Rules + Extensibility (Doc/Venue)
+- [ ] Rule interfaces over BG/SG (validators + suggesters)
+- [ ] Seed rule set: Academic evidence expectations (simple)
+- [ ] Venue preset scaffolding (e.g., Nature) for future expansion
+
+#### Core Concepts
+- **BlockGraph (BG)**:
+  - Block-level canonical representation of the document (text + non-text: figure/table/grid/etc.)
+  - Uses the existing canonical IR in memory as the primary substrate while editing
+  - Must support stable block identity as much as possible (see TODO)
+- **SemanticGraph (SG)**:
+  - Semantic layer derived from BG + content
+  - **Directed graph**: edge `A -> B` means “A impacts B / B depends on A”
+  - **Edge weight** \(w \in [-1, 1]\):
+    - \(w > 0\): support strength
+    - \(w < 0\): contradiction strength
+  - SG is allowed to map many-to-many to BG (for now)
+
+#### Tech (Implementation)
+- [ ] **BG/SG persistence (initial)**:
+  - [ ] SG serialized as JSON and persisted per document (large but acceptable for v1)
+  - [ ] SG loaded into memory while editing for fast local queries
+  - [ ] Incremental SG updates for small edits; allow rebuild on major edits (v1)
+- [ ] **BG↔SG mapping / provenance** (keep BG and SG independent):
+  - [ ] `NodeProvenance`: SG node ↔ BG block/span mapping
+  - [ ] (Optional) `EdgeProvenance`: SG edge ↔ BG block/span mapping
+- [ ] **Cost controls / triggers**:
+  - [ ] Local change detector to classify “major change” vs minor edits (to avoid frequent LLM calls)
+  - [ ] Debounced background refresh (2–5s after edits) for SG + suggestions generation
+  - [ ] Budget/rate limiting for background reviewer (avoid runaway costs)
+- [ ] **Extensible rule system**:
+  - [ ] High-level doc types (e.g., Academic) add validation rules over BG/SG
+  - [ ] Venue presets (e.g., Nature) can define more specific constraints (BG structure + SG evidence expectations)
+  - [ ] Architecture supports adding rule sets incrementally and potentially via 3rd party plugins
+- [ ] **TODO (stability)**: robust strategy for stable block IDs under delete/move/large rewrite; define behavior and invariants
+- [ ] **TODO (future scope)**: evaluate if SG needs global concepts beyond BG (cross-block canonical nodes) and when to introduce them
+
+#### UX (Chat Panel + Guidance)
+- [x] **Project editing mode (AI‑Assist vs Full‑AI)**:
+  - [x] Persist `project.settings.editingMode` (`ai-assist` | `full-ai`)
+  - [x] Use it to default editor behavior (Full‑AI opens chat by default)
+  - [x] Project list hover styling: purple for Full‑AI, blue for AI‑Assist
+  - [x] Project page badge showing editing mode (color-coded)
+- [x] **Chat Panel (Full‑AI / AI‑Assist)**:
+  - [x] Chat panel component extracted as `ChatPanel`
+  - [x] Full‑AI opens chat by default (based on `editingMode`, not only creation flow)
+  - [x] Command-bar style input (auto-resize textarea + send icon) consistent with Think panel chat UX
+  - [x] Full‑AI “open chat” wand icon in formatting toolbar when chat is hidden
+- [ ] **Agenda + Suggestions panes (collapsible)**:
+  - [ ] Maintain a behind-the-scenes agenda (“talking points”) that is phase-aware (A/B/C)
+  - [ ] Optional UI: collapsible **Agenda** pane and **Suggestions Inbox** pane in the chat panel
+  - [ ] Badges/counts for new suggestions; default collapsed for AI‑Assist, open by default for Full‑AI
+- [ ] **Decision Cards (blocking)**:
+  - [ ] Decision cards must be blocking when a new chat input changes a prior decision point
+  - [ ] Impact analysis is SG-targeted but *semantically verified* (not just graph traversal)
+  - [ ] UX actions: Preview / Apply / Dismiss (no extra action types)
+- [ ] **Suggestions UX**:
+  - [ ] Background reviewer generates suggestions: inclusion, exclusion, editing, cohesion/consistency, evidence gaps
+  - [ ] Primary surface: inline markers in doc (click to preview/apply/dismiss)
+  - [ ] Secondary surface: suggestions inbox (collapsible) with grouping + filtering by phase
+  - [ ] Optional mention in chat stream for high-impact items only (to avoid spam)
+
+**Deliverables**:
+- ✅ Editing mode persisted and used to drive default chat behavior
+- ✅ Chat panel exists (componentized) with consistent send UX and reopen affordances
+- ⏳ Phase-aware agenda + blocking decision cards
+- ⏳ SG-backed suggestions + background reviewer pipeline
+
+---
+
 ## Technical Stack Decisions
 
 ### Confirmed

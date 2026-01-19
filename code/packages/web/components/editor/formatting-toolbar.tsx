@@ -9,15 +9,24 @@ import {
   ArrowUpIcon,
   ArrowDownIcon,
 } from '@heroicons/react/24/outline';
+import { WandIcon } from '@/components/icons';
 import type { FormatType } from './floating-format-menu';
 
 interface FormattingToolbarProps {
   onFormat: (format: FormatType) => void;
   viewMode: 'edit' | 'preview' | 'split' | 'ir';
   currentStyle?: 'paragraph' | 'title' | 'heading1' | 'heading2' | 'heading3';
+  showFullAiChatButton?: boolean;
+  onOpenFullAiChat?: () => void;
 }
 
-export function FormattingToolbar({ onFormat, viewMode, currentStyle = 'paragraph' }: FormattingToolbarProps) {
+export function FormattingToolbar({
+  onFormat,
+  viewMode,
+  currentStyle = 'paragraph',
+  showFullAiChatButton = false,
+  onOpenFullAiChat,
+}: FormattingToolbarProps) {
   // Only show in edit or split mode
   if (viewMode === 'preview' || viewMode === 'ir') {
     return null;
@@ -72,6 +81,19 @@ export function FormattingToolbar({ onFormat, viewMode, currentStyle = 'paragrap
           </button>
         );
       })}
+
+      {/* Right side: Full-AI chat open button (only when chat panel is hidden) */}
+      {showFullAiChatButton && (
+        <button
+          type="button"
+          onClick={() => onOpenFullAiChat?.()}
+          className="ml-auto p-1.5 rounded border border-[#a855f7]/40 bg-[#a855f7]/10 hover:bg-[#a855f7]/20 text-[#e9d5ff] transition-colors"
+          title="Open Full‑AI chat"
+          aria-label="Open Full‑AI chat"
+        >
+          <WandIcon className="w-4 h-4" />
+        </button>
+      )}
     </div>
   );
 }
