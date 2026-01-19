@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronRightIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
-import { RightAiChatPanel } from './right-ai-chat-panel';
+import { ChatPanel } from './chat-panel';
 import { EditorSidebar } from './editor-sidebar';
 import { EditorToolbar } from './editor-toolbar';
 import { EditorStatusBar } from './editor-status-bar';
@@ -119,7 +119,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     requestAnimationFrame(() => rightAiInputRef.current?.focus());
   }, [rightAiChatOpen, isFullAI, shouldFocusChat]);
 
-  // Right chat send UX is encapsulated in `RightAiChatPanel`.
+  // Chat send UX is encapsulated in `ChatPanel`.
   const [openParagraphId, setOpenParagraphId] = useState<string | null>(null);
   const [inlineAIChatOpen, setInlineAIChatOpen] = useState(false);
   const [inlineAIHintVisible, setInlineAIHintVisible] = useState(false);
@@ -1016,7 +1016,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           )}
 
           {/* Right-side AI chat panel */}
-          <RightAiChatPanel
+          <ChatPanel
             isOpen={rightAiChatOpen}
             isFullAI={isFullAI}
             inputRef={rightAiInputRef}
