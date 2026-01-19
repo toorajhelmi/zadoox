@@ -49,6 +49,7 @@ describe('Publish preview page (PDF)', () => {
       documentId: 'doc-1',
       source: 'markdown',
     });
+    window.history.pushState({}, '', `?${hoisted.searchParams.toString()}`);
     hoisted.mockApi.documents.get.mockResolvedValue({
       id: 'doc-1',
       projectId: 'proj-1',
@@ -104,6 +105,7 @@ describe('Publish preview page (PDF) - LaTeX source', () => {
       documentId: 'doc-1',
       source: 'latex',
     });
+    window.history.pushState({}, '', `?${hoisted.searchParams.toString()}`);
     hoisted.mockApi.documents.get.mockResolvedValue({
       id: 'doc-1',
       projectId: 'proj-1',

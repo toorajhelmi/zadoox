@@ -17,8 +17,16 @@ export default function PublishPreviewPage() {
   const router = useRouter();
   const projectId = params.id as string;
 
-  const [documentId, setDocumentId] = useState<string>('');
-  const [source, setSource] = useState<PublishSource>('markdown');
+  // NOTE: We intentionally derive initial query params synchronously so tests and
+  // first-render behavior match the prior `useSearchParams()` implementation.
+  const [documentId, setDocumentId] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    return new URLSearchParams(window.location.search).get('documentId') || '';
+  });
+  const [source, setSource] = useState<PublishSource>(() => {
+    if (typeof window === 'undefined') return 'markdown';
+    return (new URLSearchParams(window.location.search).get('source') || 'markdown') as PublishSource;
+  });
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +57,7 @@ export default function PublishPreviewPage() {
   const canLoad = useMemo(() => !!projectId && !!documentId, [projectId, documentId]);
 
   useEffect(() => {
+    // Keep state in sync on mount (no-op in most cases, but harmless).
     const sp = new URLSearchParams(window.location.search);
     setDocumentId(sp.get('documentId') || '');
     setSource((sp.get('source') || 'markdown') as PublishSource);
