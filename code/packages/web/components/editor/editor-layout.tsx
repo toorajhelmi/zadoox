@@ -620,6 +620,11 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           onFormat={handleFormat}
           viewMode={viewMode}
           currentStyle={currentTextStyle}
+          showFullAiChatButton={isFullAI && !rightAiChatOpen}
+          onOpenFullAiChat={() => {
+            setRightAiChatOpen(true);
+            requestAnimationFrame(() => rightAiInputRef.current?.focus());
+          }}
         />
 
         {/* Change Tracking Banner - shown at top when tracking is active */}
