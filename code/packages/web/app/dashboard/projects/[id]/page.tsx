@@ -97,6 +97,13 @@ export default function ProjectDetailPage() {
     );
   }
 
+  const editingMode = project.settings?.editingMode === 'full-ai' ? 'full-ai' : 'ai-assist';
+  const editingModeLabel = editingMode === 'full-ai' ? 'FULL‑AI' : 'AI‑ASSIST';
+  const editingModeBadgeClass =
+    editingMode === 'full-ai'
+      ? 'border-[#a855f7]/40 bg-[#a855f7]/10 text-[#e9d5ff]'
+      : 'border-[#007acc]/40 bg-[#007acc]/10 text-[#bfe3ff]';
+
   return (
     <DashboardLayout>
       <div className="h-full flex flex-col">
@@ -142,7 +149,16 @@ export default function ProjectDetailPage() {
 
         <div className="flex-1 overflow-auto p-6">
           <div className="max-w-4xl mx-auto">
-            <div className="p-6 bg-[#252526] border border-[#3e3e42] rounded mb-6">
+            <div className="relative p-6 bg-[#252526] border border-[#3e3e42] rounded mb-6">
+              <div
+                className={
+                  'absolute top-4 right-4 text-[10px] font-mono uppercase px-2 py-1 rounded border ' +
+                  editingModeBadgeClass
+                }
+                title={editingMode === 'full-ai' ? 'Full-AI editing mode' : 'AI-Assist editing mode'}
+              >
+                {editingModeLabel}
+              </div>
               <h2 className="text-lg font-semibold text-white mb-4">Project Details</h2>
               <dl className="space-y-3">
                 <div>
