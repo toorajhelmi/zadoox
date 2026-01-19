@@ -92,7 +92,8 @@ export function CreateProjectModal({ isOpen, onClose, onCreate, initialStartMode
         name: name.trim(),
         description: description.trim() || undefined,
         // Full-AI flow: project type will be refined during onboarding/chat.
-        type: 'other',
+        // Backend currently enforces a strict allowed set; default to a valid type.
+        type: 'academic',
       });
 
       const docs = await api.documents.listByProject(project.id);

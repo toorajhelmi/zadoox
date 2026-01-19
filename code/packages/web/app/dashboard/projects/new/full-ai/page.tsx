@@ -28,8 +28,8 @@ export default function NewProjectFullAIPage() {
         name: name.trim(),
         description: description.trim() || undefined,
         // Full-AI flow: project type will be refined during onboarding/chat.
-        // Use 'other' as a safe default.
-        type: 'other',
+        // Backend currently enforces a strict allowed set; default to a valid type.
+        type: 'academic',
       };
       const project = await api.projects.create(input);
 
