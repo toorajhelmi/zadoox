@@ -15,7 +15,7 @@ import { useDocumentState } from '@/hooks/use-document-state';
 import { useIrDocument } from '@/hooks/use-ir-document';
 import { api } from '@/lib/api/client';
 import type { FormatType } from './floating-format-menu';
-import type { ResearchSource, DocumentStyle, DocumentNode } from '@zadoox/shared';
+import type { ResearchSource, DocumentStyle, DocumentNode, EditingMode } from '@zadoox/shared';
 import type { InlineEditBlock, InlineEditOperation } from '@zadoox/shared';
 import type { QuickOption } from '@/lib/services/context-options';
 import { irToLatexDocument, irToXmd } from '@zadoox/shared';
@@ -53,6 +53,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     return v === 'true' || v === '1' || v === 'yes';
   }, [searchParams]);
   const shouldFocusChat = useMemo(() => (searchParams.get('focus') ?? '').toLowerCase() === 'chat', [searchParams]);
+  const [projectEditingMode, setProjectEditingMode] = useState<EditingMode>('ai-assist');
+  const didAutoOpenRightChatRef = useRef(false);
 
   const {
     content,
@@ -100,15 +102,21 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [rightAiChatOpen, setRightAiChatOpen] = useState(false);
   const rightAiInputRef = useRef<HTMLTextAreaElement | null>(null);
 
+  const isFullAI = fullAssist || projectEditingMode === 'full-ai';
+
   useEffect(() => {
-    if (fullAssist) setRightAiChatOpen(true);
-  }, [fullAssist]);
+    // Auto-open once on load if this is a Full-AI project (or deep-link).
+    if (didAutoOpenRightChatRef.current) return;
+    if (!isFullAI) return;
+    didAutoOpenRightChatRef.current = true;
+    setRightAiChatOpen(true);
+  }, [isFullAI]);
 
   useEffect(() => {
     if (!rightAiChatOpen) return;
-    if (!fullAssist && !shouldFocusChat) return;
+    if (!isFullAI && !shouldFocusChat) return;
     requestAnimationFrame(() => rightAiInputRef.current?.focus());
-  }, [rightAiChatOpen, fullAssist, shouldFocusChat]);
+  }, [rightAiChatOpen, isFullAI, shouldFocusChat]);
   const [openParagraphId, setOpenParagraphId] = useState<string | null>(null);
   const [inlineAIChatOpen, setInlineAIChatOpen] = useState(false);
   const [inlineAIHintVisible, setInlineAIHintVisible] = useState(false);
@@ -213,7 +221,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     originalSaveDocument,
   });
 
-  useProjectDocumentStyle({ projectId, setProjectName, setDocumentStyle });
+  useProjectDocumentStyle({ projectId, setProjectName, setDocumentStyle, setEditingMode: setProjectEditingMode });
 
   const { getCursorScreenPosition } = useEditorCursorScreenPosition({
     editorViewRef,
@@ -1004,10 +1012,10 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             <div className="w-[360px] min-w-[320px] max-w-[420px] h-full border-l border-vscode-border bg-vscode-sidebar flex flex-col">
               <div
                 className={`px-3 py-2 border-b border-vscode-border flex items-center justify-between ${
-                  fullAssist ? 'bg-[#a855f7]/10' : 'bg-[#007acc]/10'
+                  isFullAI ? 'bg-[#a855f7]/10' : 'bg-[#007acc]/10'
                 }`}
               >
-                <div className="text-xs font-mono text-vscode-text-secondary">{fullAssist ? 'FULL‑AI' : 'AI‑ASSIST'}</div>
+                <div className="text-xs font-mono text-vscode-text-secondary">{isFullAI ? 'FULL‑AI' : 'AI‑ASSIST'}</div>
                 <button
                   type="button"
                   className="text-xs text-vscode-text-secondary hover:text-vscode-text transition-colors"
@@ -1017,7 +1025,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 </button>
               </div>
               <div className="flex-1 overflow-auto p-3 text-sm text-vscode-text-secondary">
-                {fullAssist ? (
+                {isFullAI ? (
                   <div className="text-vscode-text">
                     Guided chat will appear here. Tell Zadoox what you’re creating and we’ll produce the first draft.
                   </div>
@@ -1030,7 +1038,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                   ref={(el) => {
                     rightAiInputRef.current = el;
                   }}
-                  placeholder={fullAssist ? 'Describe what you want to write…' : 'Ask AI…'}
+                  placeholder={isFullAI ? 'Describe what you want to write…' : 'Ask AI…'}
                   rows={3}
                   className="w-full bg-vscode-editorWidgetBg border border-vscode-border rounded px-3 py-2 text-sm text-vscode-text placeholder:text-vscode-text-secondary focus:outline-none"
                 />
@@ -1038,7 +1046,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                   <button
                     type="button"
                     className={`px-3 py-1.5 text-xs rounded text-white transition-colors ${
-                      fullAssist ? 'bg-[#a855f7] hover:bg-[#9333ea]' : 'bg-[#007acc] hover:bg-[#1a8cd8]'
+                      isFullAI ? 'bg-[#a855f7] hover:bg-[#9333ea]' : 'bg-[#007acc] hover:bg-[#1a8cd8]'
                     }`}
                     onClick={() => rightAiInputRef.current?.focus()}
                   >
@@ -1052,13 +1060,13 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               type="button"
               onClick={() => setRightAiChatOpen(true)}
               className={`absolute right-2 bottom-3 px-3 py-2 rounded border border-vscode-border text-xs transition-colors ${
-                fullAssist
+                isFullAI
                   ? 'bg-[#a855f7]/10 hover:bg-[#a855f7]/20 text-[#e9d5ff]'
                   : 'bg-[#007acc]/10 hover:bg-[#007acc]/20 text-[#bfe3ff]'
               }`}
               title="Open AI chat"
             >
-              {fullAssist ? 'Open Full‑AI' : 'Open AI chat'}
+              {isFullAI ? 'Open Full‑AI' : 'Open AI chat'}
             </button>
           )}
         </div>
