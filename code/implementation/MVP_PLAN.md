@@ -1318,6 +1318,10 @@ We will implement Phase 15 in small vertical slices (each phase ends with a work
   - [ ] Update shared types (`Document.xmd`) and API inputs
   - [ ] Update all backend queries/mapping + web editor state/hooks
   - [ ] Remove old column after back-compat window (or keep as generated/alias if preferred)
+- [ ] **Solidify undo/redo** (currently unstable in CI; LaTeX undo/redo test is skipped)
+  - [ ] Audit undo/redo state sources across edit modes (MD vs LaTeX)
+  - [ ] Make history updates deterministic in tests (no dependency on async editor state)
+  - [ ] Re‑enable `editor-layout-latex-undo-redo` test once behavior is stable
 
 **Deliverables**:
 - ✅ SG, LaTeX, and XMD are stored in dedicated columns (no large payloads mixed into metadata)
