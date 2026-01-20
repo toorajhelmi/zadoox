@@ -377,7 +377,7 @@ describe('useDocumentState - Core Functionality', () => {
   });
 
   it(
-    'should persist metadata-only patches without changing content',
+    'should persist semanticGraph without mixing it into metadata',
     async () => {
     const mockDocument: Document = {
       id: 'doc-1',
@@ -385,17 +385,16 @@ describe('useDocumentState - Core Functionality', () => {
       title: 'Test Document',
       content: 'Test content',
       metadata: { type: 'standalone', foo: 'bar' },
+      semanticGraph: null,
       createdAt: new Date('2024-01-01'),
       updatedAt: new Date('2024-01-02'),
     };
 
     // Initial load
     vi.mocked(api.documents.get).mockResolvedValueOnce(mockDocument);
-    // saveMetadataPatch path calls get() again inside the debounced callback
-    vi.mocked(api.documents.get).mockResolvedValueOnce(mockDocument);
     vi.mocked(api.documents.update).mockResolvedValueOnce({
       ...mockDocument,
-      metadata: { ...mockDocument.metadata, semanticGraph: { version: 1, nodes: [], edges: [], updatedAt: '2024-01-03T00:00:00.000Z' } },
+      semanticGraph: { version: 1, nodes: [], edges: [], updatedAt: '2024-01-03T00:00:00.000Z' },
       updatedAt: new Date('2024-01-03'),
     });
 
@@ -412,8 +411,11 @@ describe('useDocumentState - Core Functionality', () => {
     vi.useFakeTimers();
 
     act(() => {
-      result.current.saveMetadataPatch({
-        semanticGraph: { version: 1, nodes: [], edges: [], updatedAt: '2024-01-03T00:00:00.000Z' },
+      result.current.saveSemanticGraphPatch({
+        version: 1,
+        nodes: [],
+        edges: [],
+        updatedAt: '2024-01-03T00:00:00.000Z',
       });
     });
 
@@ -426,8 +428,8 @@ describe('useDocumentState - Core Functionality', () => {
 
     const updateArg = vi.mocked(api.documents.update).mock.calls[0]?.[1] as any;
     expect(updateArg?.content).toBeUndefined();
-    expect(updateArg?.metadata?.foo).toBe('bar');
-    expect(updateArg?.metadata?.semanticGraph?.version).toBe(1);
+    expect(updateArg?.metadata).toBeUndefined();
+    expect(updateArg?.semanticGraph?.version).toBe(1);
     },
     15000
   );

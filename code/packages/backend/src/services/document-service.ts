@@ -55,6 +55,7 @@ export class DocumentService {
         chapterNumber: input.metadata?.chapterNumber || null,
         order: input.metadata?.order || 0,
       },
+      semantic_graph: input.semanticGraph ?? null,
       version: 1,
       author_id: authorId,
     };
@@ -156,6 +157,10 @@ export class DocumentService {
       };
     }
 
+    if (input.semanticGraph !== undefined) {
+      updateData.semantic_graph = input.semanticGraph;
+    }
+
     const { data, error } = await this.supabase
       .from('documents')
       .update(updateData)
@@ -214,6 +219,7 @@ export class DocumentService {
       title: dbDocument.title as string,
       content: dbDocument.content as string,
       metadata: dbDocument.metadata as Document['metadata'],
+      semanticGraph: (dbDocument.semantic_graph as Document['semanticGraph']) ?? null,
       version: dbDocument.version as number,
       createdAt: new Date(dbDocument.created_at as string),
       updatedAt: new Date(dbDocument.updated_at as string),

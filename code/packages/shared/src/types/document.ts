@@ -11,6 +11,11 @@ export interface Document {
   title: string;
   content: string; // Extended Markdown format
   metadata: DocumentMetadata;
+  /**
+   * Phase 15: Semantic Graph (SG) stored separately from metadata to avoid mixing large payloads
+   * with other metadata fields.
+   */
+  semanticGraph?: import('./semantic-graph').SemanticGraph | null;
   version: number;
   createdAt: Date;
   updatedAt: Date;
@@ -111,12 +116,14 @@ export interface CreateDocumentInput {
   title: string;
   content?: string;
   metadata?: Partial<DocumentMetadata>;
+  semanticGraph?: import('./semantic-graph').SemanticGraph | null;
 }
 
 export interface UpdateDocumentInput {
   title?: string;
   content?: string;
   metadata?: Partial<DocumentMetadata>;
+  semanticGraph?: import('./semantic-graph').SemanticGraph | null;
   changeType?: 'manual-save' | 'auto-save' | 'ai-action' | 'milestone' | 'rollback';
   changeDescription?: string;
 }

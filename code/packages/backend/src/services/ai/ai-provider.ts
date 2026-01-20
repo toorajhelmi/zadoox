@@ -145,6 +145,22 @@ export interface AIProvider {
    * Get model information
    */
   getModelInfo(): AIModelInfo;
+
+  /**
+   * Compute embeddings for a batch of short texts.
+   * Used for fast candidate retrieval without sending full document content to the LLM.
+   */
+  embedTexts(texts: string[]): Promise<number[][]>;
+
+  /**
+   * Run a JSON-only chat completion and return the parsed JSON.
+   * Used for structured extraction tasks (e.g., SG node/edge extraction).
+   */
+  chatJson(params: {
+    system: string;
+    user: string;
+    temperature?: number;
+  }): Promise<unknown>;
 }
 
 export interface AIAnalysisResult {

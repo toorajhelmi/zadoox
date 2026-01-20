@@ -14,6 +14,7 @@ import { InlineAIChat } from './inline-ai-chat';
 import { InlineAIHint } from './inline-ai-hint';
 import { useDocumentState } from '@/hooks/use-document-state';
 import { useIrDocument } from '@/hooks/use-ir-document';
+import { useSgRefresh } from './sg/use-sg-refresh';
 import { api } from '@/lib/api/client';
 import type { FormatType } from './floating-format-menu';
 import type { ResearchSource, DocumentStyle, DocumentNode, EditingMode } from '@zadoox/shared';
@@ -37,7 +38,7 @@ import { ensureLatexPreambleForLatexContent } from './latex-preamble';
 import { ActiveEditorSurface } from './active-editor-surface';
 import { useCanonicalIrState } from './editor-layout-canonical-ir';
 import { getActiveEditorText, getCursorScopeText, getSurfaceCapabilities, getSurfaceSyntax, getTypingHistoryAdapter, pickUndoRedo } from './editor-surface';
-import { useSemanticGraph } from './sg/use-semantic-graph';
+// SG is stored separately on the Document (not in metadata).
 
 interface EditorLayoutProps {
   projectId: string;
@@ -72,6 +73,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     documentMetadata,
     setDocumentMetadata,
     saveMetadataPatch,
+    semanticGraph,
+    saveSemanticGraphPatch,
   } = useDocumentState(documentId, projectId);
   
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -120,9 +123,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     if (!isFullAI && !shouldFocusChat) return;
     requestAnimationFrame(() => rightAiInputRef.current?.focus());
   }, [rightAiChatOpen, isFullAI, shouldFocusChat]);
-
-  // Phase 15.1: SG subsystem (kept isolated under ./sg/)
-  useSemanticGraph({ documentMetadata, saveMetadataPatch, enabled: true });
 
   // Chat send UX is encapsulated in `ChatPanel`.
   const [openParagraphId, setOpenParagraphId] = useState<string | null>(null);
@@ -196,6 +196,17 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   }, [getCurrentIr]);
 
   const sidebarIr = canonicalIr ?? irState.ir;
+
+  // Phase 15.2: Local SG refresh (debounced, heuristic) + provenance anchoring via BG ids.
+  // v1 safety: only auto-generates SG when the current SG looks auto-generated or is missing.
+  useSgRefresh({
+    ir: sidebarIr,
+    delta: irState.delta,
+    semanticGraph: semanticGraph ?? null,
+    saveSemanticGraphPatch,
+    documentStyle,
+    enabled: Boolean(actualDocumentId || documentId),
+  });
 
   const currentTextStyle = (() => {
     const view = editorViewRef.current;
@@ -1025,8 +1036,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             isOpen={rightAiChatOpen}
             isFullAI={isFullAI}
             inputRef={rightAiInputRef}
-            documentMetadata={documentMetadata as any}
-            saveMetadataPatch={saveMetadataPatch}
+            semanticGraph={semanticGraph ?? null}
             onOpen={() => {
               setRightAiChatOpen(true);
               requestAnimationFrame(() => rightAiInputRef.current?.focus());

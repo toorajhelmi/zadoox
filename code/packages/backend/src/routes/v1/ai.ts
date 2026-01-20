@@ -3,7 +3,6 @@
  */
 
 import { FastifyInstance } from 'fastify';
-import { AIService } from '../../services/ai/ai-service.js';
 import type { AIModel } from '../../services/ai/ai-service.js';
 import { authenticateUser, AuthenticatedRequest } from '../../middleware/auth.js';
 import {
@@ -19,36 +18,7 @@ import {
 } from '@zadoox/shared';
 import { schemas, security } from '../../config/schemas.js';
 import { z } from 'zod';
-
-// Initialize AI service (singleton pattern)
-let aiService: AIService | null = null;
-let aiServiceError: Error | null = null;
-
-function getAIService(): AIService {
-  if (aiServiceError) {
-    throw aiServiceError;
-  }
-  
-  if (!aiService) {
-    try {
-      const openaiApiKey = process.env.OPENAI_API_KEY;
-      if (!openaiApiKey) {
-        aiServiceError = new Error('OPENAI_API_KEY environment variable is not set');
-        throw aiServiceError;
-      }
-
-      aiService = new AIService({
-        defaultModel: (process.env.AI_DEFAULT_MODEL as 'openai' | 'auto') || 'openai',
-        openaiApiKey,
-        openaiModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      });
-    } catch (error) {
-      aiServiceError = error instanceof Error ? error : new Error('Failed to initialize AI service');
-      throw aiServiceError;
-    }
-  }
-  return aiService;
-}
+import { getAIService } from '../../services/ai/ai-service-singleton.js';
 
 export async function aiRoutes(fastify: FastifyInstance) {
   // All routes require authentication

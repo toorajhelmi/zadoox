@@ -253,6 +253,19 @@ export class AIService {
     return provider.generateImage(prompt, options);
   }
 
+  async embedTexts(texts: string[], model?: AIModel): Promise<number[][]> {
+    const provider = this.getProvider(model);
+    return provider.embedTexts(texts);
+  }
+
+  async chatJson(
+    params: { system: string; user: string; temperature?: number },
+    model?: AIModel
+  ): Promise<unknown> {
+    const provider = this.getProvider(model);
+    return provider.chatJson(params);
+  }
+
   /**
    * Get available models
    */

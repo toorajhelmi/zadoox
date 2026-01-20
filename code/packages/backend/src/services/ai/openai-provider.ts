@@ -683,6 +683,40 @@ ${JSON.stringify(params.context ?? {}, null, 2)}`;
     };
   }
 
+  async embedTexts(texts: string[]): Promise<number[][]> {
+    const input = Array.isArray(texts) ? texts.map((t) => String(t ?? '')) : [];
+    if (input.length === 0) return [];
+
+    // Use a small, cheap embedding model. Can be overridden later via env if needed.
+    const response = await this.client.embeddings.create({
+      model: 'text-embedding-3-small',
+      input,
+    });
+
+    const data = (response?.data ?? []) as Array<{ embedding?: number[] }>;
+    return data.map((d) => (Array.isArray(d.embedding) ? d.embedding : []));
+  }
+
+  async chatJson(params: { system: string; user: string; temperature?: number }): Promise<unknown> {
+    const response = await this.client.chat.completions.create({
+      model: this.model,
+      messages: [
+        { role: 'system', content: params.system },
+        { role: 'user', content: params.user },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: typeof params.temperature === 'number' ? params.temperature : 0.2,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) throw new Error('No response from OpenAI');
+    try {
+      return JSON.parse(content);
+    } catch {
+      throw new Error('Failed to parse AI JSON response');
+    }
+  }
+
   private buildAnalysisPrompt(text: string, context?: string): string {
     return `Analyze the following text and provide a JSON response with this structure:
 {

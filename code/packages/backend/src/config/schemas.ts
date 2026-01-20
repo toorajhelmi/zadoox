@@ -88,6 +88,12 @@ export const schemas = {
         },
         required: ['type'],
       },
+      // Phase 15: store SG separately from metadata to avoid mixing large payloads.
+      semanticGraph: {
+        type: 'object',
+        nullable: true,
+        additionalProperties: true,
+      },
       version: { type: 'number' },
       createdAt: { type: 'string', format: 'date-time' },
       updatedAt: { type: 'string', format: 'date-time' },
@@ -112,6 +118,7 @@ export const schemas = {
       projectId: { type: 'string', format: 'uuid' },
       title: { type: 'string', minLength: 1, maxLength: 255 },
       content: { type: 'string' },
+      semanticGraph: { type: 'object', nullable: true, additionalProperties: true },
       metadata: {
         type: 'object',
         additionalProperties: true,
@@ -145,6 +152,7 @@ export const schemas = {
           irHashAtLastSync: { type: 'string' },
         },
       },
+      semanticGraph: { type: 'object', nullable: true, additionalProperties: true },
     },
   },
 
