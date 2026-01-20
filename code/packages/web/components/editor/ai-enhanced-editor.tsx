@@ -40,6 +40,7 @@ interface AIEnhancedEditorProps {
   changes?: ChangeBlock[];
   onAcceptChange?: (changeId: string) => void;
   onRejectChange?: (changeId: string) => void;
+  aiAnalysisEnabled?: boolean;
 }
 
 /**
@@ -65,6 +66,8 @@ export function AIEnhancedEditor({
   changes,
   onAcceptChange,
   onRejectChange,
+  // Disabled for now: SG work will likely replace/supersede the legacy /ai/analyze metrics.
+  aiAnalysisEnabled = false,
 }: AIEnhancedEditorProps) {
   const [_hoveredParagraph, setHoveredParagraph] = useState<string | null>(null);
   const [processingParagraph, setProcessingParagraph] = useState<{ id: string; action: AIActionType } | null>(null);
@@ -73,7 +76,7 @@ export function AIEnhancedEditor({
   const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const clearDeltaTimeoutRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
-  const { paragraphs, getAnalysis, isAnalyzing, analyze: analyzeParagraph } = useAIAnalysis(value, model);
+  const { paragraphs, getAnalysis, isAnalyzing, analyze: analyzeParagraph } = useAIAnalysis(value, model, aiAnalysisEnabled);
   const lastDocMetricsSigRef = useRef<string>('');
   const editorViewRef = useRef<EditorView | null>(null);
   const isMouseOverToolbarRef = useRef(false);
@@ -749,7 +752,7 @@ export function AIEnhancedEditor({
       {/* Toolbar is now rendered inline via CodeMirror widgets */}
 
       {/* Loading indicator */}
-      {isAnalyzing && (
+      {aiAnalysisEnabled && isAnalyzing && (
         <div className="absolute top-2 right-2 bg-vscode-editorBg border border-vscode-border rounded px-2 py-1 text-xs text-vscode-text-secondary">
           Analyzing...
         </div>

@@ -1309,6 +1309,15 @@ We will implement Phase 15 in small vertical slices (each phase ends with a work
 ### Phase 16: Cleanup / Data Model Hardening 🧹
 **Status**: Not Started
 
+- [ ] **Revisit/replace legacy AI analysis (`/ai/analyze`)**:
+  - [ ] Keep background `/ai/analyze` disabled (SG should drive AI decisions/metrics instead)
+  - [ ] Decide whether to delete `/ai/analyze`, or re-implement metrics as SG-derived signals (or keep only for specialized cases)
+
+- [ ] **Optimize SG full-document bootstrap** (currently chunked + blocking):
+  - [ ] Make it non-blocking (or minimally blocking) with background build + progress UI
+  - [ ] Add resume/caching (don’t restart from 0 after refresh) + fewer DB writes
+  - [ ] Improve cross-chunk edges (global pass) so suggestions don’t miss long-range dependencies
+
 - [ ] **Move LaTeX to its own DB column** (separate from `documents.metadata`)
   - [ ] Add `documents.latex` (and related fields like `latex_ir_hash`, `last_edited_format` if needed)
   - [ ] Backfill from metadata (`metadata.latex`, `metadata.latexIrHash`, `metadata.lastEditedFormat`)

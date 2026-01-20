@@ -161,9 +161,13 @@ export const schemas = {
     type: 'object',
     properties: {
       success: { type: 'boolean' },
-      data: { type: 'object' }, // Placeholder - actual data type varies by endpoint
+      // IMPORTANT: many endpoints return different data payload shapes.
+      // If we don't allow additionalProperties here, Fastify's response serializer
+      // (fast-json-stringify) may drop nested fields and return `{}`.
+      data: { type: 'object', nullable: true, additionalProperties: true },
       error: {
         type: 'object',
+        nullable: true,
         properties: {
           code: { type: 'string' },
           message: { type: 'string' },

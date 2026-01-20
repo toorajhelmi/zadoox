@@ -16,7 +16,7 @@ export interface ParagraphAnalysis {
   isAnalyzing: boolean;
 }
 
-export function useAIAnalysis(content: string, model: AIModel = 'auto') {
+export function useAIAnalysis(content: string, model: AIModel = 'auto', enabled: boolean = true) {
   const [paragraphs, setParagraphs] = useState<Map<string, ParagraphAnalysis>>(new Map());
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -87,6 +87,7 @@ export function useAIAnalysis(content: string, model: AIModel = 'auto') {
   // Analyze a single paragraph
   const analyzeParagraph = useCallback(
     async (paragraphId: string, text: string) => {
+      if (!enabled) return;
       if (!text || text.trim().length < 10) {
         // Skip very short paragraphs
         return;
@@ -158,11 +159,20 @@ export function useAIAnalysis(content: string, model: AIModel = 'auto') {
         }
       }
     },
-    [model]
+    [model, enabled]
   );
 
   // Analyze all paragraphs (debounced)
   useEffect(() => {
+    if (!enabled) {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+      analyzingParagraphsRef.current.clear();
+      setIsAnalyzing(false);
+      return;
+    }
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
@@ -207,7 +217,7 @@ export function useAIAnalysis(content: string, model: AIModel = 'auto') {
         clearTimeout(debounceTimerRef.current);
       }
     };
-  }, [content, parseParagraphs, analyzeParagraph]);
+  }, [content, parseParagraphs, analyzeParagraph, enabled]);
 
   // Get analysis for a specific paragraph
   const getAnalysis = useCallback(

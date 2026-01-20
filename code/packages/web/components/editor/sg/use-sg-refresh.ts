@@ -7,6 +7,7 @@ import { extractBlockGraphFromIr } from './bg-extract';
 import { api } from '@/lib/api/client';
 
 export function useSgRefresh(params: {
+  documentId: string;
   ir: DocumentNode | null;
   delta: IrDelta | null;
   semanticGraph: SemanticGraph | null;
@@ -14,11 +15,12 @@ export function useSgRefresh(params: {
   documentStyle?: 'academic' | 'whitepaper' | 'technical-docs' | 'blog' | 'other';
   enabled?: boolean;
 }) {
-  const { ir, delta, semanticGraph, saveSemanticGraphPatch, documentStyle, enabled = true } = params;
+  const { documentId, ir, delta, semanticGraph, saveSemanticGraphPatch, documentStyle, enabled = true } = params;
 
   const lastRunAtRef = useRef<number>(0);
   const runsInWindowRef = useRef<{ windowStartMs: number; count: number }>({ windowStartMs: 0, count: 0 });
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastErrorLogAtRef = useRef<number>(0);
 
   useEffect(() => {
     if (!enabled) return;
@@ -48,15 +50,14 @@ export function useSgRefresh(params: {
         const bg = extractBlockGraphFromIr(ir);
         const prev = semanticGraph ?? undefined;
         // If there's an existing non-auto SG, do not overwrite it (v1 safety).
-        if (prev && !prev.nodes.every((n) => n.id.startsWith('bg:'))) return;
+        if (prev && !prev.nodes.every((n) => n.id.startsWith('sg:auto:'))) return;
 
-        // Prefer LLM builder when enabled (feature flag) and not a major edit.
-        const llmEnabled = (process.env.NEXT_PUBLIC_SG_LLM_ENABLED || '').toLowerCase() === 'true';
+        // Prefer LLM builder (SG is always built; backend may no-op if AI is unavailable).
         const profile = getSgDocTypeProfile(documentStyle);
 
         const buildWithLlm = async (): Promise<SemanticGraph | null> => {
-          if (!llmEnabled) return null;
-
+          // If SG doesn't exist yet, bootstrap is responsible (backend job). Don't do incremental refresh.
+          if (!semanticGraph) return null;
           // Build a bounded working slice centered around the first changed node id we see.
           const changed = delta ? [...delta.added, ...delta.changed] : [];
           const anchorId = changed.find((id) => bg.blocks.some((b) => b.id === id)) ?? bg.blocks[0]?.id;
@@ -69,7 +70,10 @@ export function useSgRefresh(params: {
           const slice = bg.blocks.slice(from, to);
 
           // Ask backend to build SG for this slice.
-          const res = await api.sg.build(slice.map((b) => ({ id: b.id, type: b.type, text: b.text })));
+          const res = await api.sg.build({
+            documentId,
+            blocks: slice.map((b) => ({ id: b.id, type: b.type, text: b.text })),
+          });
           const sliceSg = (res as any)?.sg as SemanticGraph | null;
           if (!sliceSg) return null;
 
@@ -77,7 +81,9 @@ export function useSgRefresh(params: {
           const sliceBlockIds = new Set(slice.map((b) => b.id));
           const base: SemanticGraph = prev ?? { version: 1, nodes: [], edges: [], updatedAt: new Date().toISOString() };
 
-          const keptNodes = base.nodes.filter((n) => !(n.id.startsWith('bg:') && n.bgRefs?.some((r) => sliceBlockIds.has(r.blockId))));
+          const keptNodes = base.nodes.filter(
+            (n) => !(n.id.startsWith('sg:auto:') && n.bgRefs?.some((r) => sliceBlockIds.has(r.blockId)))
+          );
           const keptNodeIds = new Set(keptNodes.map((n) => n.id));
           const incomingSliceNodeIds = new Set((sliceSg.nodes ?? []).map((n) => n.id));
 
@@ -100,8 +106,14 @@ export function useSgRefresh(params: {
           let next: SemanticGraph | null = null;
           try {
             next = await buildWithLlm();
-          } catch {
-            // no-op below
+          } catch (err: unknown) {
+            // Don't spam logs; but do surface *something* so we can debug why SG isn't showing up.
+            const now = Date.now();
+            if (now - lastErrorLogAtRef.current > 10_000) {
+              lastErrorLogAtRef.current = now;
+              // eslint-disable-next-line no-console
+              console.warn('[SG] build failed:', err);
+            }
           }
 
           // LLM-only: if SG builder isn't available, do nothing.
@@ -121,7 +133,7 @@ export function useSgRefresh(params: {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     };
-  }, [enabled, ir, delta, semanticGraph, saveSemanticGraphPatch, documentStyle]);
+  }, [enabled, documentId, ir, delta, semanticGraph, saveSemanticGraphPatch, documentStyle]);
 }
 
 

@@ -506,15 +506,62 @@ export const api = {
       });
       return response.data?.vectors || [];
     },
-    build: async (
-      blocks: Array<{ id: string; type: string; text: string }>
-    ): Promise<{ sg: any } | { sg: null }> => {
+    build: async (params: {
+      documentId: string;
+      blocks: Array<{ id: string; type: string; text: string }>;
+    }): Promise<{ sg: any } | { sg: null }> => {
       const response = await fetchApi<{ sg: any } | { sg: null }>('/sg/build', {
         method: 'POST',
-        body: JSON.stringify({ blocks }),
+        body: JSON.stringify(params),
       });
       if (!response.data) {
         throw new ApiError('Failed to build semantic graph', 'SG_BUILD_FAILED', 500);
+      }
+      return response.data;
+    },
+
+    bootstrapStart: async (params: {
+      documentId: string;
+      blocks: Array<{ id: string; type: string; text: string }>;
+    }): Promise<{ jobId: string }> => {
+      const response = await fetchApi<{ jobId: string }>('/sg/bootstrap/start', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
+      if (!response.data) {
+        throw new ApiError('Failed to start SG bootstrap', 'SG_BOOTSTRAP_START_FAILED', 500);
+      }
+      return response.data;
+    },
+
+    bootstrapStatus: async (
+      jobId: string
+    ): Promise<{
+      jobId: string;
+      documentId: string;
+      stage: string;
+      doneBlocks: number;
+      totalBlocks: number;
+      nodeCount?: number;
+      edgeCount?: number;
+      error?: string;
+      startedAt: string;
+      updatedAt: string;
+    }> => {
+      const response = await fetchApi<{
+        jobId: string;
+        documentId: string;
+        stage: string;
+        doneBlocks: number;
+        totalBlocks: number;
+        nodeCount?: number;
+        edgeCount?: number;
+        error?: string;
+        startedAt: string;
+        updatedAt: string;
+      }>(`/sg/bootstrap/status/${encodeURIComponent(jobId)}`);
+      if (!response.data) {
+        throw new ApiError('Failed to load SG bootstrap status', 'SG_BOOTSTRAP_STATUS_FAILED', 500);
       }
       return response.data;
     },

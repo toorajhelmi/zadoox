@@ -15,6 +15,7 @@ import { InlineAIHint } from './inline-ai-hint';
 import { useDocumentState } from '@/hooks/use-document-state';
 import { useIrDocument } from '@/hooks/use-ir-document';
 import { useSgRefresh } from './sg/use-sg-refresh';
+import { extractBlockGraphFromIr } from './sg/bg-extract';
 import { api } from '@/lib/api/client';
 import type { FormatType } from './floating-format-menu';
 import type { ResearchSource, DocumentStyle, DocumentNode, EditingMode } from '@zadoox/shared';
@@ -75,6 +76,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     saveMetadataPatch,
     semanticGraph,
     saveSemanticGraphPatch,
+    refreshSemanticGraph,
   } = useDocumentState(documentId, projectId);
   
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -135,6 +137,13 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [pendingChangeContent, setPendingChangeContent] = useState<{ original: string; new: string } | null>(null);
   const [isGeneratingContent, setIsGeneratingContent] = useState(false);
   const [busyOverlayMessage, setBusyOverlayMessage] = useState<string>('Generating content...');
+  const [isSgBootstrapping, setIsSgBootstrapping] = useState(false);
+  const [sgBootstrapError, setSgBootstrapError] = useState<string | null>(null);
+  const [sgBootstrapAttempt, setSgBootstrapAttempt] = useState(0);
+  const [sgBootstrapDoneBlocks, setSgBootstrapDoneBlocks] = useState(0);
+  const [sgBootstrapTotalBlocks, setSgBootstrapTotalBlocks] = useState(0);
+  const sgBootstrapJobIdRef = useRef<string | null>(null);
+  const didBootstrapSgRef = useRef<string | null>(null);
   const previousContentForHistoryRef = useRef<string>(content);
   const previousLatexForHistoryRef = useRef<string>('');
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -197,16 +206,113 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
 
   const sidebarIr = canonicalIr ?? irState.ir;
 
-  // Phase 15.2: Local SG refresh (debounced, heuristic) + provenance anchoring via BG ids.
-  // v1 safety: only auto-generates SG when the current SG looks auto-generated or is missing.
+  const bgForSg = useMemo(() => {
+    if (!sidebarIr) return null;
+    try {
+      return extractBlockGraphFromIr(sidebarIr);
+    } catch {
+      return null;
+    }
+  }, [sidebarIr]);
+
+  const hasMeaningfulContentForSg = useMemo(() => {
+    const blocks = bgForSg?.blocks ?? [];
+    // "Blank doc": no meaningful text blocks yet.
+    // Avoid blocking bootstrap in that case; SG will be created on-the-fly as the user writes.
+    return blocks.some((b) => {
+      if (!b.text || b.text.trim().length < 10) return false;
+      return b.type === 'paragraph' || b.type === 'list' || b.type === 'heading' || b.type === 'code' || b.type === 'math';
+    });
+  }, [bgForSg]);
+
+  const shouldBootstrapSg = Boolean((actualDocumentId || documentId) && sidebarIr && !semanticGraph && hasMeaningfulContentForSg);
+
+  // If a real document loads with content but no SG, we must build SG immediately (blocking).
+  useEffect(() => {
+    const docKeyForBootstrap = actualDocumentId || documentId;
+    if (!docKeyForBootstrap) return;
+    if (!shouldBootstrapSg) return;
+    if (!bgForSg) return;
+    const blocks = bgForSg.blocks ?? [];
+    if (blocks.length === 0) return;
+
+    // Only bootstrap once per doc id per editor session (retry resets this).
+    if (didBootstrapSgRef.current === docKeyForBootstrap) return;
+    didBootstrapSgRef.current = docKeyForBootstrap;
+
+    setSgBootstrapError(null);
+    setIsSgBootstrapping(true);
+    setSgBootstrapDoneBlocks(0);
+    setSgBootstrapTotalBlocks(blocks.length);
+
+    const run = async () => {
+      try {
+        // Backend-orchestrated SG bootstrap job (frontend only polls progress).
+        const started = await api.sg.bootstrapStart({
+          documentId: docKeyForBootstrap,
+          blocks: blocks.map((b) => ({ id: b.id, type: b.type, text: b.text })),
+        });
+        sgBootstrapJobIdRef.current = started.jobId;
+
+        // Poll until done/error.
+        await new Promise<void>((resolve, reject) => {
+          let cancelled = false;
+          const tick = async () => {
+            if (cancelled) return;
+            const jobId = sgBootstrapJobIdRef.current;
+            if (!jobId) return;
+            try {
+              const st = await api.sg.bootstrapStatus(jobId);
+              setSgBootstrapDoneBlocks(st.doneBlocks ?? 0);
+              setSgBootstrapTotalBlocks(st.totalBlocks ?? blocks.length);
+              if (st.stage === 'done') {
+                resolve();
+                return;
+              }
+              if (st.stage === 'error') {
+                reject(new Error(st.error || 'Processing failed'));
+                return;
+              }
+              setTimeout(tick, 350);
+            } catch (e) {
+              reject(e instanceof Error ? e : new Error('Processing failed'));
+            }
+          };
+          void tick();
+          return () => {
+            cancelled = true;
+          };
+        });
+
+        // Backend persisted SG; refresh local SG from document.
+        await refreshSemanticGraph();
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Processing failed';
+        setSgBootstrapError(msg);
+        // Allow retry.
+        didBootstrapSgRef.current = null;
+        sgBootstrapJobIdRef.current = null;
+      } finally {
+        setIsSgBootstrapping(false);
+      }
+    };
+
+    void run();
+  }, [actualDocumentId, documentId, shouldBootstrapSg, bgForSg, documentStyle, refreshSemanticGraph, sgBootstrapAttempt]);
+
+  // Incremental SG refresh (on edits). Disabled while bootstrapping to avoid double-build.
   useSgRefresh({
+    documentId: actualDocumentId || documentId,
     ir: sidebarIr,
     delta: irState.delta,
     semanticGraph: semanticGraph ?? null,
     saveSemanticGraphPatch,
     documentStyle,
-    enabled: Boolean(actualDocumentId || documentId),
+    enabled: Boolean(actualDocumentId || documentId) && !isSgBootstrapping,
   });
+
+  // SG is required for AI decisions: disable background paragraph analysis until SG is available.
+  const aiAnalysisEnabled = !isSgBootstrapping && !(hasMeaningfulContentForSg && !semanticGraph);
 
   const currentTextStyle = (() => {
     const view = editorViewRef.current;
@@ -917,6 +1023,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                   onDocumentAIMetricsChange: (payload) => setDocAIMetrics(payload),
                   paragraphModes,
                   documentId: actualDocumentId,
+                  aiAnalysisEnabled,
                   thinkPanelOpen,
                   openParagraphId,
                   onOpenPanel: handleOpenPanel,
@@ -1021,12 +1128,38 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             </div>
           )}
 
-          {/* Progress Overlay - shown when generating content */}
-          {isGeneratingContent && (
+          {/* Blocking Progress Overlay - shown when generating content OR when bootstrapping SG */}
+          {(isGeneratingContent || isSgBootstrapping || (shouldBootstrapSg && Boolean(sgBootstrapError))) && (
             <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] pointer-events-none">
-              <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 flex flex-col items-center gap-4 min-w-[200px] pointer-events-auto">
-                <div className="w-8 h-8 border-4 border-gray-600 border-t-vscode-blue rounded-full animate-spin" />
-                <div className="text-sm text-gray-400">{busyOverlayMessage}</div>
+              <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 flex flex-col items-center gap-4 min-w-[260px] pointer-events-auto">
+                {sgBootstrapError ? (
+                  <>
+                    <div className="text-sm text-red-300 text-center">Processing failed</div>
+                    <div className="text-xs text-gray-400 text-center max-w-[420px] whitespace-pre-wrap">{sgBootstrapError}</div>
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 rounded bg-vscode-blue hover:bg-blue-600 text-white text-xs transition-colors"
+                      onClick={() => {
+                        didBootstrapSgRef.current = null;
+                        setSgBootstrapError(null);
+                        setSgBootstrapAttempt((n) => n + 1);
+                      }}
+                    >
+                      Retry
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-8 h-8 border-4 border-gray-600 border-t-vscode-blue rounded-full animate-spin" />
+                    <div className="text-sm text-gray-400">
+                      {isGeneratingContent
+                        ? busyOverlayMessage
+                        : sgBootstrapTotalBlocks > 0
+                          ? `Processing… (${Math.min(sgBootstrapDoneBlocks, sgBootstrapTotalBlocks)}/${sgBootstrapTotalBlocks} blocks)`
+                          : 'Processing…'}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}

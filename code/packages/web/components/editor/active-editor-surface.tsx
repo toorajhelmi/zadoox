@@ -23,6 +23,7 @@ export function ActiveEditorSurface(props: {
     onAcceptChange: (id: string) => void;
     onRejectChange: (id: string) => void;
     onSaveWithType: (contentToSave: string, changeType: 'auto-save' | 'ai-action') => Promise<void>;
+    aiAnalysisEnabled?: boolean;
   };
   latex: {
     value: string;
@@ -65,6 +66,7 @@ export function ActiveEditorSurface(props: {
       onAcceptChange={props.markdown.onAcceptChange}
       onRejectChange={props.markdown.onRejectChange}
       onSaveWithType={props.markdown.onSaveWithType}
+      aiAnalysisEnabled={props.markdown.aiAnalysisEnabled}
     />
   );
 }

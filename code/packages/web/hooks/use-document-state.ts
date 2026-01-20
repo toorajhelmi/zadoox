@@ -311,6 +311,17 @@ export function useDocumentState(documentId: string, projectId: string) {
     [actualDocumentId]
   );
 
+  const refreshSemanticGraph = useCallback(async () => {
+    if (!actualDocumentId) return;
+    try {
+      const document = await api.documents.get(actualDocumentId);
+      setSemanticGraph((document as any).semanticGraph ?? null);
+      setLastSaved(new Date(document.updatedAt));
+    } catch (error) {
+      console.error('Failed to refresh semantic graph:', error);
+    }
+  }, [actualDocumentId]);
+
   return {
     content,
     documentTitle,
@@ -326,6 +337,7 @@ export function useDocumentState(documentId: string, projectId: string) {
     saveMetadataPatch,
     semanticGraph,
     saveSemanticGraphPatch,
+    refreshSemanticGraph,
     handleModeToggle,
     saveDocument: async (contentToSave: string, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
       await saveDocument(contentToSave, changeType);
