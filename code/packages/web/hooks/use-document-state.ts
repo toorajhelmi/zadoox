@@ -5,9 +5,35 @@ import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/client';
 import type { ParagraphMode, SemanticGraph } from '@zadoox/shared';
 
-const AUTO_SAVE_DELAY = 2000; // 2 seconds after last edit
-const AUTO_SAVE_METADATA_DELAY = 2000; // metadata-only debounce
-const AUTO_SAVE_SG_DELAY = 2000; // SG-only debounce
+const AUTO_SAVE_DELAY = 2000; // single debounce for all persistence (content + metadata + SG)
+
+function stableStringify(value: unknown): string {
+  const seen = new WeakSet<object>();
+  const normalize = (v: any): any => {
+    if (!v || typeof v !== 'object') return v;
+    if (seen.has(v)) return null;
+    seen.add(v);
+    if (Array.isArray(v)) return v.map(normalize);
+    const keys = Object.keys(v).sort();
+    const out: Record<string, any> = {};
+    for (const k of keys) out[k] = normalize(v[k]);
+    return out;
+  };
+  return JSON.stringify(normalize(value));
+}
+
+function normalizeSemanticGraphForCompare(sg: SemanticGraph | null): any {
+  if (!sg) return null;
+  const s: any = sg as any;
+  // `updatedAt` is inherently volatile; do not let it cause saves on its own.
+  const { updatedAt: _updatedAt, ...rest } = s;
+  // Ensure stable ordering (backend/LLM might return different ordering without semantic changes).
+  const nodes = Array.isArray(rest.nodes) ? [...rest.nodes].sort((a, b) => String(a.id).localeCompare(String(b.id))) : [];
+  const edges = Array.isArray(rest.edges)
+    ? [...rest.edges].sort((a, b) => `${a.from}->${a.to}`.localeCompare(`${b.from}->${b.to}`))
+    : [];
+  return { ...rest, nodes, edges };
+}
 
 function deriveTitleFromXmd(xmd: string): string | null {
   const lines = xmd.split('\n');
@@ -43,8 +69,27 @@ export function useDocumentState(documentId: string, projectId: string) {
   const [documentMetadata, setDocumentMetadata] = useState<Record<string, any>>({});
   const [semanticGraph, setSemanticGraph] = useState<SemanticGraph | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const saveMetadataTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const saveSgTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Keep latest state in refs so the single debounced save always persists the newest snapshot.
+  const contentRef = useRef<string>('');
+  const metaRef = useRef<Record<string, any>>({});
+  const sgRef = useRef<SemanticGraph | null>(null);
+  const modesRef = useRef<Record<string, ParagraphMode>>({});
+  useEffect(() => {
+    contentRef.current = content;
+  }, [content]);
+  useEffect(() => {
+    metaRef.current = documentMetadata || {};
+  }, [documentMetadata]);
+  useEffect(() => {
+    sgRef.current = semanticGraph ?? null;
+  }, [semanticGraph]);
+  useEffect(() => {
+    modesRef.current = paragraphModes || {};
+  }, [paragraphModes]);
+
+  const lastPersistedSigRef = useRef<string>(''); // single signature for “what the server has”
+  const pendingChangeTypeRef = useRef<'auto-save' | 'ai-action'>('auto-save');
 
   // Load document content (or create "Untitled Document" if project has no documents)
   useEffect(() => {
@@ -62,6 +107,12 @@ export function useDocumentState(documentId: string, projectId: string) {
           setParagraphModes(document.metadata?.paragraphModes || {});
           setDocumentMetadata(document.metadata || {});
           setSemanticGraph((document as any).semanticGraph ?? null);
+          // Initialize “persisted signature” so we don’t attempt to save without a real user change.
+          lastPersistedSigRef.current = stableStringify({
+            content: loadedContent,
+            metadata: document.metadata || {},
+            semanticGraph: normalizeSemanticGraphForCompare((document as any).semanticGraph ?? null),
+          });
           setIsLoading(false);
       } catch (error) {
         console.error('Failed to load document:', error);
@@ -72,66 +123,63 @@ export function useDocumentState(documentId: string, projectId: string) {
     loadDocument();
   }, [documentId, projectId]);
 
-  // Auto-save function
-  const saveDocument = useCallback(
-    async (contentToSave: string, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
+  const performSave = useCallback(
+    async (changeType: 'auto-save' | 'ai-action') => {
+      if (!actualDocumentId) return;
 
-      // Don't save if we don't have an actual document ID yet
-      if (!actualDocumentId) {
-        return;
-      }
+      const nextContent = contentRef.current;
+      const nextMeta = metaRef.current || {};
+      const nextModes = modesRef.current || {};
+      const nextSg = sgRef.current ?? null;
+
+      const sig = stableStringify({
+        content: nextContent,
+        metadata: { ...nextMeta, paragraphModes: nextModes },
+        semanticGraph: normalizeSemanticGraphForCompare(nextSg),
+      });
+
+      if (changeType === 'auto-save' && sig === lastPersistedSigRef.current) return;
 
       setIsSaving(true);
       try {
-        const derivedTitle = deriveTitleFromXmd(contentToSave);
-        // Get current document to preserve metadata (especially paragraphModes)
-        const currentDocument = await api.documents.get(actualDocumentId);
-        // Merge server metadata with local metadata, but DO NOT allow a stale autosave to wipe
-        // `metadata.latex` / `metadata.latexIrHash` / `metadata.lastEditedFormat` that were just
-        // set by a mode switch. This was the root cause of "I switched and saw correct LaTeX,
-        // but publish compiled older LaTeX".
-        const serverMeta = (currentDocument.metadata || {}) as Record<string, any>;
-        const localMeta = (documentMetadata || {}) as Record<string, any>;
-        const mergedMetadata: Record<string, any> = {
-          ...serverMeta,
-          ...localMeta,
-          paragraphModes: paragraphModes, // Preserve current paragraph modes
-        };
-
-        const serverLatex = typeof serverMeta.latex === 'string' ? serverMeta.latex : null;
-        const localLatex = typeof localMeta.latex === 'string' ? localMeta.latex : null;
-        const localHasLatex = typeof localLatex === 'string' && localLatex.trim().length > 0;
-        const serverHasLatex = typeof serverLatex === 'string' && serverLatex.trim().length > 0;
-
-        // If local metadata doesn't have LaTeX, preserve the server's LaTeX fields.
-        if (!localHasLatex && serverHasLatex) {
-          mergedMetadata.latex = serverMeta.latex;
-          mergedMetadata.latexIrHash = serverMeta.latexIrHash;
-          mergedMetadata.lastEditedFormat = serverMeta.lastEditedFormat;
-        }
-        
-        // Update document with content change, preserving existing metadata
+        const derivedTitle = deriveTitleFromXmd(nextContent);
         const document = await api.documents.update(actualDocumentId, {
           ...(derivedTitle ? { title: derivedTitle } : null),
-          content: contentToSave,
-          metadata: mergedMetadata,
+          content: nextContent,
+          metadata: { ...nextMeta, paragraphModes: nextModes },
+          semanticGraph: nextSg,
           changeType,
         });
         setDocumentTitle(document.title);
         setLastSaved(new Date(document.updatedAt));
         setParagraphModes(document.metadata?.paragraphModes || {});
         setDocumentMetadata(document.metadata || {});
+        setSemanticGraph((document as any).semanticGraph ?? nextSg);
+        lastPersistedSigRef.current = stableStringify({
+          content: document.content || nextContent,
+          metadata: document.metadata || { ...nextMeta, paragraphModes: nextModes },
+          semanticGraph: normalizeSemanticGraphForCompare((document as any).semanticGraph ?? nextSg),
+        });
       } catch (error) {
         console.error('Failed to save document:', error);
-        // Don't update lastSaved on error - user will see "Not saved" status
       } finally {
         setIsSaving(false);
       }
     },
-    [actualDocumentId, paragraphModes, documentMetadata]
+    [actualDocumentId]
+  );
+
+  const scheduleSave = useCallback(
+    (changeType: 'auto-save' | 'ai-action') => {
+      pendingChangeTypeRef.current = changeType === 'ai-action' ? 'ai-action' : pendingChangeTypeRef.current;
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = setTimeout(() => {
+        const ct = pendingChangeTypeRef.current;
+        pendingChangeTypeRef.current = 'auto-save';
+        void performSave(ct);
+      }, AUTO_SAVE_DELAY);
+    },
+    [performSave]
   );
 
   // Update content with auto-save
@@ -142,18 +190,9 @@ export function useDocumentState(documentId: string, projectId: string) {
       if (derivedTitle) {
         setDocumentTitle(derivedTitle);
       }
-
-      // Clear existing timeout
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-
-      // Set new timeout for auto-save
-      saveTimeoutRef.current = setTimeout(() => {
-        saveDocument(newContent, 'auto-save');
-      }, AUTO_SAVE_DELAY);
+      scheduleSave('auto-save');
     },
-    [saveDocument]
+    [scheduleSave]
   );
 
   // Set content without triggering auto-save (for viewing older versions)
@@ -172,102 +211,30 @@ export function useDocumentState(documentId: string, projectId: string) {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
-      if (saveMetadataTimeoutRef.current) {
-        clearTimeout(saveMetadataTimeoutRef.current);
-      }
-      if (saveSgTimeoutRef.current) {
-        clearTimeout(saveSgTimeoutRef.current);
-      }
     };
   }, []);
 
   const saveMetadataPatch = useCallback(
     (patch: Record<string, any>, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
-      // Keep the latest patch/localMeta available to the debounced callback without relying
-      // on React state having updated synchronously.
-      const localMetaSnapshot = (documentMetadata || {}) as Record<string, any>;
-      const patchSnapshot = (patch || {}) as Record<string, any>;
-
-      if (saveMetadataTimeoutRef.current) {
-        clearTimeout(saveMetadataTimeoutRef.current);
-      }
-
       // Don't save if we don't have an actual document ID yet
       if (!actualDocumentId) return;
 
-      // Optimistically update local metadata immediately
-      setDocumentMetadata((prev) => ({ ...(prev || {}), ...patchSnapshot }));
-
-      saveMetadataTimeoutRef.current = setTimeout(async () => {
-        setIsSaving(true);
-        try {
-          const currentDocument = await api.documents.get(actualDocumentId);
-          const serverMeta = (currentDocument.metadata || {}) as Record<string, any>;
-          const localMeta = localMetaSnapshot;
-
-          const mergedMetadata: Record<string, any> = {
-            ...serverMeta,
-            ...localMeta,
-            ...patchSnapshot,
-            paragraphModes: paragraphModes,
-          };
-
-          // Preserve server LaTeX fields if local is missing them (same rule as content autosave)
-          const serverLatex = typeof serverMeta.latex === 'string' ? serverMeta.latex : null;
-          const localLatex = typeof localMeta.latex === 'string' ? localMeta.latex : null;
-          const localHasLatex = typeof localLatex === 'string' && localLatex.trim().length > 0;
-          const serverHasLatex = typeof serverLatex === 'string' && serverLatex.trim().length > 0;
-          if (!localHasLatex && serverHasLatex) {
-            mergedMetadata.latex = serverMeta.latex;
-            mergedMetadata.latexIrHash = serverMeta.latexIrHash;
-            mergedMetadata.lastEditedFormat = serverMeta.lastEditedFormat;
-          }
-
-          const document = await api.documents.update(actualDocumentId, {
-            metadata: mergedMetadata,
-            changeType,
-          });
-          setLastSaved(new Date(document.updatedAt));
-          setParagraphModes(document.metadata?.paragraphModes || {});
-          setDocumentMetadata(document.metadata || {});
-        } catch (error) {
-          console.error('Failed to save document metadata:', error);
-        } finally {
-          setIsSaving(false);
-        }
-      }, AUTO_SAVE_METADATA_DELAY);
+      // Optimistically update local metadata immediately, then schedule a unified save.
+      setDocumentMetadata((prev) => ({ ...(prev || {}), ...(patch || {}) }));
+      scheduleSave(changeType);
     },
-    [actualDocumentId, documentMetadata, paragraphModes]
+    [actualDocumentId, scheduleSave]
   );
 
   const saveSemanticGraphPatch = useCallback(
     (next: SemanticGraph, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
-      if (saveSgTimeoutRef.current) {
-        clearTimeout(saveSgTimeoutRef.current);
-      }
-
       if (!actualDocumentId) return;
 
       // Optimistically update local SG immediately.
       setSemanticGraph(next);
-
-      saveSgTimeoutRef.current = setTimeout(async () => {
-        setIsSaving(true);
-        try {
-          const document = await api.documents.update(actualDocumentId, {
-            semanticGraph: next,
-            changeType,
-          });
-          setLastSaved(new Date(document.updatedAt));
-          setSemanticGraph((document as any).semanticGraph ?? next);
-        } catch (error) {
-          console.error('Failed to save semantic graph:', error);
-        } finally {
-          setIsSaving(false);
-        }
-      }, AUTO_SAVE_SG_DELAY);
+      scheduleSave(changeType);
     },
-    [actualDocumentId]
+    [actualDocumentId, scheduleSave]
   );
 
   // Handle mode toggle
@@ -340,7 +307,13 @@ export function useDocumentState(documentId: string, projectId: string) {
     refreshSemanticGraph,
     handleModeToggle,
     saveDocument: async (contentToSave: string, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
-      await saveDocument(contentToSave, changeType);
+      setContent(contentToSave);
+      if (changeType === 'ai-action') {
+        // Immediate save for AI-driven changes.
+        await performSave('ai-action');
+        return;
+      }
+      scheduleSave(changeType);
     },
   };
 }

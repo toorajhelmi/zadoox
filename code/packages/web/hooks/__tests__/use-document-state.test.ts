@@ -427,8 +427,11 @@ describe('useDocumentState - Core Functionality', () => {
     expect(vi.mocked(api.documents.update)).toHaveBeenCalled();
 
     const updateArg = vi.mocked(api.documents.update).mock.calls[0]?.[1] as any;
-    expect(updateArg?.content).toBeUndefined();
-    expect(updateArg?.metadata).toBeUndefined();
+    // Single save pipeline: SG persistence is part of the same debounced save call.
+    // The key invariant: SG is persisted via the dedicated field, not stuffed into metadata.
+    expect(updateArg?.content).toBe('Test content');
+    expect(updateArg?.metadata?.foo).toBe('bar');
+    expect(updateArg?.metadata?.semanticGraph).toBeUndefined();
     expect(updateArg?.semanticGraph?.version).toBe(1);
     },
     15000

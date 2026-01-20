@@ -300,19 +300,22 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     void run();
   }, [actualDocumentId, documentId, shouldBootstrapSg, bgForSg, documentStyle, refreshSemanticGraph, sgBootstrapAttempt]);
 
-  // Incremental SG refresh (on edits). Disabled while bootstrapping to avoid double-build.
-  useSgRefresh({
-    documentId: actualDocumentId || documentId,
-    ir: sidebarIr,
-    delta: irState.delta,
-    semanticGraph: semanticGraph ?? null,
-    saveSemanticGraphPatch,
-    documentStyle,
-    enabled: Boolean(actualDocumentId || documentId) && !isSgBootstrapping,
-  });
+  // Incremental SG refresh (on edits).
+  // Disabled for now: it can cause repeated /sg/build calls and unintended autosaves if IR deltas churn.
+  // We'll reintroduce it once it is strictly keyed off user edits + a single debounced pipeline.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // useSgRefresh({
+  //   documentId: actualDocumentId || documentId,
+  //   ir: sidebarIr,
+  //   delta: irState.delta,
+  //   semanticGraph: semanticGraph ?? null,
+  //   saveSemanticGraphPatch,
+  //   documentStyle,
+  //   enabled: Boolean(actualDocumentId || documentId) && !isSgBootstrapping,
+  // });
 
-  // SG is required for AI decisions: disable background paragraph analysis until SG is available.
-  const aiAnalysisEnabled = !isSgBootstrapping && !(hasMeaningfulContentForSg && !semanticGraph);
+  // Cost-safety: disable legacy background /ai/analyze calls entirely for now.
+  const aiAnalysisEnabled = false;
 
   const currentTextStyle = (() => {
     const view = editorViewRef.current;
@@ -499,15 +502,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           const nextLatex = ensured.latex;
           latexEditNonceRef.current++;
           setLatexDraft(nextLatex);
+          // Update local metadata immediately for UX, and persist via the unified debounced save pipeline.
           setDocumentMetadata((prev) => ({ ...(prev as any), lastEditedFormat: 'latex', latex: nextLatex }));
-
-          if (latexAutoSaveTimeoutRef.current) {
-            clearTimeout(latexAutoSaveTimeoutRef.current);
-          }
-          // Mirror the XMD auto-save delay so both editing surfaces persist changes similarly.
-          latexAutoSaveTimeoutRef.current = setTimeout(() => {
-            saveDocument(content, 'auto-save').catch(() => {});
-          }, 2000);
+          saveMetadataPatch({ lastEditedFormat: 'latex', latex: nextLatex }, 'auto-save');
         },
       };
       handlers[editMode === 'latex' ? 'latex' : 'markdown']();
@@ -554,6 +551,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       updateContent,
       setLatexDraft,
       setDocumentMetadata,
+      saveMetadataPatch,
       saveDocument,
       content,
       editMode,
