@@ -115,6 +115,9 @@ describe('EditorLayout (LaTeX) undo/redo', () => {
       handleModeToggle: vi.fn(),
       documentMetadata: { lastEditedFormat: 'latex', latex: 'Hello' },
       setDocumentMetadata: vi.fn(),
+      saveMetadataPatch: vi.fn(),
+      semanticGraph: null,
+      saveSemanticGraphPatch: vi.fn(),
     });
 
     const { api } = await import('@/lib/api/client');
