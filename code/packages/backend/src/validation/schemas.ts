@@ -52,6 +52,7 @@ export const createDocumentSchema = z.object({
   projectId: z.string().uuid('Invalid project ID format'),
   title: z.string().min(1, 'Document title is required').max(255, 'Title too long'),
   content: z.string().optional(),
+  semanticGraph: z.any().nullable().optional(),
   metadata: z
     .object({
       type: z.enum(['chapter', 'section', 'standalone']).optional(),
@@ -73,6 +74,7 @@ export const updateDocumentSchema = z.object({
     })
     .passthrough() // Allow additional fields like insertedSources, brainstormingSessions, researchSessions, etc.
     .optional(),
+  semanticGraph: z.any().nullable().optional(),
   changeType: z.enum(['manual-save', 'auto-save', 'ai-action', 'milestone', 'rollback']).optional(),
   changeDescription: z.string().optional(),
 });

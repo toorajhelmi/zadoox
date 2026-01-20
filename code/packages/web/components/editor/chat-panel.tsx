@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { MicIcon, ArrowRightIcon } from '@/components/icons';
 import { SemanticGraphPanel } from './sg/semantic-graph-panel';
+import type { SemanticGraph } from '@zadoox/shared';
 
 export function ChatPanel(props: {
   isOpen: boolean;
@@ -10,10 +11,9 @@ export function ChatPanel(props: {
   onOpen: () => void;
   onClose: () => void;
   inputRef?: React.MutableRefObject<HTMLTextAreaElement | null>;
-  documentMetadata?: Record<string, any>;
-  saveMetadataPatch?: (patch: Record<string, any>, changeType?: 'auto-save' | 'ai-action') => void;
+  semanticGraph?: SemanticGraph | null;
 }) {
-  const { isOpen, isFullAI, onOpen, onClose, inputRef, documentMetadata, saveMetadataPatch } = props;
+  const { isOpen, isFullAI, onOpen, onClose, inputRef, semanticGraph } = props;
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [inputValue, setInputValue] = useState('');
@@ -88,7 +88,7 @@ export function ChatPanel(props: {
             Chat
           </button>
 
-          {documentMetadata && saveMetadataPatch && (
+          {semanticGraph !== undefined && (
             <button
               type="button"
               className={`px-2 py-1 rounded border text-[10px] font-mono uppercase transition-colors ${
@@ -140,10 +140,9 @@ export function ChatPanel(props: {
               </>
             )}
 
-            {activeTab === 'sg' && documentMetadata && saveMetadataPatch && (
+            {activeTab === 'sg' && semanticGraph !== undefined && (
               <SemanticGraphPanel
-                documentMetadata={documentMetadata}
-                saveMetadataPatch={saveMetadataPatch}
+                sg={semanticGraph ?? null}
                 isPinned={false}
                 onTogglePinned={() => {}}
                 onRequestClose={() => {}}

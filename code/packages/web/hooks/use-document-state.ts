@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/client';
-import type { ParagraphMode } from '@zadoox/shared';
+import type { ParagraphMode, SemanticGraph } from '@zadoox/shared';
 
 const AUTO_SAVE_DELAY = 2000; // 2 seconds after last edit
 const AUTO_SAVE_METADATA_DELAY = 2000; // metadata-only debounce
+const AUTO_SAVE_SG_DELAY = 2000; // SG-only debounce
 
 function deriveTitleFromXmd(xmd: string): string | null {
   const lines = xmd.split('\n');
@@ -40,8 +41,10 @@ export function useDocumentState(documentId: string, projectId: string) {
   const [actualDocumentId, setActualDocumentId] = useState<string>(documentId);
   const [paragraphModes, setParagraphModes] = useState<Record<string, ParagraphMode>>({});
   const [documentMetadata, setDocumentMetadata] = useState<Record<string, any>>({});
+  const [semanticGraph, setSemanticGraph] = useState<SemanticGraph | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const saveMetadataTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const saveSgTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load document content (or create "Untitled Document" if project has no documents)
   useEffect(() => {
@@ -58,6 +61,7 @@ export function useDocumentState(documentId: string, projectId: string) {
           setLastSaved(new Date(document.updatedAt));
           setParagraphModes(document.metadata?.paragraphModes || {});
           setDocumentMetadata(document.metadata || {});
+          setSemanticGraph((document as any).semanticGraph ?? null);
           setIsLoading(false);
       } catch (error) {
         console.error('Failed to load document:', error);
@@ -171,6 +175,9 @@ export function useDocumentState(documentId: string, projectId: string) {
       if (saveMetadataTimeoutRef.current) {
         clearTimeout(saveMetadataTimeoutRef.current);
       }
+      if (saveSgTimeoutRef.current) {
+        clearTimeout(saveSgTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -233,6 +240,36 @@ export function useDocumentState(documentId: string, projectId: string) {
     [actualDocumentId, documentMetadata, paragraphModes]
   );
 
+  const saveSemanticGraphPatch = useCallback(
+    (next: SemanticGraph, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
+      if (saveSgTimeoutRef.current) {
+        clearTimeout(saveSgTimeoutRef.current);
+      }
+
+      if (!actualDocumentId) return;
+
+      // Optimistically update local SG immediately.
+      setSemanticGraph(next);
+
+      saveSgTimeoutRef.current = setTimeout(async () => {
+        setIsSaving(true);
+        try {
+          const document = await api.documents.update(actualDocumentId, {
+            semanticGraph: next,
+            changeType,
+          });
+          setLastSaved(new Date(document.updatedAt));
+          setSemanticGraph((document as any).semanticGraph ?? next);
+        } catch (error) {
+          console.error('Failed to save semantic graph:', error);
+        } finally {
+          setIsSaving(false);
+        }
+      }, AUTO_SAVE_SG_DELAY);
+    },
+    [actualDocumentId]
+  );
+
   // Handle mode toggle
   const handleModeToggle = useCallback(
     async (paragraphId: string, newMode: ParagraphMode) => {
@@ -287,6 +324,8 @@ export function useDocumentState(documentId: string, projectId: string) {
     documentMetadata,
     setDocumentMetadata,
     saveMetadataPatch,
+    semanticGraph,
+    saveSemanticGraphPatch,
     handleModeToggle,
     saveDocument: async (contentToSave: string, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
       await saveDocument(contentToSave, changeType);

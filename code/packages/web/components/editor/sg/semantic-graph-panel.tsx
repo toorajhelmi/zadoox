@@ -2,18 +2,14 @@
 
 import { useMemo } from 'react';
 import type { SemanticGraph } from '@zadoox/shared';
-import { SG_METADATA_KEY } from './semantic-graph-keys';
 
 export function SemanticGraphPanel(props: {
-  documentMetadata: Record<string, any>;
-  saveMetadataPatch: (patch: Record<string, any>, changeType?: 'auto-save' | 'ai-action') => void;
+  sg: SemanticGraph | null;
   isPinned: boolean;
   onTogglePinned: () => void;
   onRequestClose?: () => void;
 }) {
-  const { documentMetadata } = props;
-
-  const sg = (documentMetadata as any)?.[SG_METADATA_KEY] as SemanticGraph | undefined;
+  const { sg } = props;
   const hasSg = Boolean(sg);
 
   const nodeLabelById = useMemo(() => {

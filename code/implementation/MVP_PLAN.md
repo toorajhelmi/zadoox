@@ -1201,17 +1201,24 @@ Goal: introduce a phase-aware authoring assistant that supports (A) initiation, 
 We will implement Phase 15 in small vertical slices (each phase ends with a working loop + tests):
 
 ##### Phase 15.1: SG Foundations (Schema + Persistence + Load) — Start Here
-- [ ] Define minimal **SemanticGraph (SG)** JSON schema + versioning
-- [ ] Persist SG per document (v1: serialized JSON)
-- [ ] Load SG into memory while editing (editor session state)
-- [ ] Add BG↔SG mapping scaffolding (NodeProvenance stub)
-- [ ] Add cost controls scaffolding: change detector + debounced trigger (no LLM calls yet)
-- [ ] Tests: SG persistence/load + basic smoke tests in web/backend
+- [x] Define minimal **SemanticGraph (SG)** JSON schema + versioning (`shared/src/types/semantic-graph.ts`)
+- [x] Persist SG per document (v1: serialized JSON in document metadata)
+- [x] Load SG into memory while editing (editor session state via `useSemanticGraph`)
+- [x] Add BG↔SG mapping scaffolding (NodeProvenance / BG span refs in SG types)
+- [x] Add cost controls scaffolding: metadata-only debounced save path (`saveMetadataPatch`)
+- [x] Tests: SG metadata-only persistence path + basic smoke coverage (web)
 
 ##### Phase 15.2: Incremental Updates + Provenance
-- [ ] Incremental SG updates for small edits (block-scoped)
-- [ ] “Major edit” detection: rebuild SG (v1) and mark provenance resets
-- [ ] Implement `NodeProvenance` mapping (SG node ↔ BG block/span)
+- [x] **Doc-type knob (minimal)**: `maxBlocksPerSection` (default doc-type + extendable registry for known/future types)
+- [x] **BG slice selection**: on edit, select a bounded “working set” of blocks (no full-doc send)
+- [x] **LLM-only SG builder (few iterations)**:
+  - [x] Pass A: extract nodes (typed, with BG provenance)
+  - [x] Pass B: propose edges among EV top‑K candidates (weight \([-1,1]\))
+  - [ ] Pass C (optional): refine/dedupe/normalize
+- [x] **Candidate selection for edges** (avoid whole doc): EV top‑K (no local heuristics)
+- [x] **Incremental merge**: update SG nodes/edges only for affected block slices; don’t overwrite manual SG
+- [ ] **Embeddings (EV) caching** (optional optimization): persist EV per block/node keyed by `{docId, id, textHash}`
+- [ ] Implement `NodeProvenance` span-level extraction (multiple nodes per paragraph with `{from,to}` offsets)
 - [ ] (Optional) `EdgeProvenance` mapping (SG edge ↔ BG block/span)
 
 ##### Phase 15.3: Background Reviewer v0 (Suggestions Objects)
@@ -1296,6 +1303,25 @@ We will implement Phase 15 in small vertical slices (each phase ends with a work
 - ✅ Chat panel exists (componentized) with consistent send UX and reopen affordances
 - ⏳ Phase-aware agenda + blocking decision cards
 - ⏳ SG-backed suggestions + background reviewer pipeline
+
+---
+
+### Phase 16: Cleanup / Data Model Hardening 🧹
+**Status**: Not Started
+
+- [ ] **Move LaTeX to its own DB column** (separate from `documents.metadata`)
+  - [ ] Add `documents.latex` (and related fields like `latex_ir_hash`, `last_edited_format` if needed)
+  - [ ] Backfill from metadata (`metadata.latex`, `metadata.latexIrHash`, `metadata.lastEditedFormat`)
+  - [ ] Update backend mapping + OpenAPI schemas + frontend persistence to stop mixing these fields into metadata
+- [ ] **Rename `documents.content` → `documents.xmd`**
+  - [ ] Migration: add new column, backfill, keep back-compat temporarily (read from both, write to new)
+  - [ ] Update shared types (`Document.xmd`) and API inputs
+  - [ ] Update all backend queries/mapping + web editor state/hooks
+  - [ ] Remove old column after back-compat window (or keep as generated/alias if preferred)
+
+**Deliverables**:
+- ✅ SG, LaTeX, and XMD are stored in dedicated columns (no large payloads mixed into metadata)
+- ✅ Cleaner, more stable persistence model (less row bloat + fewer metadata merge risks)
 
 ---
 

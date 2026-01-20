@@ -386,6 +386,8 @@ export const api = {
       return response.data;
     },
 
+    // NOTE: SG endpoints are under api.sg.* (kept consolidated outside generic AI surface).
+
     brainstorm: {
       chat: async (request: BrainstormChatRequest): Promise<BrainstormChatResponse> => {
         const response = await fetchApi<BrainstormChatResponse>('/ai/brainstorm/chat', {
@@ -493,6 +495,28 @@ export const api = {
         }
         return response.data;
       },
+    },
+  },
+
+  sg: {
+    embeddings: async (texts: string[]): Promise<number[][]> => {
+      const response = await fetchApi<{ vectors: number[][] }>('/sg/embeddings', {
+        method: 'POST',
+        body: JSON.stringify({ texts }),
+      });
+      return response.data?.vectors || [];
+    },
+    build: async (
+      blocks: Array<{ id: string; type: string; text: string }>
+    ): Promise<{ sg: any } | { sg: null }> => {
+      const response = await fetchApi<{ sg: any } | { sg: null }>('/sg/build', {
+        method: 'POST',
+        body: JSON.stringify({ blocks }),
+      });
+      if (!response.data) {
+        throw new ApiError('Failed to build semantic graph', 'SG_BUILD_FAILED', 500);
+      }
+      return response.data;
     },
   },
 
