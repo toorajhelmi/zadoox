@@ -58,66 +58,6 @@ function stableCanonicalNodeId(params: { type: SemanticNodeType; key: string }):
   return `sg:canon:${type}:${h}`;
 }
 
-export async function buildSgNodesForBlocks(params: {
-  service: AIService;
-  blocks: SgBuildInputBlock[];
-  model?: AIModel;
-}): Promise<SemanticNode[]> {
-  const { service, blocks, model } = params;
-
-  const systemNodes = `You extract a Semantic Graph (SG) from document blocks.
-Return ONLY JSON (no prose).`;
-  const userNodes = `Find claims, gaps, goals, evidences, and definitions from the provided doc blocks.
-
-Return ONLY valid JSON in this exact shape:
-{"nodes":[{"blockId":"...","from":0,"to":12,"type":"goal|claim|evidence|definition|gap","text":"..."}]}
-
-Rules:
-- Be comprehensive (prefer missing fewer over missing more), but avoid duplicates.
-- Node text must be self-contained and concise (<= 280 chars).
-- Each node MUST reference exactly one blockId, with optional from/to offsets within that block.
-
-BLOCKS_JSON:
-${JSON.stringify(blocks, null, 2)}`;
-
-  // SG stability: default to low temperature (override via SG_NODES_TEMPERATURE env).
-  const nodesTemp = clamp01(envFloat('SG_NODES_TEMPERATURE', 0.05));
-  const rawNodes = await service.chatJson({ system: systemNodes, user: userNodes, temperature: nodesTemp }, model);
-  const parsedNodes = z
-    .object({
-      nodes: z.array(
-        z.object({
-          blockId: z.string().min(1),
-          from: z.number().int().nonnegative().optional(),
-          to: z.number().int().nonnegative().optional(),
-          type: z.enum(['goal', 'claim', 'evidence', 'definition', 'gap']),
-          text: z.string().min(1),
-        })
-      ),
-    })
-    .safeParse(rawNodes);
-
-  const nodes = parsedNodes.success ? parsedNodes.data.nodes : [];
-  const sgNodes: SemanticNode[] = nodes.map((n) => {
-    const type = n.type as SemanticNodeType;
-    const text = n.text.slice(0, 280);
-    return {
-      id: stableAutoNodeId({ blockId: n.blockId, from: n.from, to: n.to, type, text }),
-      type,
-      text,
-      bgRefs: [{ blockId: n.blockId, from: n.from, to: n.to }],
-    };
-  });
-
-  // De-dupe within this pass.
-  const seen = new Set<string>();
-  return sgNodes.filter((n) => {
-    if (seen.has(n.id)) return false;
-    seen.add(n.id);
-    return true;
-  });
-}
-
 /**
  * P1 (one-shot per chunk): build nodes + edges for a bounded block chunk.
  * Nodes MUST include BG span refs (blockId/from/to) so we can map back to IR ranges.
