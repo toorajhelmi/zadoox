@@ -73,6 +73,9 @@ RULES:
 - If a block contains multiple distinct semantics (e.g., a claim + definition + gap), you may emit multiple nodes for that one block.
 - Each node MUST reference exactly one blockId (and optional span offsets) in bgRefs.
 - Keep node.text concise (<= 280 chars).
+- Node text MUST be self-contained: avoid ambiguous pronouns ("this", "that", "it", "they") unless you include the referent.
+  Bad: "This phenomenon challenges our understanding of reality."
+  Good: "The observation paradox challenges our conventional understanding of reality."
 - For tables: prefer concise evidence nodes grounded in specific rows/metrics.
 - For figures: use caption/alt text as evidence or claim when meaningful; skip single-letter captions unless supported by surrounding text in the same block.
 - For grids: if the grid caption provides meaning and child figures are terse, create nodes from the grid caption (goal/claim/evidence) and/or from meaningful figure captions.
@@ -180,6 +183,11 @@ RULES:
 - Prefer sparse edges (avoid connecting everything).
 - Only create edges when there is a plausible relationship.
 - Hard cap: max 2 edges per FROM node (pick the strongest / most important relationships).
+- Use consistent direction with these patterns:
+  - evidence -> claim (claim depends on evidence)
+  - definition -> claim (claim depends on definition/meaning)
+  - gap -> goal (goal depends on gap/open question)
+  - claim -> goal only if the goal is a direct consequence of the claim
 - Only propose edges FROM the provided FROM_NODE_IDS (below).
 - Only propose edges to nodes in that from-node's candidate list (provided below).
 - Return JSON: {"edges":[{"from":"<nodeId>","to":"<nodeId>","weight":0.3}]}

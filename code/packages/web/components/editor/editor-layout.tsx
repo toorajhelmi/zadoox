@@ -142,6 +142,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [sgBootstrapAttempt, setSgBootstrapAttempt] = useState(0);
   const [sgBootstrapDoneBlocks, setSgBootstrapDoneBlocks] = useState(0);
   const [sgBootstrapTotalBlocks, setSgBootstrapTotalBlocks] = useState(0);
+  const [sgBootstrapStage, setSgBootstrapStage] = useState<'nodes' | 'edges' | 'persist' | 'done' | 'error' | null>(null);
   const sgBootstrapJobIdRef = useRef<string | null>(null);
   const didBootstrapSgRef = useRef<string | null>(null);
   const previousContentForHistoryRef = useRef<string>(content);
@@ -244,6 +245,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     setIsSgBootstrapping(true);
     setSgBootstrapDoneBlocks(0);
     setSgBootstrapTotalBlocks(blocks.length);
+    setSgBootstrapStage('nodes');
 
     const run = async () => {
       try {
@@ -265,6 +267,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               const st = await api.sg.bootstrapStatus(jobId);
               setSgBootstrapDoneBlocks(st.doneBlocks ?? 0);
               setSgBootstrapTotalBlocks(st.totalBlocks ?? blocks.length);
+              setSgBootstrapStage((st.stage as any) ?? null);
               if (st.stage === 'done') {
                 resolve();
                 return;
@@ -289,11 +292,13 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Processing failed';
         setSgBootstrapError(msg);
+        setSgBootstrapStage('error');
         // Allow retry.
         didBootstrapSgRef.current = null;
         sgBootstrapJobIdRef.current = null;
       } finally {
         setIsSgBootstrapping(false);
+        setSgBootstrapStage(null);
       }
     };
 
@@ -1152,9 +1157,16 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                     <div className="text-sm text-gray-400">
                       {isGeneratingContent
                         ? busyOverlayMessage
-                        : sgBootstrapTotalBlocks > 0
-                          ? `Processing… (${Math.min(sgBootstrapDoneBlocks, sgBootstrapTotalBlocks)}/${sgBootstrapTotalBlocks} blocks)`
-                          : 'Processing…'}
+                        : (() => {
+                            const total = sgBootstrapTotalBlocks;
+                            const done = Math.min(sgBootstrapDoneBlocks, total || sgBootstrapDoneBlocks);
+                            if (sgBootstrapStage === 'persist' || sgBootstrapStage === 'done') return 'Finalizing…';
+                            if (sgBootstrapStage === 'edges') return 'Linking…';
+                            // nodes (or unknown): avoid showing "0/N" for a long time, since backend updates are chunked.
+                            if (total > 0 && done > 0) return `Processing… (${done}/${total} blocks)`;
+                            if (total > 0) return `Processing… (${total} blocks)`;
+                            return 'Processing…';
+                          })()}
                     </div>
                   </>
                 )}
