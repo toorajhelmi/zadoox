@@ -9,7 +9,7 @@ import { authenticateUser, AuthenticatedRequest } from '../../middleware/auth.js
 import { schemas, security } from '../../config/schemas.js';
 import type { ApiResponse } from '@zadoox/shared';
 import type { AIModel } from '../../services/ai/ai-service.js';
-import { getAIService } from '../../services/ai/ai-service-singleton.js';
+import { getSgAIService } from '../../services/ai/ai-service-singleton.js';
 // NOTE: keep /sg/build compatible, but internal builder now provides nodes+edges helpers.
 import { getSgBootstrapJob, startSgBootstrapJob } from '../../sg/sg-bootstrap-jobs.js';
 import { buildSgEdgesForNodes, buildSgNodesForBlocks } from '../../sg/sg-builder.js';
@@ -54,7 +54,7 @@ export async function sgRoutes(fastify: FastifyInstance) {
           };
           return reply.status(400).send(response);
         }
-        const service = getAIService();
+        const service = getSgAIService();
         const vectors = await service.embedTexts(texts, model);
         const response: ApiResponse<{ vectors: number[][] }> = {
           success: true,
@@ -132,13 +132,14 @@ export async function sgRoutes(fastify: FastifyInstance) {
           return reply.status(400).send(response);
         }
 
-        const service = getAIService();
         if (!request.supabase) throw new Error('Missing supabase client');
+        // Use the SG-dedicated AI service so SG can use a stronger model without impacting other AI features.
+        const sgService = getSgAIService();
 
         // Nodes + embeddings are treated as an atomic operation (cache embeddings by docId+nodeId+textHash).
-        const nodes = await buildSgNodesForBlocks({ service, blocks, model });
-        const vectors = await ensureNodeEmbeddings({ supabase: request.supabase, service, docId: documentId, nodes, model });
-        const edges = await buildSgEdgesForNodes({ service, nodes, vectors, model });
+        const nodes = await buildSgNodesForBlocks({ service: sgService, blocks, model });
+        const vectors = await ensureNodeEmbeddings({ supabase: request.supabase, service: sgService, docId: documentId, nodes, model });
+        const edges = await buildSgEdgesForNodes({ service: sgService, nodes, vectors, model });
         const built = {
           sg: {
             version: 1 as const,
@@ -235,7 +236,7 @@ export async function sgRoutes(fastify: FastifyInstance) {
           return reply.status(401).send(response);
         }
 
-        const service = getAIService();
+        const service = getSgAIService();
         const started = startSgBootstrapJob({
           documentId,
           blocks,

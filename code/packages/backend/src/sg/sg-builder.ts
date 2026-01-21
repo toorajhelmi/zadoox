@@ -38,6 +38,19 @@ function edgeDebugEnabled(): boolean {
   return String(process.env.SG_EDGE_DEBUG || '').toLowerCase() === 'true';
 }
 
+function envFloat(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw == null) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function clamp01(x: number): number {
+  if (x < 0) return 0;
+  if (x > 1) return 1;
+  return x;
+}
+
 function clip(s: string, max = 90): string {
   const t = String(s ?? '').replace(/\s+/g, ' ').trim();
   return t.length > max ? `${t.slice(0, max)}…` : t;
@@ -100,7 +113,9 @@ RULES:
 BLOCKS_JSON:
 ${JSON.stringify(blocks, null, 2)}`;
 
-  const rawNodes = await service.chatJson({ system: systemNodes, user: userNodes, temperature: 0.1 }, model);
+  // SG stability: default to low temperature (override via SG_NODES_TEMPERATURE env).
+  const nodesTemp = clamp01(envFloat('SG_NODES_TEMPERATURE', 0.05));
+  const rawNodes = await service.chatJson({ system: systemNodes, user: userNodes, temperature: nodesTemp }, model);
   const parsedNodes = z
     .object({
       nodes: z.array(
@@ -238,7 +253,9 @@ ${JSON.stringify(subsetNodes, null, 2)}
 CANDIDATES_BY_FROM_NODE_ID_JSON:
 ${JSON.stringify(candidateSubset, null, 2)}`;
 
-    const rawEdges = await service.chatJson({ system: systemEdges, user: userEdges, temperature: 0.2 }, model);
+    // SG stability: default to low temperature (override via SG_EDGES_TEMPERATURE env).
+    const edgesTemp = clamp01(envFloat('SG_EDGES_TEMPERATURE', 0.05));
+    const rawEdges = await service.chatJson({ system: systemEdges, user: userEdges, temperature: edgesTemp }, model);
     const parsedEdges = z
       .object({
         edges: z.array(
