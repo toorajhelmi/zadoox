@@ -12,7 +12,7 @@ import type { AIModel } from '../../services/ai/ai-service.js';
 import { getSgAIService } from '../../services/ai/ai-service-singleton.js';
 // NOTE: keep /sg/build compatible, but internal builder now provides nodes+edges helpers.
 import { getSgBootstrapJob, startSgBootstrapJob } from '../../sg/sg-bootstrap-jobs.js';
-import { buildSgEdgesForNodes, buildSgNodesForBlocks } from '../../sg/sg-builder.js';
+import { buildSgConsistentGraphFromMiniGraphs, buildSgMiniGraphForBlocksOneShot } from '../../sg/sg-builder.js';
 import { ensureNodeEmbeddings } from '../../sg/sg-embeddings-store.js';
 
 export async function sgRoutes(fastify: FastifyInstance) {
@@ -136,18 +136,21 @@ export async function sgRoutes(fastify: FastifyInstance) {
         // Use the SG-dedicated AI service so SG can use a stronger model without impacting other AI features.
         const sgService = getSgAIService();
 
-        // Nodes + embeddings are treated as an atomic operation (cache embeddings by docId+nodeId+textHash).
-        const nodes = await buildSgNodesForBlocks({ service: sgService, blocks, model });
-        const vectors = await ensureNodeEmbeddings({ supabase: request.supabase, service: sgService, docId: documentId, nodes, model });
-        const edges = await buildSgEdgesForNodes({ service: sgService, nodes, vectors, model });
-        const built = {
-          sg: {
-            version: 1 as const,
-            nodes,
-            edges,
-            updatedAt: new Date().toISOString(),
-          },
-        };
+        // One-shot mini-graph (nodes+edges) for this slice, then canonicalize (even if it's just one chunk)
+        // so the output matches our bootstrap pipeline behavior.
+        const mini = await buildSgMiniGraphForBlocksOneShot({
+          service: sgService,
+          chunkId: `${documentId}:adhoc`,
+          blocks,
+          model,
+        });
+        const built = await buildSgConsistentGraphFromMiniGraphs({
+          service: sgService,
+          miniNodes: mini.nodes,
+          miniEdges: mini.edges,
+          model,
+        });
+        await ensureNodeEmbeddings({ supabase: request.supabase, service: sgService, docId: documentId, nodes: built.sg.nodes, model });
 
         const response: ApiResponse<typeof built> = { success: true, data: built };
         return reply.send(response);
