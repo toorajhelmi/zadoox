@@ -56,12 +56,17 @@ NODE TYPES (use exactly these): goal, claim, evidence, definition, gap
 RULES:
 - Create nodes from meaningful content blocks, including: paragraph, heading, list, table, figure, grid, math, code.
 - Ignore purely presentational blocks (doc_title/doc_author/doc_date/raw) unless they contain an explicit goal/claim.
-- A single block can yield multiple nodes.
+- A single block can yield multiple nodes. Prefer 1–3 nodes per meaningful block when possible.
+- If a block has >= 40 non-whitespace characters and contains meaningful content, extract AT LEAST 1 node from it.
+- If a paragraph/list block is long (>= 250 chars), try to extract 2–4 nodes (e.g., a main claim + a definition + a gap/goal when present).
 - Each node MUST reference exactly one blockId (and optional span offsets) in bgRefs.
 - Keep node.text concise (<= 280 chars).
+- Extract *definitions* when a key term is introduced (e.g., “observer effect”, “observation paradox”, “superposition”).
+- Extract *gaps/questions* when the text raises uncertainty or prompts investigation.
 - For tables: prefer concise evidence nodes grounded in specific rows/metrics.
 - For figures: use caption/alt text as evidence or claim when meaningful; skip single-letter captions unless supported by surrounding text in the same block.
 - For grids: if the grid caption provides meaning and child figures are terse, create nodes from the grid caption (goal/claim/evidence) and/or from meaningful figure captions.
+- Do NOT ignore non-English text: extract nodes from it the same way (you may keep node.text in the same language as the source block).
 - Return JSON: {"nodes":[{"blockId":"...","from":0,"to":12,"type":"claim|evidence|definition|goal|gap","text":"..."}]}
 - "from"/"to" are optional character offsets within that block's source text.
 
@@ -164,6 +169,7 @@ EDGE SEMANTICS:
 RULES:
 - Prefer sparse edges (avoid connecting everything).
 - Only create edges when there is a plausible relationship.
+- Hard cap: max 2 edges per FROM node (pick the strongest / most important relationships).
 - Only propose edges FROM the provided FROM_NODE_IDS (below).
 - Only propose edges to nodes in that from-node's candidate list (provided below).
 - Return JSON: {"edges":[{"from":"<nodeId>","to":"<nodeId>","weight":0.3}]}
