@@ -53,12 +53,24 @@ Return ONLY JSON (no prose).`;
 
 NODE TYPES (use exactly these): goal, claim, evidence, definition, gap
 
+DEFINITIONS + EXAMPLES:
+- goal: an intended objective, question to investigate, or directive.
+  Example: "Investigate how the observer effect challenges traditional views of reality."
+- claim: an assertion presented as true (a thesis, conclusion, or strong statement).
+  Example: "Measurement influences the state of a quantum system."
+- evidence: an observation, datum, citation-like support, or result backing a claim.
+  Example: "Table shows accuracy of 0.91 and latency of 120 ms."
+- definition: a term explanation or a concept being defined/clarified.
+  Example: "The observation paradox is where measurement appears to influence a quantum system."
+- gap: an explicit uncertainty, open question, contradiction, or missing explanation.
+  Example: "This raises questions about the fabric of the universe."
+
 RULES:
 - Create nodes from meaningful content blocks, including: paragraph, heading, list, table, figure, grid, math, code.
 - Ignore purely presentational blocks (doc_title/doc_author/doc_date/raw) unless they contain an explicit goal/claim.
 - A single block can yield multiple nodes. Prefer 1–3 nodes per meaningful block when possible.
-- If a block has >= 40 non-whitespace characters and contains meaningful content, extract AT LEAST 1 node from it.
-- If a paragraph/list block is long (>= 250 chars), try to extract 2–4 nodes (e.g., a main claim + a definition + a gap/goal when present).
+- A block may yield zero nodes if it contains no meaningful semantic content.
+- If a block contains multiple distinct semantics (e.g., a claim + definition + gap), you may emit multiple nodes for that one block.
 - Each node MUST reference exactly one blockId (and optional span offsets) in bgRefs.
 - Keep node.text concise (<= 280 chars).
 - Extract *definitions* when a key term is introduced (e.g., “observer effect”, “observation paradox”, “superposition”).
