@@ -97,39 +97,15 @@ export async function buildSgNodesForBlocks(params: {
 
   const systemNodes = `You extract a Semantic Graph (SG) from document blocks.
 Return ONLY JSON (no prose).`;
-  const userNodes = `TASK: Extract semantic nodes from the provided blocks.
+  const userNodes = `Find claims, gaps, goals, evidences, and definitions from the provided doc blocks.
 
-NODE TYPES (use exactly these): goal, claim, evidence, definition, gap
+Return ONLY valid JSON in this exact shape:
+{"nodes":[{"blockId":"...","from":0,"to":12,"type":"goal|claim|evidence|definition|gap","text":"..."}]}
 
-DEFINITIONS + EXAMPLES:
-- goal: an intended objective, question to investigate, or directive.
-  Example: "Investigate how the observer effect challenges traditional views of reality."
-- claim: an assertion presented as true (a thesis, conclusion, or strong statement).
-  Example: "Measurement influences the state of a quantum system."
-- evidence: an observation, datum, citation-like support, or result backing a claim.
-  Example: "Table shows accuracy of 0.91 and latency of 120 ms."
-- definition: a term explanation or a concept being defined/clarified.
-  Example: "The observation paradox is where measurement appears to influence a quantum system."
-- gap: an explicit uncertainty, open question, contradiction, or missing explanation.
-  Example: "This raises questions about the fabric of the universe."
-
-RULES:
-- Create nodes from meaningful content blocks, including: paragraph, heading, list, table, figure, grid, math, code.
-- Ignore purely presentational blocks (doc_title/doc_author/doc_date/raw) unless they contain an explicit goal/claim.
-- A single block can yield multiple nodes. Prefer 1–3 nodes per meaningful block when possible.
-- A block may yield zero nodes if it contains no meaningful semantic content.
-- If a block contains multiple distinct semantics (e.g., a claim + definition + gap), you may emit multiple nodes for that one block.
-- Each node MUST reference exactly one blockId (and optional span offsets) in bgRefs.
-- Keep node.text concise (<= 280 chars).
-- Node text MUST be self-contained: avoid ambiguous pronouns ("this", "that", "it", "they") unless you include the referent.
-  Bad: "This phenomenon challenges our understanding of reality."
-  Good: "The observation paradox challenges our conventional understanding of reality."
-- For tables: prefer concise evidence nodes grounded in specific rows/metrics.
-- For figures: use caption/alt text as evidence or claim when meaningful; skip single-letter captions unless supported by surrounding text in the same block.
-- For grids: if the grid caption provides meaning and child figures are terse, create nodes from the grid caption (goal/claim/evidence) and/or from meaningful figure captions.
-- Do NOT ignore non-English text: extract nodes from it the same way (you may keep node.text in the same language as the source block).
-- Return JSON: {"nodes":[{"blockId":"...","from":0,"to":12,"type":"claim|evidence|definition|goal|gap","text":"..."}]}
-- "from"/"to" are optional character offsets within that block's source text.
+Rules:
+- Be comprehensive (prefer missing fewer over missing more), but avoid duplicates.
+- Node text must be self-contained and concise (<= 280 chars).
+- Each node MUST reference exactly one blockId, with optional from/to offsets within that block.
 
 BLOCKS_JSON:
 ${JSON.stringify(blocks, null, 2)}`;
@@ -336,36 +312,22 @@ export async function buildSgMiniGraphForBlocksOneShot(params: {
   const system = `You extract a Semantic Graph (SG) from document blocks.
 Return ONLY JSON (no prose).`;
 
-  const user = `TASK: From the provided BLOCKS, extract semantic NODES and EDGES.
+  const user = `From the provided blocks, extract:
+1) nodes: claims, gaps, goals, evidences, definitions
+2) edges: a directed graph mapping node->node with weight in [-1,1] (positive=support, negative=contradiction).
 
-NODE TYPES (use exactly these): goal, claim, evidence, definition, gap
-
-EDGE SEMANTICS:
-- A -> B means "A impacts B / B depends on A"
-- weight in [-1, 1] where >0 is support, <0 is contradiction
-
-CRITICAL RULES:
-- A single block can yield multiple nodes.
-- A block can yield zero nodes if it contains no meaningful semantics.
-- Each node MUST reference exactly one blockId (and optional from/to offsets) that support that node.
-- Node text MUST be self-contained: avoid ambiguous pronouns unless you include the referent.
-- Keep node.text concise (<= 280 chars).
-- Edges must reference nodes via node.localId (defined below).
-- Prefer sparse edges, but include obvious structural edges:
-  - evidence -> claim
-  - definition -> claim
-  - gap -> goal (or gap -> claim if the gap weakens/contradicts a claim)
-  - claim -> goal only if the goal is a direct consequence of the claim
-
-OUTPUT JSON SHAPE (strict):
+Return ONLY valid JSON in this exact shape:
 {
-  "nodes": [
-    { "localId": "N1", "blockId": "…", "from": 0, "to": 12, "type": "claim|evidence|definition|goal|gap", "text": "…" }
-  ],
-  "edges": [
-    { "from": "N1", "to": "N2", "weight": 0.4 }
-  ]
+  "nodes":[{"localId":"N1","blockId":"...","from":0,"to":12,"type":"goal|claim|evidence|definition|gap","text":"..."}],
+  "edges":[{"from":"N1","to":"N2","weight":0.4}]
 }
+
+Rules:
+- Be comprehensive (prefer missing fewer over missing more), but avoid duplicates.
+- Node text must be self-contained and concise (<= 280 chars).
+- Each node MUST reference exactly one blockId, with optional from/to offsets within that block.
+- Edges should capture meaningful dependency/impact; typical 1–4 edges per node if applicable.
+- Use consistent direction patterns when relevant: evidence->claim, definition->claim, gap->goal/claim.
 
 BLOCKS_JSON:
 ${JSON.stringify(blocks, null, 2)}`;
@@ -469,39 +431,24 @@ export async function buildSgConsistentGraphFromMiniGraphs(params: {
   const system = `You canonicalize and merge Semantic Graph nodes across chunks.
 Return ONLY JSON (no prose).`;
 
-  const user = `TASK: Make a consistent document-level semantic graph by merging and canonicalizing mini-graphs.
+  const user = `Unify the mini-graphs into one consistent document graph.
 
-YOU MUST:
-- Merge duplicates (same concept phrased differently)
-- Resolve synonyms (e.g., "cool roof" vs "reflective roof")
-- Resolve coreference ("this method", "it", "the intervention") by rewriting node.text to include referents
-- Assign a CANONICAL KEY per node (stable, machine-friendly)
-- Produce a consistent edge list between canonical nodes
+Do:
+- Merge duplicates / synonyms / coreference ONLY when they truly mean the same thing (be conservative: avoid over-merging).
+- Rewrite node text to be self-contained (resolve "this/it/the method" by naming the referent).
+- Assign a canonical key per node (stable, machine-friendly).
+- Produce a consistent canonical edge list with weights in [-1,1].
 
-RULES:
-- Canonical node types must remain one of: goal, claim, evidence, definition, gap
-- Canonical node text MUST be self-contained and concise (<= 280 chars)
-- Each canonical node must include memberIds: the list of mini node ids that were merged into it
-- You may drop low-signal nodes if they are redundant after merging
-- Edges:
-  - Use weights in [-1,1]
-  - Prefer sparse edges
-  - Avoid duplicates and self-loops
-
-OUTPUT JSON SHAPE (strict):
+Return ONLY valid JSON in this exact shape:
 {
-  "canonicalNodes": [
-    {
-      "key": "cool_roof_definition",
-      "type": "definition|claim|evidence|goal|gap",
-      "text": "…",
-      "memberIds": ["sg:chunk:…", "..."]
-    }
-  ],
-  "canonicalEdges": [
-    { "fromKey": "…", "toKey": "…", "weight": 0.4 }
-  ]
+  "canonicalNodes":[{"key":"...","type":"goal|claim|evidence|definition|gap","text":"...","memberIds":["..."]}],
+  "canonicalEdges":[{"fromKey":"...","toKey":"...","weight":0.4}]
 }
+
+Rules:
+- Keep canonical node text concise (<= 280 chars).
+- Do NOT drop nodes unless they are exact duplicates after merging.
+- Avoid duplicates and self-loops in edges.
 
 MINI_NODES_JSON:
 ${JSON.stringify(miniNodes, null, 2)}
