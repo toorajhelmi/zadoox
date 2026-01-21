@@ -73,8 +73,6 @@ RULES:
 - If a block contains multiple distinct semantics (e.g., a claim + definition + gap), you may emit multiple nodes for that one block.
 - Each node MUST reference exactly one blockId (and optional span offsets) in bgRefs.
 - Keep node.text concise (<= 280 chars).
-- Extract *definitions* when a key term is introduced (e.g., “observer effect”, “observation paradox”, “superposition”).
-- Extract *gaps/questions* when the text raises uncertainty or prompts investigation.
 - For tables: prefer concise evidence nodes grounded in specific rows/metrics.
 - For figures: use caption/alt text as evidence or claim when meaningful; skip single-letter captions unless supported by surrounding text in the same block.
 - For grids: if the grid caption provides meaning and child figures are terse, create nodes from the grid caption (goal/claim/evidence) and/or from meaningful figure captions.
