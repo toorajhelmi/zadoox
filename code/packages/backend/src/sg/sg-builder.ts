@@ -34,6 +34,20 @@ const cosine = (a: number[], b: number[]) => {
   return denom > 0 ? dot / denom : 0;
 };
 
+function edgeDebugEnabled(): boolean {
+  return String(process.env.SG_EDGE_DEBUG || '').toLowerCase() === 'true';
+}
+
+function clip(s: string, max = 90): string {
+  const t = String(s ?? '').replace(/\s+/g, ' ').trim();
+  return t.length > max ? `${t.slice(0, max)}…` : t;
+}
+
+function fmtNode(n: SemanticNode | undefined): string {
+  if (!n) return '(missing node)';
+  return `${n.id} (${n.type}) "${clip(n.text, 90)}"`;
+}
+
 function stableAutoNodeId(params: { blockId: string; from?: number; to?: number; type: SemanticNodeType; text: string }): string {
   const { blockId, from, to, type, text } = params;
   const h = createHash('sha1').update(`${type}::${blockId}::${from ?? ''}::${to ?? ''}::${text}`, 'utf8').digest('hex').slice(0, 10);
@@ -132,6 +146,9 @@ export async function buildSgEdgesForNodes(params: {
 
   if (!nodes || nodes.length === 0) return [];
 
+  const debug = edgeDebugEnabled();
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+
   // EV candidate selection (top‑K) for edges.
   const candidateMap: Record<string, string[]> = {};
   const vecs = vectors ?? (await service.embedTexts(nodes.map((n) => n.text), model));
@@ -169,6 +186,26 @@ Return ONLY JSON (no prose).`;
     const candidateSubset: Record<string, string[]> = {};
     for (const fromId of fromIds) {
       candidateSubset[fromId] = (candidateMap[fromId] ?? []).filter((id) => subsetIds.has(id));
+    }
+
+    if (debug) {
+      const maxCandidatesToPrint = 12;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[SG][edges] batch from=${fromIds.length} nodes=${subsetNodes.length} candidatesTopK=${topK}`
+      );
+      for (const fromId of fromIds) {
+        const cands = candidateSubset[fromId] ?? [];
+        // eslint-disable-next-line no-console
+        console.log(`[SG][edges] FROM: ${fmtNode(nodeById.get(fromId))}`);
+        // eslint-disable-next-line no-console
+        console.log(
+          `[SG][edges]   candidates(${cands.length}): ${cands
+            .slice(0, maxCandidatesToPrint)
+            .map((id) => fmtNode(nodeById.get(id)))
+            .join(' | ')}${cands.length > maxCandidatesToPrint ? ' | …' : ''}`
+        );
+      }
     }
 
     const userEdges = `TASK: Propose directed edges between nodes.
@@ -220,6 +257,15 @@ ${JSON.stringify(candidateSubset, null, 2)}`;
           .filter((e) => fromIds.includes(e.from))
           .map((e) => ({ from: e.from, to: e.to, weight: clamp(e.weight) }))
       : [];
+
+    if (debug) {
+      // eslint-disable-next-line no-console
+      console.log(`[SG][edges] returnedEdges=${batchEdges.length}`);
+      for (const e of batchEdges) {
+        // eslint-disable-next-line no-console
+        console.log(`[SG][edges]   ${fmtNode(nodeById.get(e.from))} -> ${fmtNode(nodeById.get(e.to))} (w=${e.weight})`);
+      }
+    }
 
     edges.push(...batchEdges);
   }
