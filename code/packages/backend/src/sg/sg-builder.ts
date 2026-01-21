@@ -54,10 +54,14 @@ Return ONLY JSON (no prose).`;
 NODE TYPES (use exactly these): goal, claim, evidence, definition, gap
 
 RULES:
-- Create nodes only from meaningful content blocks (mostly paragraphs).
+- Create nodes from meaningful content blocks, including: paragraph, heading, list, table, figure, grid, math, code.
+- Ignore purely presentational blocks (doc_title/doc_author/doc_date/raw) unless they contain an explicit goal/claim.
 - A single block can yield multiple nodes.
 - Each node MUST reference exactly one blockId (and optional span offsets) in bgRefs.
 - Keep node.text concise (<= 280 chars).
+- For tables: prefer concise evidence nodes grounded in specific rows/metrics.
+- For figures: use caption/alt text as evidence or claim when meaningful; skip single-letter captions unless supported by surrounding text in the same block.
+- For grids: if the grid caption provides meaning and child figures are terse, create nodes from the grid caption (goal/claim/evidence) and/or from meaningful figure captions.
 - Return JSON: {"nodes":[{"blockId":"...","from":0,"to":12,"type":"claim|evidence|definition|goal|gap","text":"..."}]}
 - "from"/"to" are optional character offsets within that block's source text.
 
