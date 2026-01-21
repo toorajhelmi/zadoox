@@ -18,6 +18,11 @@ export type SgBuildResult = {
 
 const clamp = (w: number) => Math.max(-1, Math.min(1, w));
 
+export type SgMiniGraph = {
+  nodes: SemanticNode[];
+  edges: SemanticEdge[];
+};
+
 const cosine = (a: number[], b: number[]) => {
   let dot = 0;
   let na = 0;
@@ -65,6 +70,18 @@ function stableAutoNodeId(params: { blockId: string; from?: number; to?: number;
   const { blockId, from, to, type, text } = params;
   const h = createHash('sha1').update(`${type}::${blockId}::${from ?? ''}::${to ?? ''}::${text}`, 'utf8').digest('hex').slice(0, 10);
   return `sg:auto:${blockId}:${from ?? ''}-${to ?? ''}:${type}:${h}`;
+}
+
+function stableChunkNodeId(params: { chunkId: string; localId: string }): string {
+  const { chunkId, localId } = params;
+  const h = createHash('sha1').update(`${chunkId}::${localId}`, 'utf8').digest('hex').slice(0, 12);
+  return `sg:chunk:${chunkId}:${h}`;
+}
+
+function stableCanonicalNodeId(params: { type: SemanticNodeType; key: string }): string {
+  const { type, key } = params;
+  const h = createHash('sha1').update(`${type}::${key}`, 'utf8').digest('hex').slice(0, 12);
+  return `sg:canon:${type}:${h}`;
 }
 
 export async function buildSgNodesForBlocks(params: {
@@ -295,6 +312,264 @@ ${JSON.stringify(candidateSubset, null, 2)}`;
     seen.add(k);
     return true;
   });
+}
+
+/**
+ * P1 (one-shot per chunk): build nodes + edges for a bounded block chunk.
+ * Nodes MUST include BG span refs (blockId/from/to) so we can map back to IR ranges.
+ *
+ * This intentionally returns "chunk-stable" node IDs (sg:chunk:...) which will be canonicalized in P2.
+ */
+export async function buildSgMiniGraphForBlocksOneShot(params: {
+  service: AIService;
+  chunkId: string;
+  blocks: SgBuildInputBlock[];
+  model?: AIModel;
+}): Promise<SgMiniGraph> {
+  const { service, chunkId, blocks, model } = params;
+  if (!blocks || blocks.length === 0) return { nodes: [], edges: [] };
+
+  const system = `You extract a Semantic Graph (SG) from document blocks.
+Return ONLY JSON (no prose).`;
+
+  const user = `TASK: From the provided BLOCKS, extract semantic NODES and EDGES.
+
+NODE TYPES (use exactly these): goal, claim, evidence, definition, gap
+
+EDGE SEMANTICS:
+- A -> B means "A impacts B / B depends on A"
+- weight in [-1, 1] where >0 is support, <0 is contradiction
+
+CRITICAL RULES:
+- A single block can yield multiple nodes.
+- A block can yield zero nodes if it contains no meaningful semantics.
+- Each node MUST reference exactly one blockId (and optional from/to offsets) that support that node.
+- Node text MUST be self-contained: avoid ambiguous pronouns unless you include the referent.
+- Keep node.text concise (<= 280 chars).
+- Edges must reference nodes via node.localId (defined below).
+- Prefer sparse edges, but include obvious structural edges:
+  - evidence -> claim
+  - definition -> claim
+  - gap -> goal (or gap -> claim if the gap weakens/contradicts a claim)
+  - claim -> goal only if the goal is a direct consequence of the claim
+
+OUTPUT JSON SHAPE (strict):
+{
+  "nodes": [
+    { "localId": "N1", "blockId": "…", "from": 0, "to": 12, "type": "claim|evidence|definition|goal|gap", "text": "…" }
+  ],
+  "edges": [
+    { "from": "N1", "to": "N2", "weight": 0.4 }
+  ]
+}
+
+BLOCKS_JSON:
+${JSON.stringify(blocks, null, 2)}`;
+
+  const temp = clamp01(envFloat('SG_CHUNK_GRAPH_TEMPERATURE', 0.05));
+  const raw = await service.chatJson({ system, user, temperature: temp }, model);
+  const parsed = z
+    .object({
+      nodes: z.array(
+        z.object({
+          localId: z.string().min(1),
+          blockId: z.string().min(1),
+          from: z.number().int().nonnegative().optional(),
+          to: z.number().int().nonnegative().optional(),
+          type: z.enum(['goal', 'claim', 'evidence', 'definition', 'gap']),
+          text: z.string().min(1),
+        })
+      ),
+      edges: z
+        .array(
+          z.object({
+            from: z.string().min(1),
+            to: z.string().min(1),
+            weight: z.number(),
+          })
+        )
+        .optional(),
+    })
+    .safeParse(raw);
+
+  const nodesIn = parsed.success ? parsed.data.nodes : [];
+  const edgesIn = parsed.success ? parsed.data.edges ?? [] : [];
+
+  const localToId = new Map<string, string>();
+  const nodes: SemanticNode[] = [];
+  for (const n of nodesIn) {
+    const id = stableChunkNodeId({ chunkId, localId: n.localId });
+    localToId.set(n.localId, id);
+    const type = n.type as SemanticNodeType;
+    const text = n.text.slice(0, 280);
+    nodes.push({
+      id,
+      type,
+      text,
+      bgRefs: [{ blockId: n.blockId, from: n.from, to: n.to }],
+    });
+  }
+
+  const edges: SemanticEdge[] = [];
+  const seen = new Set<string>();
+  for (const e of edgesIn) {
+    const from = localToId.get(e.from);
+    const to = localToId.get(e.to);
+    if (!from || !to || from === to) continue;
+    const k = `${from}::${to}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    edges.push({ from, to, weight: clamp(e.weight) });
+  }
+
+  // De-dupe nodes by id (LLM may repeat localIds or duplicate semantics).
+  const nodeSeen = new Set<string>();
+  const dedupedNodes = nodes.filter((n) => {
+    if (nodeSeen.has(n.id)) return false;
+    nodeSeen.add(n.id);
+    return true;
+  });
+
+  return { nodes: dedupedNodes, edges };
+}
+
+/**
+ * P2 (global consistency): merge duplicates/synonyms/coreference across mini-graphs,
+ * assign canonical keys, rewrite node text to be self-contained, and output a unified SG.
+ *
+ * IMPORTANT: provenance is preserved by UNION-ing bgRefs from all member nodes.
+ */
+export async function buildSgConsistentGraphFromMiniGraphs(params: {
+  service: AIService;
+  miniNodes: SemanticNode[];
+  miniEdges: SemanticEdge[];
+  model?: AIModel;
+}): Promise<SgBuildResult> {
+  const { service, miniNodes, miniEdges, model } = params;
+  if (!miniNodes || miniNodes.length === 0) {
+    return { sg: { version: 1, nodes: [], edges: [], updatedAt: new Date().toISOString() } };
+  }
+
+  const system = `You canonicalize and merge Semantic Graph nodes across chunks.
+Return ONLY JSON (no prose).`;
+
+  const user = `TASK: Make a consistent document-level semantic graph by merging and canonicalizing mini-graphs.
+
+YOU MUST:
+- Merge duplicates (same concept phrased differently)
+- Resolve synonyms (e.g., "cool roof" vs "reflective roof")
+- Resolve coreference ("this method", "it", "the intervention") by rewriting node.text to include referents
+- Assign a CANONICAL KEY per node (stable, machine-friendly)
+- Produce a consistent edge list between canonical nodes
+
+RULES:
+- Canonical node types must remain one of: goal, claim, evidence, definition, gap
+- Canonical node text MUST be self-contained and concise (<= 280 chars)
+- Each canonical node must include memberIds: the list of mini node ids that were merged into it
+- You may drop low-signal nodes if they are redundant after merging
+- Edges:
+  - Use weights in [-1,1]
+  - Prefer sparse edges
+  - Avoid duplicates and self-loops
+
+OUTPUT JSON SHAPE (strict):
+{
+  "canonicalNodes": [
+    {
+      "key": "cool_roof_definition",
+      "type": "definition|claim|evidence|goal|gap",
+      "text": "…",
+      "memberIds": ["sg:chunk:…", "..."]
+    }
+  ],
+  "canonicalEdges": [
+    { "fromKey": "…", "toKey": "…", "weight": 0.4 }
+  ]
+}
+
+MINI_NODES_JSON:
+${JSON.stringify(miniNodes, null, 2)}
+
+MINI_EDGES_JSON:
+${JSON.stringify(miniEdges, null, 2)}`;
+
+  const temp = clamp01(envFloat('SG_CANONICALIZE_TEMPERATURE', 0.05));
+  const raw = await service.chatJson({ system, user, temperature: temp }, model);
+  const parsed = z
+    .object({
+      canonicalNodes: z.array(
+        z.object({
+          key: z.string().min(1),
+          type: z.enum(['goal', 'claim', 'evidence', 'definition', 'gap']),
+          text: z.string().min(1),
+          memberIds: z.array(z.string().min(1)).min(1),
+        })
+      ),
+      canonicalEdges: z
+        .array(
+          z.object({
+            fromKey: z.string().min(1),
+            toKey: z.string().min(1),
+            weight: z.number(),
+          })
+        )
+        .optional(),
+    })
+    .safeParse(raw);
+
+  const canonNodesIn = parsed.success ? parsed.data.canonicalNodes : [];
+  const canonEdgesIn = parsed.success ? parsed.data.canonicalEdges ?? [] : [];
+
+  const miniById = new Map(miniNodes.map((n) => [n.id, n]));
+
+  const keyToId = new Map<string, string>();
+  const nodes: SemanticNode[] = canonNodesIn.map((n) => {
+    const type = n.type as SemanticNodeType;
+    const key = n.key.trim();
+    const id = stableCanonicalNodeId({ type, key });
+    keyToId.set(key, id);
+
+    // UNION provenance (bgRefs) across member nodes.
+    const refs: Array<{ blockId: string; from?: number; to?: number }> = [];
+    const refSeen = new Set<string>();
+    for (const mid of n.memberIds) {
+      const mn = miniById.get(mid);
+      for (const r of mn?.bgRefs ?? []) {
+        const k = `${r.blockId}::${r.from ?? ''}::${r.to ?? ''}`;
+        if (refSeen.has(k)) continue;
+        refSeen.add(k);
+        refs.push({ blockId: r.blockId, from: r.from, to: r.to });
+      }
+    }
+
+    return {
+      id,
+      type,
+      text: n.text.slice(0, 280),
+      bgRefs: refs.length > 0 ? refs : undefined,
+    };
+  });
+
+  const edges: SemanticEdge[] = [];
+  const edgeSeen = new Set<string>();
+  for (const e of canonEdgesIn) {
+    const from = keyToId.get(e.fromKey.trim());
+    const to = keyToId.get(e.toKey.trim());
+    if (!from || !to || from === to) continue;
+    const k = `${from}::${to}`;
+    if (edgeSeen.has(k)) continue;
+    edgeSeen.add(k);
+    edges.push({ from, to, weight: clamp(e.weight) });
+  }
+
+  return {
+    sg: {
+      version: 1,
+      nodes,
+      edges,
+      updatedAt: new Date().toISOString(),
+    },
+  };
 }
 
 export async function buildSemanticGraphForBlocks(params: {

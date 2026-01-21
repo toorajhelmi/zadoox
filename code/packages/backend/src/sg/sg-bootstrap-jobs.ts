@@ -4,7 +4,7 @@ import type { SemanticGraph, SemanticNode } from '@zadoox/shared';
 import { generateId } from '@zadoox/shared';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { DocumentService } from '../services/document-service.js';
-import { buildSgEdgesForNodes, buildSgNodesForBlocks } from './sg-builder.js';
+import { buildSgConsistentGraphFromMiniGraphs, buildSgMiniGraphForBlocksOneShot } from './sg-builder.js';
 import { ensureNodeEmbeddings } from './sg-embeddings-store.js';
 
 export type SgBootstrapStage = 'nodes' | 'edges' | 'persist' | 'done' | 'error';
@@ -28,6 +28,59 @@ type JobInternal = {
 };
 
 const JOBS = new Map<string, JobInternal>();
+
+function estTokens(text: string): number {
+  // Approximate OpenAI tokenization (~4 chars/token) for chunk budgeting.
+  const t = String(text ?? '');
+  return Math.max(1, Math.ceil(t.length / 4));
+}
+
+function chunkBlocksByTokenBudget(params: {
+  blocks: Array<{ id: string; type: string; text: string }>;
+  targetTokens: number;
+  overlapTokens: number;
+}): Array<{ chunkId: string; start: number; end: number; blocks: Array<{ id: string; type: string; text: string }> }> {
+  const { blocks, targetTokens, overlapTokens } = params;
+  const out: Array<{ chunkId: string; start: number; end: number; blocks: Array<{ id: string; type: string; text: string }> }> = [];
+  if (!blocks || blocks.length === 0) return out;
+
+  let i = 0;
+  let chunkIdx = 0;
+  while (i < blocks.length) {
+    let sum = 0;
+    let end = i;
+    while (end < blocks.length) {
+      const b = blocks[end]!;
+      const cost = estTokens(b.text) + 8; // small overhead per block
+      if (end > i && sum + cost > targetTokens) break;
+      sum += cost;
+      end++;
+    }
+    if (end === i) end = Math.min(blocks.length, i + 1);
+
+    const slice = blocks.slice(i, end);
+    out.push({ chunkId: `c${chunkIdx}`, start: i, end, blocks: slice });
+
+    // Determine overlap blocks (walk backwards from end).
+    let overlap = 0;
+    let overlapSum = 0;
+    for (let k = end - 1; k >= i; k--) {
+      const b = blocks[k]!;
+      overlapSum += estTokens(b.text) + 8;
+      if (overlapSum > overlapTokens) break;
+      overlap++;
+    }
+
+    // Ensure progress.
+    const chunkLen = end - i;
+    if (overlap >= chunkLen) overlap = Math.max(0, chunkLen - 1);
+
+    i = end - overlap;
+    chunkIdx++;
+  }
+
+  return out;
+}
 
 export function getSgBootstrapJob(jobId: string): SgBootstrapJobStatus | null {
   return JOBS.get(jobId)?.status ?? null;
@@ -71,31 +124,42 @@ export function startSgBootstrapJob(params: {
   void (async () => {
     try {
       bump({ stage: 'nodes' });
-      const allNodes: SemanticNode[] = [];
+      const miniNodes: SemanticNode[] = [];
+      const miniEdges: Array<{ from: string; to: string; weight: number }> = [];
 
-      // Fixed chunk size lives in SG builder (not doc type).
-      const nodesChunkSize = 40;
-      for (let i = 0; i < blocks.length; i += nodesChunkSize) {
-        const chunk = blocks.slice(i, i + nodesChunkSize);
-        const nodes = await buildSgNodesForBlocks({ service, blocks: chunk, model });
-        allNodes.push(...nodes);
-        // Atomic with node creation: compute+cache embeddings for newly created nodes.
-        await ensureNodeEmbeddings({ supabase, service, docId: documentId, nodes, model });
-        bump({ doneBlocks: Math.min(blocks.length, i + chunk.length), nodeCount: allNodes.length });
+      // P1: chunk by token budget (avoid splitting blocks; include overlap).
+      const targetTokens = Number(process.env.SG_CHUNK_TARGET_TOKENS || 1000);
+      const overlapTokens = Number(process.env.SG_CHUNK_OVERLAP_TOKENS || 150);
+      const chunks = chunkBlocksByTokenBudget({ blocks, targetTokens, overlapTokens });
+
+      let doneBlocks = 0;
+      for (const ch of chunks) {
+        const mini = await buildSgMiniGraphForBlocksOneShot({
+          service,
+          chunkId: `${documentId}:${ch.chunkId}`,
+          blocks: ch.blocks,
+          model,
+        });
+        miniNodes.push(...mini.nodes);
+        miniEdges.push(...mini.edges);
+        doneBlocks = Math.max(doneBlocks, ch.end);
+        bump({
+          doneBlocks: Math.min(blocks.length, doneBlocks),
+          nodeCount: miniNodes.length,
+          edgeCount: miniEdges.length,
+        });
       }
 
+      // P2: global canonicalization/merge pass (also produces final edges).
       bump({ stage: 'edges' });
-      const vectors = await ensureNodeEmbeddings({ supabase, service, docId: documentId, nodes: allNodes, model });
-      const edges = await buildSgEdgesForNodes({ service, nodes: allNodes, vectors, model });
-      bump({ edgeCount: edges.length });
+      const built = await buildSgConsistentGraphFromMiniGraphs({ service, miniNodes, miniEdges, model });
+      bump({ nodeCount: built.sg.nodes.length, edgeCount: built.sg.edges.length });
+
+      // Cache embeddings for canonical nodes (used later for incremental/queries).
+      await ensureNodeEmbeddings({ supabase, service, docId: documentId, nodes: built.sg.nodes, model });
 
       bump({ stage: 'persist' });
-      const sg: SemanticGraph = {
-        version: 1,
-        nodes: allNodes,
-        edges,
-        updatedAt: new Date().toISOString(),
-      };
+      const sg: SemanticGraph = built.sg;
 
       const documentService = new DocumentService(supabase);
       await documentService.updateDocument(
