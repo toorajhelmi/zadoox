@@ -43,6 +43,10 @@ function edgeDebugEnabled(): boolean {
   return String(process.env.SG_EDGE_DEBUG || '').toLowerCase() === 'true';
 }
 
+function sgDebugEnabled(): boolean {
+  return String(process.env.SG_DEBUG || '').toLowerCase() === 'true';
+}
+
 function envFloat(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw == null) return fallback;
@@ -392,8 +396,20 @@ ${JSON.stringify(blocks, null, 2)}`;
     })
     .safeParse(raw);
 
-  const nodesIn = parsed.success ? parsed.data.nodes : [];
-  const edgesIn = parsed.success ? parsed.data.edges ?? [] : [];
+  if (!parsed.success) {
+    if (sgDebugEnabled()) {
+      // eslint-disable-next-line no-console
+      console.log(`[SG][chunk][parse-fail] chunkId=${chunkId}`);
+      // eslint-disable-next-line no-console
+      console.log(parsed.error?.issues ?? parsed.error);
+      // eslint-disable-next-line no-console
+      console.log(`[SG][chunk][raw] ${JSON.stringify(raw).slice(0, 4000)}`);
+    }
+    throw new Error(`SG chunk graph parse failed (chunkId=${chunkId}). Enable SG_DEBUG=true for details.`);
+  }
+
+  const nodesIn = parsed.data.nodes;
+  const edgesIn = parsed.data.edges ?? [];
 
   const localToId = new Map<string, string>();
   const nodes: SemanticNode[] = [];
@@ -517,8 +533,20 @@ ${JSON.stringify(miniEdges, null, 2)}`;
     })
     .safeParse(raw);
 
-  const canonNodesIn = parsed.success ? parsed.data.canonicalNodes : [];
-  const canonEdgesIn = parsed.success ? parsed.data.canonicalEdges ?? [] : [];
+  if (!parsed.success) {
+    if (sgDebugEnabled()) {
+      // eslint-disable-next-line no-console
+      console.log('[SG][canon][parse-fail]');
+      // eslint-disable-next-line no-console
+      console.log(parsed.error?.issues ?? parsed.error);
+      // eslint-disable-next-line no-console
+      console.log(`[SG][canon][raw] ${JSON.stringify(raw).slice(0, 4000)}`);
+    }
+    throw new Error('SG canonicalization parse failed. Enable SG_DEBUG=true for details.');
+  }
+
+  const canonNodesIn = parsed.data.canonicalNodes;
+  const canonEdgesIn = parsed.data.canonicalEdges ?? [];
 
   const miniById = new Map(miniNodes.map((n) => [n.id, n]));
 
