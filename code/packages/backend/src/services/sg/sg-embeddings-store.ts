@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createHash } from 'crypto';
-import type { AIModel } from '../services/ai/ai-service.js';
-import type { AIService } from '../services/ai/ai-service.js';
+import type { AIModel } from '../ai/ai-service.js';
+import type { AIService } from '../ai/ai-service.js';
 import type { SemanticNode } from '@zadoox/shared';
 
 type Row = {

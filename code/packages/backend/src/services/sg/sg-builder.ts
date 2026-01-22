@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { createHash } from 'crypto';
-import type { AIModel } from '../services/ai/ai-service.js';
-import type { AIService } from '../services/ai/ai-service.js';
+import type { AIModel } from '../ai/ai-service.js';
+import type { AIService } from '../ai/ai-service.js';
 import type { SemanticEdge, SemanticNode, SemanticNodeType } from '@zadoox/shared';
 
 // Minimal SG v1 payload shape produced by the builder.
@@ -38,12 +38,6 @@ function clamp01(x: number): number {
   if (x < 0) return 0;
   if (x > 1) return 1;
   return x;
-}
-
-function stableAutoNodeId(params: { blockId: string; from?: number; to?: number; type: SemanticNodeType; text: string }): string {
-  const { blockId, from, to, type, text } = params;
-  const h = createHash('sha1').update(`${type}::${blockId}::${from ?? ''}::${to ?? ''}::${text}`, 'utf8').digest('hex').slice(0, 10);
-  return `sg:auto:${blockId}:${from ?? ''}-${to ?? ''}:${type}:${h}`;
 }
 
 function stableChunkNodeId(params: { chunkId: string; localId: string }): string {
@@ -310,3 +304,5 @@ ${JSON.stringify(miniEdges, null, 2)}`;
     },
   };
 }
+
+

@@ -11,9 +11,9 @@ import type { ApiResponse } from '@zadoox/shared';
 import type { AIModel } from '../../services/ai/ai-service.js';
 import { getSgAIService } from '../../services/ai/ai-service-singleton.js';
 // NOTE: keep /sg/build compatible, but internal builder now provides nodes+edges helpers.
-import { getSgBootstrapJob, startSgBootstrapJob } from '../../sg/sg-bootstrap-jobs.js';
-import { buildSgConsistentGraphFromMiniGraphs, buildSgMiniGraphForBlocksOneShot } from '../../sg/sg-builder.js';
-import { ensureNodeEmbeddings } from '../../sg/sg-embeddings-store.js';
+import { getSgBootstrapJob, startSgBootstrapJob } from '../../services/sg/sg-bootstrap-jobs.js';
+import { buildSgConsistentGraphFromMiniGraphs, buildSgMiniGraphForBlocksOneShot } from '../../services/sg/sg-builder.js';
+import { ensureNodeEmbeddings } from '../../services/sg/sg-embeddings-store.js';
 
 export async function sgRoutes(fastify: FastifyInstance) {
   // All routes require authentication

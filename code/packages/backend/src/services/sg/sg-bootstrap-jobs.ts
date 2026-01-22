@@ -1,9 +1,9 @@
-import type { AIModel } from '../services/ai/ai-service.js';
-import type { AIService } from '../services/ai/ai-service.js';
+import type { AIModel } from '../ai/ai-service.js';
+import type { AIService } from '../ai/ai-service.js';
 import type { SemanticGraph, SemanticNode } from '@zadoox/shared';
 import { generateId } from '@zadoox/shared';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { DocumentService } from '../services/document-service.js';
+import { DocumentService } from '../document-service.js';
 import { buildSgConsistentGraphFromMiniGraphs, buildSgMiniGraphForBlocksOneShot } from './sg-builder.js';
 import { ensureNodeEmbeddings } from './sg-embeddings-store.js';
 
