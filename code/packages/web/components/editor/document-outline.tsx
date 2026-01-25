@@ -59,14 +59,22 @@ function toFileNameFromTitle(title: string): string {
   return `${safe || 'untitled-document'}.md`;
 }
 
-function sortProjectDocs(docs: ZadooxDocument[]): ZadooxDocument[] {
-  const sorted = [...docs].sort((a: any, b: any) => {
-    const ao = typeof a?.metadata?.order === 'number' ? a.metadata.order : 0;
-    const bo = typeof b?.metadata?.order === 'number' ? b.metadata.order : 0;
-    if (ao !== bo) return ao - bo;
-    return String(a?.title || '').localeCompare(String(b?.title || ''));
-  });
-  return sorted;
+function mergeDocsPreserveOrder(prev: ZadooxDocument[], next: ZadooxDocument[]): ZadooxDocument[] {
+  // Preserve the existing order as much as possible (prevents "tree reorders" on navigation).
+  // Update doc objects for existing ids; append truly new docs at the end; drop missing docs.
+  const nextById = new Map(next.map((d) => [d.id, d]));
+  const nextIds = new Set(next.map((d) => d.id));
+
+  const out: ZadooxDocument[] = [];
+  for (const d of prev) {
+    if (!nextIds.has(d.id)) continue;
+    out.push(nextById.get(d.id) ?? d);
+  }
+  for (const d of next) {
+    if (prev.some((p) => p.id === d.id)) continue;
+    out.push(d);
+  }
+  return out;
 }
 
 function collectAssetFilesFromIr(ir: DocumentNode): AssetFile[] {
@@ -222,14 +230,16 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
-    setDocsLoading(true);
+    const cached = projectDocsCache.get(projectId) ?? [];
+    if (cached.length === 0) setDocsLoading(true);
     (async () => {
       try {
         const docs = await api.documents.listByProject(projectId);
         if (cancelled) return;
-        const sorted = sortProjectDocs(docs);
-        projectDocsCache.set(projectId, sorted);
-        setProjectDocs(sorted);
+        const prev = projectDocsCache.get(projectId) ?? [];
+        const merged = prev.length > 0 ? mergeDocsPreserveOrder(prev, docs) : docs;
+        projectDocsCache.set(projectId, merged);
+        setProjectDocs(merged);
       } catch {
         if (!cancelled) setProjectDocs([]);
       } finally {
@@ -249,12 +259,11 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
       const activeId = currentDocumentId || derivedIr?.docId || null;
       // Refresh list (ensures we always navigate based on the latest state).
       const nextDocs = await api.documents.listByProject(projectId);
-      const sorted = sortProjectDocs(nextDocs);
-      projectDocsCache.set(projectId, sorted);
-      setProjectDocs(sorted);
+      projectDocsCache.set(projectId, nextDocs);
+      setProjectDocs(nextDocs);
       if (activeId && docId === activeId) {
         // Navigate away from deleted doc.
-        const remaining = sorted.filter((d) => d.id !== docId);
+        const remaining = nextDocs.filter((d) => d.id !== docId);
         const next = remaining[0]?.id || null;
         if (next) router.push(`/dashboard/projects/${projectId}/documents/${next}`);
         else router.push(`/dashboard/projects/${projectId}`);
@@ -325,9 +334,9 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
     try {
       const created = await api.documents.duplicate(docId);
       setProjectDocs((prev) => {
-        const sorted = sortProjectDocs([...prev, created]);
-        projectDocsCache.set(projectId, sorted);
-        return sorted;
+        const next = [...prev, created];
+        projectDocsCache.set(projectId, next);
+        return next;
       });
       router.push(`/dashboard/projects/${projectId}/documents/${created.id}`);
     } finally {
