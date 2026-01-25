@@ -8,7 +8,11 @@
  */
 export type SemanticGraphVersion = 1;
 
-export type SemanticNodeType = 'goal' | 'claim' | 'evidence' | 'definition' | 'gap';
+/**
+ * SG is schema-generic: node "type" is an interpreter-defined string.
+ * Templates/genres define the allowed types for a given interpreter run.
+ */
+export type SemanticNodeType = string;
 
 export interface BgSpanRef {
   blockId: string;

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { createHash } from 'crypto';
 import type { AIModel } from '../ai/ai-service.js';
 import type { AIService } from '../ai/ai-service.js';
-import type { SemanticEdge, SemanticNode, SemanticNodeType } from '@zadoox/shared';
+import type { SemanticEdge, SemanticNode } from '@zadoox/shared';
 
 // Minimal SG v1 payload shape produced by the builder.
 export type SgBuildInputBlock = { id: string; type: string; text: string };
@@ -46,7 +46,7 @@ function stableChunkNodeId(params: { chunkId: string; localId: string }): string
   return `sg:chunk:${chunkId}:${h}`;
 }
 
-function stableCanonicalNodeId(params: { type: SemanticNodeType; key: string }): string {
+function stableCanonicalNodeId(params: { type: string; key: string }): string {
   const { type, key } = params;
   const h = createHash('sha1').update(`${type}::${key}`, 'utf8').digest('hex').slice(0, 12);
   return `sg:canon:${type}:${h}`;
@@ -136,7 +136,7 @@ ${JSON.stringify(blocks, null, 2)}`;
   for (const n of nodesIn) {
     const id = stableChunkNodeId({ chunkId, localId: n.localId });
     localToId.set(n.localId, id);
-    const type = n.type as SemanticNodeType;
+    const type = String(n.type);
     const text = n.text.slice(0, 280);
     nodes.push({
       id,
@@ -257,7 +257,7 @@ ${JSON.stringify(miniEdges, null, 2)}`;
 
   const keyToId = new Map<string, string>();
   const nodes: SemanticNode[] = canonNodesIn.map((n) => {
-    const type = n.type as SemanticNodeType;
+    const type = String(n.type);
     const key = n.key.trim();
     const id = stableCanonicalNodeId({ type, key });
     keyToId.set(key, id);
