@@ -45,15 +45,25 @@ export class DocumentService {
       throw new Error(`Invalid document type: ${docType}`);
     }
 
+    // Preserve extended metadata fields (latex, lastEditedFormat, importSource, etc.).
+    // We still normalize core fields to ensure they exist.
+    const inputMetadata = (input.metadata ?? {}) as Record<string, unknown>;
+
     const documentData = {
       id: generateId(),
       project_id: input.projectId,
       title: input.title,
       content: input.content || '',
       metadata: {
+        ...inputMetadata,
         type: docType,
-        chapterNumber: input.metadata?.chapterNumber || null,
-        order: input.metadata?.order || 0,
+        chapterNumber:
+          typeof inputMetadata.chapterNumber === 'number'
+            ? (inputMetadata.chapterNumber as number)
+            : inputMetadata.chapterNumber === null
+              ? null
+              : null,
+        order: typeof inputMetadata.order === 'number' ? (inputMetadata.order as number) : 0,
       },
       semantic_graph: input.semanticGraph ?? null,
       version: 1,
