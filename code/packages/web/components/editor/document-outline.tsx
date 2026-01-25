@@ -277,9 +277,6 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
               This will permanently delete <span className="text-[#cccccc] font-medium">“{deleteConfirm.title}”</span>.
             </div>
           </div>
-          <div className="px-5 py-4">
-            <div className="text-sm text-[#cccccc]">This action cannot be undone.</div>
-          </div>
           <div className="px-5 py-4 border-t border-[#3e3e42] flex items-center justify-end gap-2">
             <button
               type="button"
