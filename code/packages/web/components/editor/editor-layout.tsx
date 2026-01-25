@@ -175,7 +175,16 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
 
   const getCurrentIrForModeSwitch = useCallback(() => getCurrentIrRef.current(), []);
 
-  const { editMode, setEditMode, latexDraft, setLatexDraft, handleEditModeChange } = useEditorEditMode({
+  const {
+    editMode,
+    setEditMode,
+    latexDraft,
+    setLatexDraft,
+    handleEditModeChange,
+    latexEntryLoading,
+    latexEntryError,
+    reloadLatexEntry,
+  } = useEditorEditMode({
     actualDocumentId,
     documentId,
     content,
@@ -793,6 +802,34 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                   : undefined
               }
             >
+              {/* LaTeX entry loading/error overlay (imported docs are LaTeX-first). */}
+              {editMode === 'latex' && Boolean(documentLatex) && latexDraft.length === 0 && (
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40">
+                  <div className="max-w-md rounded border border-vscode-border bg-vscode-sidebar px-4 py-3 text-sm text-vscode-text">
+                    {latexEntryError ? (
+                      <div className="space-y-2">
+                        <div className="font-medium text-white">Failed to load LaTeX entry</div>
+                        <div className="text-vscode-text-secondary break-words">{latexEntryError}</div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            className="px-3 py-1.5 rounded bg-vscode-button text-white hover:bg-vscode-buttonHover transition-colors"
+                            onClick={() => reloadLatexEntry()}
+                          >
+                            Retry
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-vscode-text-secondary">
+                        <span className="animate-spin inline-block w-4 h-4 border-2 border-vscode-text-secondary border-t-transparent rounded-full" />
+                        <span>{latexEntryLoading ? 'Loading LaTeX…' : 'Loading LaTeX…'}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Inline AI Hint - Shows toned-down prompt */}
               {!thinkPanelOpen && !inlineAIChatOpen && cursorScreenPosition && cursorPosition && (
                 <InlineAIHint

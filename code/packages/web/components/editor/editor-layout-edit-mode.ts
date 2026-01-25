@@ -27,6 +27,9 @@ export function useEditorEditMode(params: {
 
   const [editMode, setEditMode] = useState<EditMode>('markdown');
   const [latexDraft, setLatexDraft] = useState<string>('');
+  const [latexEntryLoading, setLatexEntryLoading] = useState(false);
+  const [latexEntryError, setLatexEntryError] = useState<string | null>(null);
+  const [latexEntryReloadNonce, setLatexEntryReloadNonce] = useState(0);
 
   // Important: only initialize editMode from metadata once per document.
   // Otherwise, late metadata refreshes can overwrite explicit user selection
@@ -61,17 +64,27 @@ export function useEditorEditMode(params: {
     let cancelled = false;
     (async () => {
       try {
+        setLatexEntryLoading(true);
+        setLatexEntryError(null);
         const res = await api.documents.latexEntryGet(docId);
         if (cancelled) return;
         if (typeof res.text === 'string') setLatexDraft(res.text);
       } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
         console.error('Failed to load LaTeX entry:', e);
+        if (!cancelled) setLatexEntryError(msg);
+      } finally {
+        if (!cancelled) setLatexEntryLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [actualDocumentId, documentLatex, editMode, latexDraft]);
+  }, [actualDocumentId, documentLatex, editMode, latexDraft, latexEntryReloadNonce]);
+
+  const reloadLatexEntry = useCallback(() => {
+    setLatexEntryReloadNonce((v) => v + 1);
+  }, []);
 
   const handleEditModeChange = useCallback(
     async (next: EditMode) => {
@@ -168,7 +181,7 @@ export function useEditorEditMode(params: {
     [actualDocumentId, content, documentLatex, documentMetadata, editMode, getCurrentIr, latexDraft, setDocumentLatex, setDocumentMetadata, updateContent]
   );
 
-  return { editMode, setEditMode, latexDraft, setLatexDraft, handleEditModeChange };
+  return { editMode, setEditMode, latexDraft, setLatexDraft, handleEditModeChange, latexEntryLoading, latexEntryError, reloadLatexEntry };
 }
 
 

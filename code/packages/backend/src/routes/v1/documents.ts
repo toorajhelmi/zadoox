@@ -604,7 +604,20 @@ export async function documentRoutes(fastify: FastifyInstance) {
         await ensureLatexBucket();
         const { data, error } = await admin.storage.from(latexBucket).download(key);
         if (error || !data) {
-          const response: ApiResponse<null> = { success: false, error: { code: 'NOT_FOUND', message: 'LaTeX entry file not found in storage' } };
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'NOT_FOUND',
+              message: 'LaTeX entry file not found in storage',
+              details: {
+                bucket: latexBucket,
+                key,
+                basePrefix,
+                entryPath,
+                reason: error?.message ? String(error.message) : 'Download returned empty data',
+              },
+            },
+          };
           return reply.status(404).send(response);
         }
         const text = await data.text();
