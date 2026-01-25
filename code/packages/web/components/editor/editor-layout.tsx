@@ -313,7 +313,6 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   // Incremental SG refresh (on edits).
   // Disabled for now: it can cause repeated /sg/build calls and unintended autosaves if IR deltas churn.
   // We'll reintroduce it once it is strictly keyed off user edits + a single debounced pipeline.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   // useSgRefresh({
   //   documentId: actualDocumentId || documentId,
   //   ir: sidebarIr,
@@ -564,8 +563,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       setLatexDraft,
       setDocumentMetadata,
       saveMetadataPatch,
-      saveDocument,
-      content,
+      saveLatexEntryPatch,
       editMode,
       changeTracking.isTracking,
       cursorPosition,
