@@ -199,6 +199,7 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
   const [docsLoading, setDocsLoading] = useState(false);
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
   const [duplicatingDocId, setDuplicatingDocId] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null);
 
   // Load project documents so the outline can show which doc holds which sections (multi-doc projects).
   useEffect(() => {
@@ -230,8 +231,6 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
 
   const deleteDoc = async (docId: string) => {
     if (!projectId) return;
-    const ok = window.confirm('Delete this document? This cannot be undone.');
-    if (!ok) return;
     setDeletingDocId(docId);
     try {
       await api.documents.delete(docId);
@@ -249,6 +248,64 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
     } finally {
       setDeletingDocId(null);
     }
+  };
+
+  const openDeleteConfirm = (doc: { id: string; title?: string | null }) => {
+    const title = String(doc.title ?? '').trim() || 'Untitled Document';
+    setDeleteConfirm({ id: doc.id, title });
+  };
+
+  const renderDeleteConfirmModal = () => {
+    if (!deleteConfirm) return null;
+    return (
+      <div
+        className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 px-4"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Confirm delete document"
+        onMouseDown={(e) => {
+          // Click outside to close.
+          if (e.target === e.currentTarget) setDeleteConfirm(null);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') setDeleteConfirm(null);
+        }}
+      >
+        <div className="w-full max-w-[520px] rounded border border-[#3e3e42] bg-[#1e1e1e] shadow-xl">
+          <div className="px-5 py-4 border-b border-[#3e3e42]">
+            <div className="text-sm font-semibold text-white">Delete document</div>
+            <div className="text-xs text-[#969696] mt-1">
+              This will permanently delete <span className="text-[#cccccc] font-medium">“{deleteConfirm.title}”</span>.
+            </div>
+          </div>
+          <div className="px-5 py-4">
+            <div className="text-sm text-[#cccccc]">This action cannot be undone.</div>
+          </div>
+          <div className="px-5 py-4 border-t border-[#3e3e42] flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="px-3 py-2 rounded bg-[#3e3e42] hover:bg-[#464647] text-white text-sm transition-colors"
+              onClick={() => setDeleteConfirm(null)}
+              disabled={deletingDocId === deleteConfirm.id}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="px-3 py-2 rounded bg-[#b91c1c] hover:bg-[#dc2626] text-white text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-wait"
+              onClick={async () => {
+                const id = deleteConfirm.id;
+                setDeleteConfirm(null);
+                await deleteDoc(id);
+              }}
+              disabled={deletingDocId === deleteConfirm.id}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const duplicateDoc = async (docId: string) => {
@@ -636,7 +693,7 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              void deleteDoc(doc.id);
+                              openDeleteConfirm(doc);
                             }}
                           >
                             <TrashIcon className="w-4 h-4" />
@@ -689,7 +746,7 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              void deleteDoc(doc.id);
+                              openDeleteConfirm(doc);
                             }}
                           >
                             <TrashIcon className="w-4 h-4" />
@@ -835,6 +892,7 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
 
       {/* Render hover preview outside the sidebar scroll container so it isn't clipped */}
       {typeof document !== 'undefined' && typeof window !== 'undefined' ? renderAssetPreview() : null}
+      {typeof document !== 'undefined' && typeof window !== 'undefined' ? renderDeleteConfirmModal() : null}
     </div>
   );
 }
