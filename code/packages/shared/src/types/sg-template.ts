@@ -8,7 +8,11 @@
 
 export type SgGenre = string;
 
-export type SgPrimitiveType = 'definition' | 'proposition' | 'support' | 'intent';
+/**
+ * Template-defined primitive type identifier.
+ * Intentionally generic — each template/genre defines its own allowed primitive types.
+ */
+export type SgPrimitiveType = string;
 
 export type SgRubric = Record<string, string>;
 
