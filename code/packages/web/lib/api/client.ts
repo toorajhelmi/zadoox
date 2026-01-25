@@ -345,6 +345,21 @@ export const api = {
       }
       return response.data;
     },
+
+    latexEntryGet: async (id: string): Promise<{ text: string; latex: any }> => {
+      const response = await fetchApi<{ text: string; latex: any }>(`/documents/${id}/latex/entry`);
+      if (!response.data) throw new ApiError('Failed to load LaTeX entry', 'LATEX_ENTRY_GET_FAILED', 500);
+      return response.data;
+    },
+
+    latexEntryPut: async (id: string, params: { text: string; entryPath?: string }): Promise<{ latex: any }> => {
+      const response = await fetchApi<{ latex: any }>(`/documents/${id}/latex/entry`, {
+        method: 'PUT',
+        body: JSON.stringify(params),
+      });
+      if (!response.data) throw new ApiError('Failed to save LaTeX entry', 'LATEX_ENTRY_PUT_FAILED', 500);
+      return response.data;
+    },
   },
 
   ai: {

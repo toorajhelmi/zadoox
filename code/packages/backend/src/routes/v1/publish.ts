@@ -31,13 +31,13 @@ type PublishPdfBody = {
 };
 
 async function buildLatexPackage(params: {
-  doc: { id: string; title?: string | null; metadata?: { latex?: unknown } | null };
+  doc: { id: string; title?: string | null; latex?: unknown | null };
 }): Promise<
   | { ok: true; latex: string; extraFiles: Array<{ relPath: string; bytes: Buffer }> }
   | { ok: false; status: number; response: ApiResponse<null> }
 > {
-  const latex = String(params.doc.metadata?.latex ?? '').trim();
-  if (latex.length === 0) {
+  const manifest = params.doc.latex as any;
+  if (!manifest || typeof manifest !== 'object') {
     return {
       ok: false,
       status: 400,
@@ -48,14 +48,91 @@ async function buildLatexPackage(params: {
     };
   }
 
+  const bucket = String(manifest.bucket || process.env.SUPABASE_PROJECT_FILES_BUCKET || 'project-files');
+  const basePrefix = String(manifest.basePrefix || '');
+  const entryPath = String(manifest.entryPath || '');
+  if (!bucket || !basePrefix || !entryPath) {
+    return {
+      ok: false,
+      status: 500,
+      response: {
+        success: false,
+        error: { code: 'INVALID_STATE', message: 'Invalid LaTeX manifest (missing bucket/basePrefix/entryPath)' },
+      },
+    };
+  }
+
+  const admin = supabaseAdmin();
+  const entryKey = `${basePrefix.replace(/\/+$/g, '')}/${entryPath.replace(/^\/+/, '')}`;
+  const { data: entryData, error: entryErr } = await admin.storage.from(bucket).download(entryKey);
+  if (entryErr || !entryData) {
+    return {
+      ok: false,
+      status: 400,
+      response: {
+        success: false,
+        error: { code: 'MISSING_LATEX', message: 'LaTeX entry file is missing in storage' },
+      },
+    };
+  }
+  const latex = String(await entryData.text()).trim();
+  if (latex.length === 0) {
+    return {
+      ok: false,
+      status: 400,
+      response: {
+        success: false,
+        error: { code: 'MISSING_LATEX', message: 'LaTeX entry file is empty' },
+      },
+    };
+  }
+
   // Overleaf-like behavior: do not rewrite user LaTeX at compile time.
-  // Only ensure referenced files exist in the compile directory / package.
-  const bucket = process.env.SUPABASE_ASSETS_BUCKET || 'assets';
-  const keys = extractAssetKeysFromIncludegraphics(latex);
+  // Ensure referenced bundle files exist in the compile directory / package.
   const extraFiles: Array<{ relPath: string; bytes: Buffer }> = [];
+  const missingBundleFiles: Array<{ path: string; reason: string }> = [];
+
+  const files: Array<{ path: string }> = Array.isArray(manifest.files) ? manifest.files : [];
+  for (const f of files) {
+    const relPath = String((f as any)?.path || '');
+    if (!relPath) continue;
+    if (relPath === entryPath) continue;
+    const key = `${basePrefix.replace(/\/+$/g, '')}/${relPath.replace(/^\/+/, '')}`;
+    const { data, error } = await admin.storage.from(bucket).download(key);
+    if (error || !data) {
+      missingBundleFiles.push({ path: relPath, reason: error?.message ? String(error.message) : 'Download returned empty data' });
+      continue;
+    }
+    const ab = await data.arrayBuffer();
+    const buf = Buffer.from(ab);
+    if (!buf.length) {
+      missingBundleFiles.push({ path: relPath, reason: 'Download returned empty bytes' });
+      continue;
+    }
+    extraFiles.push({ relPath, bytes: buf });
+  }
+
+  if (missingBundleFiles.length) {
+    return {
+      ok: false,
+      status: 400,
+      response: {
+        success: false,
+        error: {
+          code: 'MISSING_LATEX_FILES',
+          message: 'LaTeX bundle files referenced by the manifest are missing or could not be fetched',
+          details: { bucket, basePrefix, missing: missingBundleFiles },
+        },
+      },
+    };
+  }
+
+  // Legacy path: LaTeX may still reference zadoox asset keys under assets/<key>.
+  // Keep supporting this for now so compilation doesn’t break.
+  const assetsBucket = process.env.SUPABASE_ASSETS_BUCKET || 'assets';
+  const keys = extractAssetKeysFromIncludegraphics(latex);
   const missingAssets: Array<{ key: string; reason: string }> = [];
   if (keys.length) {
-    const admin = supabaseAdmin();
     for (const key of keys) {
       // Asset keys are scoped by docId: <docId>__<random>.<ext>
       if (!key.startsWith(`${params.doc.id}__`)) {
@@ -65,7 +142,7 @@ async function buildLatexPackage(params: {
         });
         continue;
       }
-      const { data, error } = await admin.storage.from(bucket).download(key);
+      const { data, error } = await admin.storage.from(assetsBucket).download(key);
       if (error || !data) {
         missingAssets.push({
           key,
@@ -93,7 +170,7 @@ async function buildLatexPackage(params: {
           code: 'MISSING_ASSETS',
           message:
             'LaTeX references image files under "assets/" that are missing or could not be fetched. Upload the images or re-sync figures from Markdown so the assets exist.',
-          details: { bucket, missing: missingAssets },
+          details: { bucket: assetsBucket, missing: missingAssets },
         },
       },
     };
@@ -733,18 +810,9 @@ export async function publishRoutes(fastify: FastifyInstance) {
 
         let ir;
         if (source === 'latex') {
-          const latex = doc.metadata?.latex ?? '';
-          if (String(latex).trim().length === 0) {
-            const response: ApiResponse<null> = {
-              success: false,
-              error: {
-                code: 'MISSING_LATEX',
-                message: 'No LaTeX is available for this document',
-              },
-            };
-            return reply.status(400).send(response);
-          }
-          ir = parseLatexToIr({ docId: doc.id, latex });
+          const pkg = await buildLatexPackage({ doc });
+          if (!pkg.ok) return reply.status(pkg.status).send(pkg.response);
+          ir = parseLatexToIr({ docId: doc.id, latex: pkg.latex });
         } else {
           ir = parseXmdToIr({ docId: doc.id, xmd: doc.content ?? '' });
         }

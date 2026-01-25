@@ -28,6 +28,7 @@ vi.mock('@/hooks/use-document-state', () => ({
       title: 'Doc',
       content: '',
       metadata: {},
+      latex: null,
     };
     return {
       content: init.content,
@@ -39,6 +40,7 @@ vi.mock('@/hooks/use-document-state', () => ({
       documentId: init.actualDocumentId,
       saveDocument: vi.fn(),
       saveMetadataPatch: vi.fn(),
+      saveLatexEntryPatch: vi.fn(),
       semanticGraph: null,
       saveSemanticGraphPatch: vi.fn(),
       refreshSemanticGraph: vi.fn(),
@@ -46,6 +48,8 @@ vi.mock('@/hooks/use-document-state', () => ({
       handleModeToggle: vi.fn(),
       documentMetadata: init.metadata,
       setDocumentMetadata: (globalThis as any).__setDocumentMetadataSpy || vi.fn(),
+      documentLatex: init.latex ?? null,
+      setDocumentLatex: vi.fn(),
     };
   },
 }));
@@ -99,7 +103,7 @@ vi.mock('@/lib/api/client', () => ({
   api: {
     versions: { getMetadata: vi.fn(), list: vi.fn(), reconstruct: vi.fn() },
     projects: { get: vi.fn(), update: vi.fn() },
-    documents: { update: vi.fn(), get: vi.fn() },
+    documents: { update: vi.fn(), get: vi.fn(), latexEntryGet: vi.fn(), latexEntryPut: vi.fn() },
     ai: { inline: { edit: vi.fn() } },
   },
 }));
@@ -230,6 +234,10 @@ describe('EditorLayout refactor guard', () => {
       settings: { documentStyle: 'other', citationFormat: 'numbered' },
     });
     (api.documents.update as any).mockResolvedValue({});
+    (api.documents.latexEntryGet as any).mockResolvedValue({ text: 'LATEX_DOC', latex: { entryPath: 'main.tex' } });
+    (api.documents.latexEntryPut as any).mockResolvedValue({
+      latex: { entryPath: 'main.tex', basePrefix: 'projects/p1/documents/doc-1/latex', bucket: 'project-files' },
+    });
   });
 
   it('Cmd/Ctrl+Alt+Shift+L switches to LaTeX and persists metadata', async () => {
@@ -245,7 +253,9 @@ describe('EditorLayout refactor guard', () => {
     await waitFor(() => expect(api.documents.update).toHaveBeenCalled());
     const args = (api.documents.update as any).mock.calls[0];
     expect(args[1]?.metadata?.lastEditedFormat).toBe('latex');
-    expect(args[1]?.metadata?.latex).toBe('LATEX_DOC');
+    // Phase 17: LaTeX text is storage-backed; update persists the LaTeX manifest, not raw TeX.
+    expect(api.documents.latexEntryPut).toHaveBeenCalled();
+    expect(args[1]?.latex).toBeTruthy();
   });
 
   it('routes Ctrl+Z to the correct undo controller in Markdown vs LaTeX', async () => {
@@ -293,9 +303,12 @@ describe('EditorLayout refactor guard', () => {
       actualDocumentId: 'doc-1',
       title: 'Doc',
       content: 'XMD',
-      metadata: { lastEditedFormat: 'latex', latex: 'A\nB' },
+      metadata: { lastEditedFormat: 'latex' },
+      latex: { entryPath: 'main.tex', basePrefix: 'projects/p1/documents/doc-1/latex', bucket: 'project-files' },
     };
 
+    // Override default mock for this test (avoid ordering issues with other calls).
+    (api.documents.latexEntryGet as any).mockResolvedValue({ text: 'A\nB', latex: { entryPath: 'main.tex' } });
     render(<EditorLayout projectId="p1" documentId="doc-1" />);
     await waitFor(() => expect((screen.getByTestId('latex-editor') as HTMLTextAreaElement).value).toBe('A\nB'));
 

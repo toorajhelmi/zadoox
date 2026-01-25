@@ -1344,14 +1344,14 @@ We will implement Phase 15 in small vertical slices (each phase ends with a work
   - [ ] `documents.latex` becomes a JSON manifest/ref (NOT raw LaTeX)
   - [ ] Store LaTeX bundles in Supabase Storage (multi-file), and keep only references + manifest in DB
   - [ ] Add API support to load/save the entry `.tex` file via Storage
-  - [ ] Stop using `metadata.latex` as a persistence channel (keep optional back-compat reads temporarily)
+  - [ ] Stop using `metadata.latex` as a persistence channel (no legacy/back-compat required)
 - [ ] **arXiv import = bundle import**:
   - [ ] Download `e-print` (`.tar.gz`)
   - [ ] Extract and upload ALL files to Storage
   - [ ] Create document with `documents.latex` manifest pointing to the entry file
 - [ ] **Project-scoped storage organization**:
   - [ ] Store assets under project folders (not flat keys), e.g. `projects/<projectId>/assets/...`
-  - [ ] Store imports under project folders, e.g. `projects/<projectId>/imports/arxiv/<docId>/<importId>/...`
+  - [ ] Store document files directly under the project folder (no separate "imports" folder), e.g. `projects/<projectId>/documents/<docId>/latex/...`
 
 **Deliverables**:
 - ✅ LaTeX is no longer stored in `documents.metadata`

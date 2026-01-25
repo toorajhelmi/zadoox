@@ -38,17 +38,14 @@ export interface DocumentMetadata {
   researchSessions?: Record<string, ResearchSession>; // paragraphId -> session mapping
   insertedSources?: ResearchSource[]; // All sources that have been inserted into the document
   /**
-   * Phase 12 (legacy): cached alternate representation + last edited format.
-   * NOTE: Phase 17 moves LaTeX out of metadata into `Document.latex` (manifest/ref).
+   * Last edited format for the editor surface.
    */
-  latex?: string;
   lastEditedFormat?: 'markdown' | 'latex';
   /**
    * IR hash values (computed from the canonical IR derived from XMD).
    * We store per-representation hashes so switching can decide reuse vs regenerate.
    */
   xmdIrHash?: string;
-  latexIrHash?: string;
   // Legacy/experimental field (kept for backward compatibility).
   irHashAtLastSync?: string;
 }

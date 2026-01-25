@@ -6,7 +6,7 @@
 
 import { FastifyInstance } from 'fastify';
 import { authenticateUser, AuthenticatedRequest } from '../../middleware/auth.js';
-import type { ApiResponse, CreateDocumentInput, Document } from '@zadoox/shared';
+import type { ApiResponse, CreateDocumentInput, Document, UpdateDocumentInput } from '@zadoox/shared';
 import { DocumentService } from '../../services/document-service.js';
 import { schemas, security } from '../../config/schemas.js';
 import os from 'node:os';
@@ -14,6 +14,8 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { supabaseAdmin } from '../../db/client.js';
+import { createHash } from 'node:crypto';
 
 const execFileAsync = promisify(execFile);
 
@@ -125,7 +127,7 @@ function inlineInputs(params: {
   });
 }
 
-async function extractArxivMainTexFromSourceTarball(params: { arxivId: string; tgz: Buffer }): Promise<string> {
+async function selectArxivEntryTexPathFromSourceTarball(params: { arxivId: string; tgz: Buffer }): Promise<string> {
   const { arxivId, tgz } = params;
   const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'zadoox-arxiv-'));
   const tarPath = path.join(tmpRoot, `${arxivId.replace(/[^\w.-]/g, '_')}.tar.gz`);
@@ -244,7 +246,8 @@ async function extractArxivMainTexFromSourceTarball(params: { arxivId: string; t
         'Failed to identify a meaningful main TeX file from the arXiv source (root TeX body is empty).'
       );
     }
-    return picked.expanded;
+    // Return the root entry path (do not inline; bundle is stored multi-file in Storage).
+    return picked.root.rel;
   }
 
   if (importDebugEnabled()) {
@@ -265,6 +268,29 @@ async function extractArxivMainTexFromSourceTarball(params: { arxivId: string; t
     console.log(summary);
   }
   throw new Error('arXiv source did not contain a compilable TeX root (missing \\documentclass).');
+}
+
+type LatexManifest = {
+  bucket: string;
+  basePrefix: string;
+  entryPath: string;
+  files: Array<{ path: string; sha256: string; size: number }>;
+  source?: { kind: 'arxiv'; id: string; url: string };
+};
+
+function sha256(buf: Buffer): string {
+  return createHash('sha256').update(buf).digest('hex');
+}
+
+function contentTypeForPath(p: string): string {
+  const ext = p.toLowerCase().split('.').pop() || '';
+  if (ext === 'tex') return 'application/x-tex';
+  if (ext === 'bib') return 'text/x-bibtex';
+  if (ext === 'sty' || ext === 'cls') return 'text/plain';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'pdf') return 'application/pdf';
+  return 'application/octet-stream';
 }
 
 export async function importRoutes(fastify: FastifyInstance) {
@@ -337,25 +363,83 @@ export async function importRoutes(fastify: FastifyInstance) {
         const buf = Buffer.from(await res.arrayBuffer());
         if (buf.length === 0) throw new Error('Empty arXiv source response');
 
-        const latex = await extractArxivMainTexFromSourceTarball({ arxivId, tgz: buf });
+        // Identify the entry .tex path within the tarball.
+        const entryPath = await selectArxivEntryTexPathFromSourceTarball({ arxivId, tgz: buf });
 
-        const input: CreateDocumentInput = {
-          projectId,
-          title: titleOverride || `arXiv ${arxivId}`,
-          content: '',
-          metadata: {
-            type: 'standalone',
-            lastEditedFormat: 'latex',
-            latex,
-            // Keep a breadcrumb for later enhancements (assets, citations, etc.)
-            importSource: { kind: 'arxiv', id: arxivId, url },
-          } as any,
+        // Create the document first to get a stable docId, then upload the entire bundle under the project folder.
+        const documentService = new DocumentService(request.supabase);
+        const created = await documentService.createDocument(
+          {
+            projectId,
+            title: titleOverride || `arXiv ${arxivId}`,
+            content: '',
+            metadata: {
+              type: 'standalone',
+              lastEditedFormat: 'latex',
+            } as any,
+          } as CreateDocumentInput,
+          request.userId
+        );
+
+        // Extract the tarball to a temp dir so we can upload all files.
+        const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'zadoox-arxiv-upload-'));
+        const tarPath = path.join(tmpRoot, `${arxivId.replace(/[^\w.-]/g, '_')}.tar.gz`);
+        const outDir = path.join(tmpRoot, 'src');
+        await fs.mkdir(outDir, { recursive: true });
+        await fs.writeFile(tarPath, buf);
+        await execFileAsync('tar', ['-xzf', tarPath, '-C', outDir]);
+
+        const files = await listFilesRecursive(outDir);
+        const bucket = process.env.SUPABASE_PROJECT_FILES_BUCKET || 'project-files';
+        const basePrefix = `projects/${projectId}/documents/${created.id}/latex`;
+
+        const admin = supabaseAdmin();
+        // Ensure bucket exists.
+        const { data: existingBucket, error: getErr } = await admin.storage.getBucket(bucket);
+        if (!existingBucket || getErr) {
+          const { error: createErr } = await admin.storage.createBucket(bucket, { public: false });
+          if (createErr) {
+            const msg = (createErr as { message?: string }).message || '';
+            if (!/already exists/i.test(msg)) throw createErr;
+          }
+        }
+
+        const manifestFiles: LatexManifest['files'] = [];
+        for (const abs of files) {
+          const rel = normalizeTexPath(path.relative(outDir, abs));
+          const bytes = await fs.readFile(abs);
+          const key = `${basePrefix}/${rel}`;
+          const ct = contentTypeForPath(rel);
+          const { error: upErr } = await admin.storage.from(bucket).upload(key, bytes, {
+            contentType: ct,
+            upsert: true,
+          });
+          if (upErr) throw new Error(`Failed to upload arXiv file "${rel}": ${upErr.message}`);
+          manifestFiles.push({ path: rel, sha256: sha256(bytes), size: bytes.length });
+        }
+
+        // Validate that the chosen entry exists in the bundle we uploaded.
+        if (!manifestFiles.some((f) => f.path === entryPath)) {
+          throw new Error(`Selected entry TeX "${entryPath}" was not found in the extracted arXiv bundle`);
+        }
+
+        const manifest: LatexManifest = {
+          bucket,
+          basePrefix,
+          entryPath,
+          files: manifestFiles,
+          source: { kind: 'arxiv', id: arxivId, url },
         };
 
-        const documentService = new DocumentService(request.supabase);
-        const created = await documentService.createDocument(input, request.userId);
+        const updated = await documentService.updateDocument(
+          created.id,
+          { latex: manifest } as UpdateDocumentInput,
+          request.userId,
+          'ai-action',
+          'Imported arXiv LaTeX bundle'
+        );
 
-        const response: ApiResponse<Document> = { success: true, data: created };
+        const response: ApiResponse<Document> = { success: true, data: updated };
         return reply.send(response);
       } catch (error: unknown) {
         fastify.log.error(error);

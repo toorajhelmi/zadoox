@@ -9,8 +9,6 @@ export type EditMode = 'markdown' | 'latex';
 
 export type EditorDocMetadata = {
   lastEditedFormat?: EditMode;
-  latex?: string;
-  latexIrHash?: string;
   xmdIrHash?: string;
 } & Record<string, any>;
 
@@ -20,10 +18,12 @@ export function useEditorEditMode(params: {
   content: string;
   getCurrentIr: () => DocumentNode | null;
   documentMetadata: EditorDocMetadata | undefined;
+  documentLatex: any | null | undefined;
+  setDocumentLatex: React.Dispatch<React.SetStateAction<any | null>>;
   setDocumentMetadata: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   updateContent: (next: string) => void;
 }) {
-  const { actualDocumentId, documentId, content, getCurrentIr, documentMetadata, setDocumentMetadata, updateContent } = params;
+  const { actualDocumentId, documentId, content, getCurrentIr, documentMetadata, documentLatex, setDocumentLatex, setDocumentMetadata, updateContent } = params;
 
   const [editMode, setEditMode] = useState<EditMode>('markdown');
   const [latexDraft, setLatexDraft] = useState<string>('');
@@ -34,7 +34,7 @@ export function useEditorEditMode(params: {
   const lastDocKeyRef = useRef<string | null>(null);
   const didInitModeRef = useRef<boolean>(false);
 
-  // Initialize edit mode / cached latex from metadata.
+  // Initialize edit mode from metadata.
   useEffect(() => {
     const docKey = actualDocumentId || documentId;
     if (lastDocKeyRef.current !== docKey) {
@@ -44,26 +44,34 @@ export function useEditorEditMode(params: {
 
     const meta: EditorDocMetadata = documentMetadata ?? {};
     const last = meta.lastEditedFormat;
-    const latex = meta.latex;
     if (!didInitModeRef.current && (last === 'latex' || last === 'markdown')) {
       setEditMode(last);
       didInitModeRef.current = true;
     }
-    if (typeof latex === 'string') {
-      // Avoid overwriting while the user is actively typing in LaTeX (prevents cursor/scroll reset).
-      // The LaTeX draft is treated as the persisted editing surface when lastEditedFormat === 'latex'.
-      const shouldAdopt = latexDraft.length === 0 || editMode !== 'latex';
-      if (shouldAdopt) setLatexDraft(latex);
-    } else if (last === 'latex' && !latexDraft) {
-      // If last mode is LaTeX but we have no cached latex yet, derive it from IR/XMD.
+  }, [actualDocumentId, documentId, documentMetadata]);
+
+  // If we have a LaTeX manifest, load the entry file via backend.
+  useEffect(() => {
+    const docId = actualDocumentId || null;
+    if (!docId) return;
+    if (!documentLatex) return;
+    const shouldLoad = latexDraft.length === 0 || editMode !== 'latex';
+    if (!shouldLoad) return;
+
+    let cancelled = false;
+    (async () => {
       try {
-        const currentIr = getCurrentIr();
-        if (currentIr) setLatexDraft(irToLatexDocument(currentIr));
-      } catch {
-        // ignore
+        const res = await api.documents.latexEntryGet(docId);
+        if (cancelled) return;
+        if (typeof res.text === 'string') setLatexDraft(res.text);
+      } catch (e) {
+        console.error('Failed to load LaTeX entry:', e);
       }
-    }
-  }, [actualDocumentId, documentId, documentMetadata, editMode, getCurrentIr, latexDraft]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [actualDocumentId, documentLatex, editMode, latexDraft]);
 
   const handleEditModeChange = useCallback(
     async (next: EditMode) => {
@@ -86,11 +94,16 @@ export function useEditorEditMode(params: {
 
         const switchImpl: Record<EditMode, () => Promise<void>> = {
           latex: async () => {
-            const cachedLatex = typeof meta.latex === 'string' ? meta.latex : '';
-            const cachedLatexIrHash = typeof meta.latexIrHash === 'string' ? meta.latexIrHash : null;
-            const canReuse = Boolean(currentIrHash && cachedLatex && cachedLatexIrHash === currentIrHash);
-
-            const latexBase = canReuse ? cachedLatex : irToLatexDocument(currentIr);
+            // Storage-backed LaTeX: if we have a manifest, load entry; else derive from IR and create it.
+            let latexBase = latexDraft;
+            if (!latexBase) {
+              if (documentLatex) {
+                const res = await api.documents.latexEntryGet(actualDocumentId);
+                latexBase = res.text || '';
+              } else {
+                latexBase = irToLatexDocument(currentIr);
+              }
+            }
             const ensured = ensureLatexPreambleForLatexContent(latexBase);
             const latex = ensured.latex;
             setLatexDraft(latex);
@@ -99,44 +112,24 @@ export function useEditorEditMode(params: {
 
             const nextMeta: EditorDocMetadata = {
               ...meta,
-              latex,
-              ...(currentIrHash ? { latexIrHash: currentIrHash, xmdIrHash: currentIrHash } : null),
+              ...(currentIrHash ? { xmdIrHash: currentIrHash } : null),
               lastEditedFormat: 'latex' as const,
             };
             setDocumentMetadata(nextMeta);
+            // Persist LaTeX entry via backend (which also creates/updates the manifest in documents.latex).
+            const put = await api.documents.latexEntryPut(actualDocumentId, { text: latex });
+            setDocumentLatex(put.latex);
             await api.documents.update(actualDocumentId, {
               content,
               metadata: nextMeta,
+              latex: put.latex,
               changeType: 'manual-save',
               changeDescription: 'Switched editor to LaTeX',
             });
           },
 
           markdown: async () => {
-            // Fast-path reuse: if we have matching hashes and the LaTeX draft wasn't changed,
-            // do not regenerate XMD (avoids lossy roundtrip for grids/tables).
-            const cachedLatex = typeof meta.latex === 'string' ? meta.latex : '';
-            const cachedLatexIrHash = typeof meta.latexIrHash === 'string' ? meta.latexIrHash : null;
             const cachedXmdIrHash = typeof meta.xmdIrHash === 'string' ? meta.xmdIrHash : null;
-            const latexUnchanged = cachedLatex && cachedLatex === latexDraft;
-            const hashesMatch = cachedLatexIrHash && cachedXmdIrHash && cachedLatexIrHash === cachedXmdIrHash;
-            if (latexUnchanged && hashesMatch) {
-              setEditMode('markdown');
-              didInitModeRef.current = true;
-              const nextMeta: EditorDocMetadata = {
-                ...meta,
-                lastEditedFormat: 'markdown' as const,
-              };
-              setDocumentMetadata(nextMeta);
-              await api.documents.update(actualDocumentId, {
-                content,
-                metadata: nextMeta,
-                changeType: 'manual-save',
-                changeDescription: 'Switched editor to Markdown',
-              });
-              return;
-            }
-
             // Canonical IR is always kept up to date while editing. Switching modes should never parse;
             // it only serializes the current canonical IR.
             const nextIrHash = currentIrHash || null;
@@ -148,8 +141,7 @@ export function useEditorEditMode(params: {
 
             const nextMeta: EditorDocMetadata = {
               ...meta,
-              latex: latexDraft,
-              ...(nextIrHash ? { xmdIrHash: nextIrHash, latexIrHash: nextIrHash } : null),
+              ...(nextIrHash ? { xmdIrHash: nextIrHash } : null),
               lastEditedFormat: 'markdown' as const,
             };
             setDocumentMetadata(nextMeta);
@@ -173,7 +165,7 @@ export function useEditorEditMode(params: {
         didInitModeRef.current = true;
       }
     },
-    [actualDocumentId, content, documentMetadata, editMode, getCurrentIr, latexDraft, setDocumentMetadata, updateContent]
+    [actualDocumentId, content, documentLatex, documentMetadata, editMode, getCurrentIr, latexDraft, setDocumentLatex, setDocumentMetadata, updateContent]
   );
 
   return { editMode, setEditMode, latexDraft, setLatexDraft, handleEditModeChange };

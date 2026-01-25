@@ -81,7 +81,7 @@ export const schemas = {
       },
       metadata: {
         type: 'object',
-        // IMPORTANT: document metadata is extensible (paragraphModes, researchSessions, lastEditedFormat, latex, etc).
+        // IMPORTANT: document metadata is extensible (paragraphModes, researchSessions, lastEditedFormat, etc).
         // If we don't allow additional properties here, Fastify's response serializer will drop them.
         additionalProperties: true,
         properties: {
@@ -89,8 +89,6 @@ export const schemas = {
           type: { type: 'string', enum: ['chapter', 'section', 'standalone'] },
           order: { type: 'number', nullable: true },
           lastEditedFormat: { type: 'string', enum: ['latex', 'markdown'], nullable: true },
-          // Legacy: Phase 12 stored LaTeX text in metadata. Phase 17 moves LaTeX into `Document.latex`.
-          latex: { type: 'string', nullable: true },
           irHashAtLastSync: { type: 'string', nullable: true },
         },
         required: ['type'],
@@ -135,7 +133,6 @@ export const schemas = {
           type: { type: 'string', enum: ['chapter', 'section', 'standalone'] },
           order: { type: 'number' },
           lastEditedFormat: { type: 'string', enum: ['latex', 'markdown'] },
-          latex: { type: 'string' },
           irHashAtLastSync: { type: 'string' },
         },
       },
@@ -157,7 +154,6 @@ export const schemas = {
           type: { type: 'string', enum: ['chapter', 'section', 'standalone'] },
           order: { type: 'number' },
           lastEditedFormat: { type: 'string', enum: ['latex', 'markdown'] },
-          latex: { type: 'string' },
           irHashAtLastSync: { type: 'string' },
         },
       },

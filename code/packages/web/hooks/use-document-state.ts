@@ -22,6 +22,17 @@ function stableStringify(value: unknown): string {
   return JSON.stringify(normalize(value));
 }
 
+function stableHashString(value: string): string {
+  // Cheap stable hash for change detection (avoid pulling in crypto deps on web).
+  // Not cryptographically secure; used only for avoiding redundant saves.
+  let h = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    h ^= value.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return String(h >>> 0);
+}
+
 function normalizeSemanticGraphForCompare(sg: SemanticGraph | null): any {
   if (!sg) return null;
   const s: any = sg as any;
@@ -68,6 +79,7 @@ export function useDocumentState(documentId: string, projectId: string) {
   const [paragraphModes, setParagraphModes] = useState<Record<string, ParagraphMode>>({});
   const [documentMetadata, setDocumentMetadata] = useState<Record<string, any>>({});
   const [semanticGraph, setSemanticGraph] = useState<SemanticGraph | null>(null);
+  const [documentLatex, setDocumentLatex] = useState<any | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Keep latest state in refs so the single debounced save always persists the newest snapshot.
@@ -75,6 +87,9 @@ export function useDocumentState(documentId: string, projectId: string) {
   const metaRef = useRef<Record<string, any>>({});
   const sgRef = useRef<SemanticGraph | null>(null);
   const modesRef = useRef<Record<string, ParagraphMode>>({});
+  const latexRef = useRef<any | null>(null);
+  const latexEntryDraftRef = useRef<string>(''); // entry .tex text (storage-backed)
+  const lastPersistedLatexEntrySigRef = useRef<string>(''); // hash of last saved entry text
   useEffect(() => {
     contentRef.current = content;
   }, [content]);
@@ -84,6 +99,9 @@ export function useDocumentState(documentId: string, projectId: string) {
   useEffect(() => {
     sgRef.current = semanticGraph ?? null;
   }, [semanticGraph]);
+  useEffect(() => {
+    latexRef.current = documentLatex ?? null;
+  }, [documentLatex]);
   useEffect(() => {
     modesRef.current = paragraphModes || {};
   }, [paragraphModes]);
@@ -107,11 +125,13 @@ export function useDocumentState(documentId: string, projectId: string) {
           setParagraphModes(document.metadata?.paragraphModes || {});
           setDocumentMetadata(document.metadata || {});
           setSemanticGraph((document as any).semanticGraph ?? null);
+          setDocumentLatex((document as any).latex ?? null);
           // Initialize “persisted signature” so we don’t attempt to save without a real user change.
           lastPersistedSigRef.current = stableStringify({
             content: loadedContent,
             metadata: document.metadata || {},
             semanticGraph: normalizeSemanticGraphForCompare((document as any).semanticGraph ?? null),
+            latex: (document as any).latex ?? null,
           });
           setIsLoading(false);
       } catch (error) {
@@ -131,22 +151,42 @@ export function useDocumentState(documentId: string, projectId: string) {
       const nextMeta = metaRef.current || {};
       const nextModes = modesRef.current || {};
       const nextSg = sgRef.current ?? null;
+      const nextLatex = latexRef.current ?? null;
+      const latexEntrySig =
+        (nextMeta as any)?.lastEditedFormat === 'latex' ? stableHashString(latexEntryDraftRef.current || '') : '';
 
       const sig = stableStringify({
         content: nextContent,
         metadata: { ...nextMeta, paragraphModes: nextModes },
         semanticGraph: normalizeSemanticGraphForCompare(nextSg),
+        latex: nextLatex,
+        latexEntrySig,
       });
 
       if (changeType === 'auto-save' && sig === lastPersistedSigRef.current) return;
 
       setIsSaving(true);
       try {
+        // If LaTeX entry text changed, persist it first (uploads to storage and returns an updated manifest).
+        let latexManifestToSave = nextLatex;
+        if (
+          (nextMeta as any)?.lastEditedFormat === 'latex' &&
+          latexEntrySig &&
+          latexEntrySig !== lastPersistedLatexEntrySigRef.current
+        ) {
+          const put = await api.documents.latexEntryPut(actualDocumentId, { text: latexEntryDraftRef.current || '' });
+          latexManifestToSave = put.latex ?? latexManifestToSave;
+          setDocumentLatex(latexManifestToSave);
+          latexRef.current = latexManifestToSave;
+          lastPersistedLatexEntrySigRef.current = latexEntrySig;
+        }
+
         const derivedTitle = deriveTitleFromXmd(nextContent);
         const document = await api.documents.update(actualDocumentId, {
           ...(derivedTitle ? { title: derivedTitle } : null),
           content: nextContent,
           metadata: { ...nextMeta, paragraphModes: nextModes },
+          latex: latexManifestToSave,
           semanticGraph: nextSg,
           changeType,
         });
@@ -155,10 +195,13 @@ export function useDocumentState(documentId: string, projectId: string) {
         setParagraphModes(document.metadata?.paragraphModes || {});
         setDocumentMetadata(document.metadata || {});
         setSemanticGraph((document as any).semanticGraph ?? nextSg);
+        setDocumentLatex((document as any).latex ?? latexManifestToSave);
         lastPersistedSigRef.current = stableStringify({
           content: document.content || nextContent,
           metadata: document.metadata || { ...nextMeta, paragraphModes: nextModes },
           semanticGraph: normalizeSemanticGraphForCompare((document as any).semanticGraph ?? nextSg),
+          latex: (document as any).latex ?? latexManifestToSave,
+          latexEntrySig,
         });
       } catch (error) {
         console.error('Failed to save document:', error);
@@ -237,6 +280,15 @@ export function useDocumentState(documentId: string, projectId: string) {
     [actualDocumentId, scheduleSave]
   );
 
+  const saveLatexEntryPatch = useCallback(
+    (text: string, changeType: 'auto-save' | 'ai-action' = 'auto-save') => {
+      if (!actualDocumentId) return;
+      latexEntryDraftRef.current = String(text ?? '');
+      scheduleSave(changeType);
+    },
+    [actualDocumentId, scheduleSave]
+  );
+
   // Handle mode toggle
   const handleModeToggle = useCallback(
     async (paragraphId: string, newMode: ParagraphMode) => {
@@ -301,6 +353,9 @@ export function useDocumentState(documentId: string, projectId: string) {
     paragraphModes,
     documentMetadata,
     setDocumentMetadata,
+    documentLatex,
+    setDocumentLatex,
+    saveLatexEntryPatch,
     saveMetadataPatch,
     semanticGraph,
     saveSemanticGraphPatch,

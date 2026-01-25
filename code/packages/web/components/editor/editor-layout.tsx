@@ -73,6 +73,9 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     handleModeToggle: handleModeToggleFromHook,
     documentMetadata,
     setDocumentMetadata,
+    documentLatex,
+    setDocumentLatex,
+    saveLatexEntryPatch,
     saveMetadataPatch,
     semanticGraph,
     saveSemanticGraphPatch,
@@ -178,6 +181,8 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     content,
     getCurrentIr: getCurrentIrForModeSwitch,
     documentMetadata,
+    documentLatex,
+    setDocumentLatex,
     setDocumentMetadata,
     updateContent,
   });
@@ -500,16 +505,18 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         },
         latex: () => {
           // LaTeX edit surface:
-          // - Persist the user-edited LaTeX (metadata.latex) via auto-save
+          // - Persist the user-edited LaTeX entry file to Storage via the unified save pipeline
           // - Update canonical IR via the debounced LaTeX->IR effect (for preview/outline)
           // - Do NOT derive or mutate XMD while typing LaTeX (only regenerate on explicit mode switch)
           const ensured = ensureLatexPreambleForLatexContent(value);
           const nextLatex = ensured.latex;
           latexEditNonceRef.current++;
           setLatexDraft(nextLatex);
-          // Update local metadata immediately for UX, and persist via the unified debounced save pipeline.
-          setDocumentMetadata((prev) => ({ ...(prev as any), lastEditedFormat: 'latex', latex: nextLatex }));
-          saveMetadataPatch({ lastEditedFormat: 'latex', latex: nextLatex }, 'auto-save');
+          // Update mode immediately for UX, and persist via the unified debounced save pipeline.
+          // LaTeX text itself is stored in Storage (entry file), not in metadata.
+          setDocumentMetadata((prev) => ({ ...(prev as any), lastEditedFormat: 'latex' }));
+          saveMetadataPatch({ lastEditedFormat: 'latex' }, 'auto-save');
+          saveLatexEntryPatch(nextLatex, 'auto-save');
         },
       };
       handlers[editMode === 'latex' ? 'latex' : 'markdown']();
