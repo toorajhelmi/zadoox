@@ -73,6 +73,12 @@ export const schemas = {
       projectId: { type: 'string', format: 'uuid' },
       title: { type: 'string' },
       content: { type: 'string' },
+      // Phase 17: LaTeX manifest/ref stored separately (not in metadata).
+      latex: {
+        type: 'object',
+        nullable: true,
+        additionalProperties: true,
+      },
       metadata: {
         type: 'object',
         // IMPORTANT: document metadata is extensible (paragraphModes, researchSessions, lastEditedFormat, latex, etc).
@@ -83,6 +89,7 @@ export const schemas = {
           type: { type: 'string', enum: ['chapter', 'section', 'standalone'] },
           order: { type: 'number', nullable: true },
           lastEditedFormat: { type: 'string', enum: ['latex', 'markdown'], nullable: true },
+          // Legacy: Phase 12 stored LaTeX text in metadata. Phase 17 moves LaTeX into `Document.latex`.
           latex: { type: 'string', nullable: true },
           irHashAtLastSync: { type: 'string', nullable: true },
         },
@@ -118,6 +125,7 @@ export const schemas = {
       projectId: { type: 'string', format: 'uuid' },
       title: { type: 'string', minLength: 1, maxLength: 255 },
       content: { type: 'string' },
+      latex: { type: 'object', nullable: true, additionalProperties: true },
       semanticGraph: { type: 'object', nullable: true, additionalProperties: true },
       metadata: {
         type: 'object',
@@ -140,6 +148,7 @@ export const schemas = {
     properties: {
       title: { type: 'string', minLength: 1, maxLength: 255 },
       content: { type: 'string' },
+      latex: { type: 'object', nullable: true, additionalProperties: true },
       metadata: {
         type: 'object',
         additionalProperties: true,

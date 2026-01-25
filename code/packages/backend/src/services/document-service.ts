@@ -66,6 +66,7 @@ export class DocumentService {
         order: typeof inputMetadata.order === 'number' ? (inputMetadata.order as number) : 0,
       },
       semantic_graph: input.semanticGraph ?? null,
+      latex: (input as any).latex ?? null,
       version: 1,
       author_id: authorId,
     };
@@ -171,6 +172,10 @@ export class DocumentService {
       updateData.semantic_graph = input.semanticGraph;
     }
 
+    if ((input as any).latex !== undefined) {
+      updateData.latex = (input as any).latex;
+    }
+
     const { data, error } = await this.supabase
       .from('documents')
       .update(updateData)
@@ -230,6 +235,7 @@ export class DocumentService {
       content: dbDocument.content as string,
       metadata: dbDocument.metadata as Document['metadata'],
       semanticGraph: (dbDocument.semantic_graph as Document['semanticGraph']) ?? null,
+      latex: (dbDocument.latex as any) ?? null,
       version: dbDocument.version as number,
       createdAt: new Date(dbDocument.created_at as string),
       updatedAt: new Date(dbDocument.updated_at as string),

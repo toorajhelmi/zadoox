@@ -12,6 +12,11 @@ export interface Document {
   content: string; // Extended Markdown format
   metadata: DocumentMetadata;
   /**
+   * Phase 17: LaTeX is stored as a JSON manifest/reference (not raw text).
+   * The manifest points to a multi-file LaTeX bundle in Storage + identifies the entrypoint.
+   */
+  latex?: unknown | null;
+  /**
    * Phase 15: Semantic Graph (SG) stored separately from metadata to avoid mixing large payloads
    * with other metadata fields.
    */
@@ -33,8 +38,8 @@ export interface DocumentMetadata {
   researchSessions?: Record<string, ResearchSession>; // paragraphId -> session mapping
   insertedSources?: ResearchSource[]; // All sources that have been inserted into the document
   /**
-   * Phase 12: cached alternate representation + last edited format.
-   * Stored in metadata so it round-trips through the existing document update API.
+   * Phase 12 (legacy): cached alternate representation + last edited format.
+   * NOTE: Phase 17 moves LaTeX out of metadata into `Document.latex` (manifest/ref).
    */
   latex?: string;
   lastEditedFormat?: 'markdown' | 'latex';
@@ -116,6 +121,7 @@ export interface CreateDocumentInput {
   title: string;
   content?: string;
   metadata?: Partial<DocumentMetadata>;
+  latex?: unknown | null;
   semanticGraph?: import('./semantic-graph').SemanticGraph | null;
 }
 
@@ -123,6 +129,7 @@ export interface UpdateDocumentInput {
   title?: string;
   content?: string;
   metadata?: Partial<DocumentMetadata>;
+  latex?: unknown | null;
   semanticGraph?: import('./semantic-graph').SemanticGraph | null;
   changeType?: 'manual-save' | 'auto-save' | 'ai-action' | 'milestone' | 'rollback';
   changeDescription?: string;

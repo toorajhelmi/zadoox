@@ -1318,23 +1318,45 @@ We will implement Phase 15 in small vertical slices (each phase ends with a work
   - [ ] Add resume/caching (don’t restart from 0 after refresh) + fewer DB writes
   - [ ] Improve cross-chunk edges (global pass) so suggestions don’t miss long-range dependencies
 
-- [ ] **Move LaTeX to its own DB column** (separate from `documents.metadata`)
-  - [ ] Add `documents.latex` (and related fields like `latex_ir_hash`, `last_edited_format` if needed)
-  - [ ] Backfill from metadata (`metadata.latex`, `metadata.latexIrHash`, `metadata.lastEditedFormat`)
-  - [ ] Update backend mapping + OpenAPI schemas + frontend persistence to stop mixing these fields into metadata
 - [ ] **Rename `documents.content` → `documents.xmd`**
   - [ ] Migration: add new column, backfill, keep back-compat temporarily (read from both, write to new)
   - [ ] Update shared types (`Document.xmd`) and API inputs
   - [ ] Update all backend queries/mapping + web editor state/hooks
   - [ ] Remove old column after back-compat window (or keep as generated/alias if preferred)
+- [ ] **XMD storage plan (multi-file XMD)**
+  - [ ] Define `documents.xmd` long-term shape to support multi-file XMD (manifest/ref like LaTeX)
+  - [ ] Define storage layout for XMD bundles + assets (project-scoped folders)
 - [ ] **Solidify undo/redo** (currently unstable in CI; LaTeX undo/redo test is skipped)
   - [ ] Audit undo/redo state sources across edit modes (MD vs LaTeX)
   - [ ] Make history updates deterministic in tests (no dependency on async editor state)
   - [ ] Re‑enable `editor-layout-latex-undo-redo` test once behavior is stable
 
 **Deliverables**:
-- ✅ SG, LaTeX, and XMD are stored in dedicated columns (no large payloads mixed into metadata)
+- ✅ SG and XMD data model is hardened (no large payloads mixed into metadata)
 - ✅ Cleaner, more stable persistence model (less row bloat + fewer metadata merge risks)
+
+---
+
+### Phase 17: Document Storage (LaTeX bundle + imports) 🗄️
+**Status**: Not Started
+
+- [ ] **Implement LaTeX storage (Option B)**:
+  - [ ] `documents.latex` becomes a JSON manifest/ref (NOT raw LaTeX)
+  - [ ] Store LaTeX bundles in Supabase Storage (multi-file), and keep only references + manifest in DB
+  - [ ] Add API support to load/save the entry `.tex` file via Storage
+  - [ ] Stop using `metadata.latex` as a persistence channel (keep optional back-compat reads temporarily)
+- [ ] **arXiv import = bundle import**:
+  - [ ] Download `e-print` (`.tar.gz`)
+  - [ ] Extract and upload ALL files to Storage
+  - [ ] Create document with `documents.latex` manifest pointing to the entry file
+- [ ] **Project-scoped storage organization**:
+  - [ ] Store assets under project folders (not flat keys), e.g. `projects/<projectId>/assets/...`
+  - [ ] Store imports under project folders, e.g. `projects/<projectId>/imports/arxiv/<docId>/<importId>/...`
+
+**Deliverables**:
+- ✅ LaTeX is no longer stored in `documents.metadata`
+- ✅ Imported LaTeX projects (arXiv) are reproducible from Storage (multi-file)
+- ✅ Storage layout is project-scoped and future-proof for Overleaf/Google Docs/Word imports
 
 ---
 
