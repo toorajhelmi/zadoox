@@ -45,6 +45,8 @@ type HoveredAsset = {
   anchorRect: DOMRect;
 };
 
+const projectDocsCache = new Map<string, ZadooxDocument[]>();
+
 function toFileNameFromTitle(title: string): string {
   const t = String(title ?? '').trim() || 'Untitled Document';
   const safe = t
@@ -55,6 +57,21 @@ function toFileNameFromTitle(title: string): string {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
   return `${safe || 'untitled-document'}.md`;
+}
+
+function sortProjectDocs(params: { docs: ZadooxDocument[]; currentDocId: string | null }): ZadooxDocument[] {
+  const { docs, currentDocId } = params;
+  const sorted = [...docs].sort((a: any, b: any) => {
+    const ao = typeof a?.metadata?.order === 'number' ? a.metadata.order : 0;
+    const bo = typeof b?.metadata?.order === 'number' ? b.metadata.order : 0;
+    if (ao !== bo) return ao - bo;
+    return String(a?.title || '').localeCompare(String(b?.title || ''));
+  });
+  if (!currentDocId) return sorted;
+  const idx = sorted.findIndex((d) => d.id === currentDocId);
+  if (idx <= 0) return sorted;
+  const cur = sorted[idx]!;
+  return [cur, ...sorted.slice(0, idx), ...sorted.slice(idx + 1)];
 }
 
 function collectAssetFilesFromIr(ir: DocumentNode): AssetFile[] {
@@ -182,7 +199,8 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
   const outlineItems = useMemo(() => items.filter((i) => !(i.kind === 'heading' && i.id === 'doc-title')), [items]);
 
   const tree = useMemo(() => buildOutlineTree(outlineItems), [outlineItems]);
-  const storageKey = useMemo(() => `zadoox:outline:collapsed:${derivedIr?.docId ?? 'unknown'}`, [derivedIr?.docId]);
+  const docKey = currentDocumentId ?? derivedIr?.docId ?? 'unknown';
+  const storageKey = useMemo(() => `zadoox:outline:collapsed:${docKey}`, [docKey]);
   const collapsibleIds = useMemo(() => collectCollapsibleHeadingIds(tree), [tree]);
   const assets = useMemo(() => (derivedIr ? collectAssetFilesFromIr(derivedIr) : []), [derivedIr]);
 
@@ -194,7 +212,10 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
   const [assetUrlByKey, setAssetUrlByKey] = useState<Record<string, string>>({});
   const [assetLoadingByKey, setAssetLoadingByKey] = useState<Record<string, boolean>>({});
 
-  const [projectDocs, setProjectDocs] = useState<ZadooxDocument[]>([]);
+  const [projectDocs, setProjectDocs] = useState<ZadooxDocument[]>(() => {
+    if (!projectId) return [];
+    return projectDocsCache.get(projectId) ?? [];
+  });
   const [docsLoading, setDocsLoading] = useState(false);
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
   const [duplicatingDocId, setDuplicatingDocId] = useState<string | null>(null);
@@ -209,13 +230,9 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
       try {
         const docs = await api.documents.listByProject(projectId);
         if (cancelled) return;
-        // Sort by metadata.order (fallback to title).
-        const sorted = [...docs].sort((a: any, b: any) => {
-          const ao = typeof a?.metadata?.order === 'number' ? a.metadata.order : 0;
-          const bo = typeof b?.metadata?.order === 'number' ? b.metadata.order : 0;
-          if (ao !== bo) return ao - bo;
-          return String(a?.title || '').localeCompare(String(b?.title || ''));
-        });
+        const currentId = currentDocumentId ?? derivedIr?.docId ?? null;
+        const sorted = sortProjectDocs({ docs, currentDocId: currentId });
+        projectDocsCache.set(projectId, sorted);
         setProjectDocs(sorted);
       } catch {
         if (!cancelled) setProjectDocs([]);
@@ -236,10 +253,12 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
       const activeId = currentDocumentId || derivedIr?.docId || null;
       // Refresh list (ensures we always navigate based on the latest state).
       const nextDocs = await api.documents.listByProject(projectId);
-      setProjectDocs(nextDocs);
+      const sorted = sortProjectDocs({ docs: nextDocs, currentDocId: activeId });
+      projectDocsCache.set(projectId, sorted);
+      setProjectDocs(sorted);
       if (activeId && docId === activeId) {
         // Navigate away from deleted doc.
-        const remaining = nextDocs.filter((d) => d.id !== docId);
+        const remaining = sorted.filter((d) => d.id !== docId);
         const next = remaining[0]?.id || null;
         if (next) router.push(`/dashboard/projects/${projectId}/documents/${next}`);
         else router.push(`/dashboard/projects/${projectId}`);
@@ -310,14 +329,10 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
     try {
       const created = await api.documents.duplicate(docId);
       setProjectDocs((prev) => {
-        const next = [...prev, created];
-        // Keep same sort policy as initial load.
-        return next.sort((a: any, b: any) => {
-          const ao = typeof a?.metadata?.order === 'number' ? a.metadata.order : 0;
-          const bo = typeof b?.metadata?.order === 'number' ? b.metadata.order : 0;
-          if (ao !== bo) return ao - bo;
-          return String(a?.title || '').localeCompare(String(b?.title || ''));
-        });
+        const currentId = currentDocumentId ?? derivedIr?.docId ?? null;
+        const sorted = sortProjectDocs({ docs: [...prev, created], currentDocId: currentId });
+        projectDocsCache.set(projectId, sorted);
+        return sorted;
       });
       router.push(`/dashboard/projects/${projectId}/documents/${created.id}`);
     } finally {
@@ -628,7 +643,8 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
           ).map((doc: any) => {
             const isCurrent = Boolean((currentDocumentId || derivedIr?.docId) && doc.id === (currentDocumentId || derivedIr?.docId));
             const label = String(doc?.title ?? '').trim() || (isCurrent ? fileLabel : 'Untitled Document');
-            const name = toFileNameFromTitle(label);
+                // Keep filename as tooltip-only (avoid noisy second line in the tree).
+                const name = toFileNameFromTitle(label);
 
             if (!isCurrent) {
               return (
@@ -651,14 +667,13 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
                   <button
                     type="button"
                     className="min-w-0 text-left flex-1"
-                    title="Open"
+                    title={`${label}\n${name}`}
                     onClick={() => {
                       if (!projectId) return;
                       router.push(`/dashboard/projects/${projectId}/documents/${doc.id}`);
                     }}
                   >
                     <div className="text-sm text-vscode-text truncate">{label}</div>
-                    <div className="text-xs text-vscode-text-secondary truncate">{name}</div>
                   </button>
                   <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
@@ -708,7 +723,6 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
                   <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
                   <div className="min-w-0">
                     <div className="text-sm text-vscode-text truncate">{fileLabel}</div>
-                    <div className="text-xs text-vscode-text-secondary truncate">{fileName}</div>
                   </div>
                   <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
@@ -812,9 +826,8 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
               <ChevronRightIcon className={`w-4 h-4 transition-transform ${fileCollapsed ? '' : 'rotate-90'}`} />
             </button>
             <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
-            <div className="min-w-0">
+            <div className="min-w-0" title={`${fileLabel}\n${fileName}`}>
               <div className="text-sm text-vscode-text truncate">{fileLabel}</div>
-              <div className="text-xs text-vscode-text-secondary truncate">{fileName}</div>
             </div>
           </div>
 
