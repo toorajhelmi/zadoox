@@ -17,6 +17,10 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
+function importDebugEnabled(): boolean {
+  return String(process.env.SG_DEBUG || '').toLowerCase() === 'true';
+}
+
 function parseArxivId(input: string): string | null {
   const raw = String(input ?? '').trim();
   if (!raw) return null;
@@ -104,10 +108,13 @@ function inlineInputs(params: {
   const { tex, baseDir, byPath, visited, depth } = params;
   if (depth > 20) return tex;
 
-  // Handle \input{foo} and \include{foo}. Keep it conservative.
-  const re = /\\(input|include)\s*\{([^}]+)\}/g;
-  return tex.replace(re, (full, _cmd, arg) => {
-    const resolved = resolveInputPath(baseDir, String(arg ?? ''));
+  // Handle \input{foo}, \include{foo}, \subfile{foo}, plus a common brace-less form: \input foo
+  // (Heuristic; good enough for most arXiv sources.)
+  const re = /\\(input|include|subfile)\s*(?:\{([^}]+)\}|([^\s%]+))/g;
+  return tex.replace(re, (full, _cmd, argBraced, argBare) => {
+    const arg = String(argBraced ?? argBare ?? '').trim();
+    if (!arg) return full;
+    const resolved = resolveInputPath(baseDir, arg);
     const next = byPath.get(resolved);
     if (!next) return full;
     if (visited.has(resolved)) return `\n% [zadoox] skipped recursive include: ${resolved}\n`;
@@ -169,20 +176,37 @@ async function extractArxivMainTexFromSourceTarball(params: { arxivId: string; t
   const roots = cands.filter((c) => c.hasDocClass);
   const fragments = cands.filter((c) => !c.hasDocClass);
 
-  const pickRoot = (): Cand | null => {
+  const scoreExpanded = (expanded: string): number => {
+    const body = extractDocumentBody(expanded);
+    const bodyLen = body ? meaningfulLen(body) : 0;
+    const bonus =
+      (expanded.includes('\\title{') ? 500 : 0) +
+      (expanded.includes('\\author{') ? 250 : 0) +
+      (expanded.includes('\\begin{abstract}') ? 250 : 0) +
+      (expanded.includes('\\section{') ? 150 : 0) +
+      (expanded.includes('\\bibliography') || expanded.includes('\\begin{thebibliography}') ? 150 : 0);
+    return bodyLen + bonus;
+  };
+
+  const pickRootExpanded = (): { root: Cand; expanded: string; score: number; bodyLen: number } | null => {
     if (roots.length === 0) return null;
-    const sorted = [...roots].sort((a, b) => {
-      // Prefer docclass+begin doc.
-      const ab = (a.hasBegin ? 1 : 0) - (b.hasBegin ? 1 : 0);
-      if (ab !== 0) return -ab;
-      // Prefer larger meaningful body.
-      if (a.bodyMeaningfulLen !== b.bodyMeaningfulLen) return b.bodyMeaningfulLen - a.bodyMeaningfulLen;
-      // Then overall meaningful.
-      if (a.totalMeaningfulLen !== b.totalMeaningfulLen) return b.totalMeaningfulLen - a.totalMeaningfulLen;
-      // Then file size.
-      return b.size - a.size;
-    });
-    return sorted[0] ?? null;
+    let best: { root: Cand; expanded: string; score: number; bodyLen: number } | null = null;
+    for (const r of roots) {
+      const expanded = inlineInputs({
+        tex: r.tex,
+        baseDir: path.dirname(r.rel),
+        byPath,
+        visited: new Set<string>([r.rel]),
+        depth: 0,
+      });
+      const body = extractDocumentBody(expanded);
+      const bodyLen = body ? meaningfulLen(body) : 0;
+      const score = scoreExpanded(expanded);
+      if (!best || score > best.score) {
+        best = { root: r, expanded, score, bodyLen };
+      }
+    }
+    return best;
   };
 
   const pickBestFragment = (): Cand | null => {
@@ -194,53 +218,53 @@ async function extractArxivMainTexFromSourceTarball(params: { arxivId: string; t
     return sorted[0] ?? null;
   };
 
-  const root = pickRoot();
-  if (root) {
-    const expanded = inlineInputs({
-      tex: root.tex,
-      baseDir: path.dirname(root.rel),
-      byPath,
-      visited: new Set<string>([root.rel]),
-      depth: 0,
-    });
-
-    // If the document body is still basically empty, fall back to wrapping the biggest fragment
-    // (common when the chosen root is an arXiv stub and real content lives in fragments).
-    const body = extractDocumentBody(expanded);
-    const bodyLen = body ? meaningfulLen(body) : 0;
-    if (bodyLen < 200) {
-      const frag = pickBestFragment();
-      if (frag && frag.totalMeaningfulLen > bodyLen) {
-        const fragExpanded = inlineInputs({
-          tex: frag.tex,
-          baseDir: path.dirname(frag.rel),
-          byPath,
-          visited: new Set<string>([frag.rel]),
-          depth: 0,
-        });
-        return `\\documentclass{article}\n\\begin{document}\n${fragExpanded}\n\\end{document}\n`;
+  const picked = pickRootExpanded();
+  if (picked) {
+    // If even the best expanded root has essentially no body, fail loudly.
+    // We intentionally do NOT synthesize wrappers; importer must be faithful.
+    if (picked.bodyLen < 200) {
+      if (importDebugEnabled()) {
+        // eslint-disable-next-line no-console
+        console.log('[arxiv-import] Could not find meaningful TeX root. Candidate summary:');
+        const summary = cands
+          .map((c) => ({
+            rel: c.rel,
+            hasDocClass: c.hasDocClass,
+            hasBegin: c.hasBegin,
+            bodyMeaningfulLen: c.bodyMeaningfulLen,
+            totalMeaningfulLen: c.totalMeaningfulLen,
+            size: c.size,
+          }))
+          .sort((a, b) => (b.totalMeaningfulLen ?? 0) - (a.totalMeaningfulLen ?? 0))
+          .slice(0, 20);
+        // eslint-disable-next-line no-console
+        console.log(summary);
       }
+      throw new Error(
+        'Failed to identify a meaningful main TeX file from the arXiv source (root TeX body is empty).'
+      );
     }
-
-    return expanded;
+    return picked.expanded;
   }
 
-  const frag = pickBestFragment();
-  if (frag) {
-    const fragExpanded = inlineInputs({
-      tex: frag.tex,
-      baseDir: path.dirname(frag.rel),
-      byPath,
-      visited: new Set<string>([frag.rel]),
-      depth: 0,
-    });
-    return `\\documentclass{article}\n\\begin{document}\n${fragExpanded}\n\\end{document}\n`;
+  if (importDebugEnabled()) {
+    // eslint-disable-next-line no-console
+    console.log('[arxiv-import] No TeX file with \\documentclass found. Candidate summary:');
+    const summary = cands
+      .map((c) => ({
+        rel: c.rel,
+        hasDocClass: c.hasDocClass,
+        hasBegin: c.hasBegin,
+        bodyMeaningfulLen: c.bodyMeaningfulLen,
+        totalMeaningfulLen: c.totalMeaningfulLen,
+        size: c.size,
+      }))
+      .sort((a, b) => (b.totalMeaningfulLen ?? 0) - (a.totalMeaningfulLen ?? 0))
+      .slice(0, 20);
+    // eslint-disable-next-line no-console
+    console.log(summary);
   }
-
-  // Last resort: return any tex file.
-  const any = cands[0]?.tex ?? '';
-  if (!any.trim()) throw new Error('Failed to read any TeX file from arXiv source');
-  return any;
+  throw new Error('arXiv source did not contain a compilable TeX root (missing \\documentclass).');
 }
 
 export async function importRoutes(fastify: FastifyInstance) {
