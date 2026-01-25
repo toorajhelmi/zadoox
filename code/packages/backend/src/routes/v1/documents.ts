@@ -523,7 +523,7 @@ export async function documentRoutes(fastify: FastifyInstance) {
             title: nextTitle,
             content: source.content ?? '',
             metadata: {
-              ...(source.metadata as any),
+              ...(source.metadata ?? {}),
               lastEditedFormat: 'markdown',
             },
             semanticGraph: null,
@@ -587,13 +587,13 @@ export async function documentRoutes(fastify: FastifyInstance) {
         const { id } = paramValidation.data;
         const documentService = new DocumentService(request.supabase!);
         const doc = await documentService.getDocumentById(id);
-        const manifest = (doc as any).latex as LatexManifest | null;
+        const manifest = (doc.latex as unknown as LatexManifest | null) ?? null;
         if (!manifest || typeof manifest !== 'object') {
           const response: ApiResponse<null> = { success: false, error: { code: 'NOT_FOUND', message: 'No LaTeX manifest for document' } };
           return reply.status(404).send(response);
         }
-        const basePrefix = String((manifest as any).basePrefix || '');
-        const entryPath = String((manifest as any).entryPath || '');
+        const basePrefix = String(manifest.basePrefix || '');
+        const entryPath = String(manifest.entryPath || '');
         if (!basePrefix || !entryPath) {
           const response: ApiResponse<null> = { success: false, error: { code: 'INVALID_STATE', message: 'Invalid LaTeX manifest (missing basePrefix/entryPath)' } };
           return reply.status(500).send(response);
@@ -608,7 +608,7 @@ export async function documentRoutes(fastify: FastifyInstance) {
           return reply.status(404).send(response);
         }
         const text = await data.text();
-        const response: ApiResponse<{ text: string; latex: any }> = { success: true, data: { text, latex: manifest } };
+        const response: ApiResponse<{ text: string; latex: LatexManifest }> = { success: true, data: { text, latex: manifest } };
         return reply.send(response);
       } catch (error: unknown) {
         fastify.log.error(error);
@@ -659,7 +659,7 @@ export async function documentRoutes(fastify: FastifyInstance) {
         const doc = await documentService.getDocumentById(id);
         const projectId = doc.projectId;
 
-        const existing = (doc as any).latex as LatexManifest | null;
+        const existing = (doc.latex as unknown as LatexManifest | null) ?? null;
         const basePrefix = existing?.basePrefix || `projects/${projectId}/documents/${id}/latex`;
         const entryPath = entryPathMaybe || existing?.entryPath || 'main.tex';
         const manifest: LatexManifest = {
@@ -683,7 +683,7 @@ export async function documentRoutes(fastify: FastifyInstance) {
         // Important: this endpoint only uploads the entry file and returns the manifest.
         // Persisting `documents.latex` happens through the normal document update pipeline
         // so we keep a single save timer (content + metadata + SG + latex manifest).
-        const response: ApiResponse<{ latex: any }> = { success: true, data: { latex: manifest } };
+        const response: ApiResponse<{ latex: LatexManifest }> = { success: true, data: { latex: manifest } };
         return reply.send(response);
       } catch (error: unknown) {
         fastify.log.error(error);

@@ -30,13 +30,20 @@ type PublishPdfBody = {
   source: 'latex';
 };
 
+type LatexManifest = {
+  bucket: string;
+  basePrefix: string;
+  entryPath: string;
+  files?: Array<{ path: string; sha256?: string; size?: number }>;
+};
+
 async function buildLatexPackage(params: {
   doc: { id: string; title?: string | null; latex?: unknown | null };
 }): Promise<
   | { ok: true; latex: string; extraFiles: Array<{ relPath: string; bytes: Buffer }> }
   | { ok: false; status: number; response: ApiResponse<null> }
 > {
-  const manifest = params.doc.latex as any;
+  const manifest = params.doc.latex as unknown as LatexManifest | null;
   if (!manifest || typeof manifest !== 'object') {
     return {
       ok: false,
@@ -94,7 +101,7 @@ async function buildLatexPackage(params: {
 
   const files: Array<{ path: string }> = Array.isArray(manifest.files) ? manifest.files : [];
   for (const f of files) {
-    const relPath = String((f as any)?.path || '');
+    const relPath = String(f?.path || '');
     if (!relPath) continue;
     if (relPath === entryPath) continue;
     const key = `${basePrefix.replace(/\/+$/g, '')}/${relPath.replace(/^\/+/, '')}`;

@@ -6,7 +6,7 @@
 
 import { FastifyInstance } from 'fastify';
 import { authenticateUser, AuthenticatedRequest } from '../../middleware/auth.js';
-import type { ApiResponse, CreateDocumentInput, Document, UpdateDocumentInput } from '@zadoox/shared';
+import type { ApiResponse, Document, UpdateDocumentInput } from '@zadoox/shared';
 import { DocumentService } from '../../services/document-service.js';
 import { schemas, security } from '../../config/schemas.js';
 import os from 'node:os';
@@ -32,7 +32,7 @@ function parseArxivId(input: string): string | null {
   if (mNew) return `${mNew[1]}${mNew[2] ?? ''}`;
 
   // Old style: hep-th/9901001v1
-  const mOld = raw.match(/([a-z\-]+(?:\.[A-Z]{2})?\/\d{7})(v\d+)?/i);
+  const mOld = raw.match(/([a-z-]+(?:\.[A-Z]{2})?\/\d{7})(v\d+)?/i);
   if (mOld) return `${mOld[1]}${mOld[2] ?? ''}`;
 
   return null;
@@ -176,7 +176,6 @@ async function selectArxivEntryTexPathFromSourceTarball(params: { arxivId: strin
   }
 
   const roots = cands.filter((c) => c.hasDocClass);
-  const fragments = cands.filter((c) => !c.hasDocClass);
 
   const scoreExpanded = (expanded: string): number => {
     const body = extractDocumentBody(expanded);
@@ -209,15 +208,6 @@ async function selectArxivEntryTexPathFromSourceTarball(params: { arxivId: strin
       }
     }
     return best;
-  };
-
-  const pickBestFragment = (): Cand | null => {
-    if (fragments.length === 0) return null;
-    const sorted = [...fragments].sort((a, b) => {
-      if (a.totalMeaningfulLen !== b.totalMeaningfulLen) return b.totalMeaningfulLen - a.totalMeaningfulLen;
-      return b.size - a.size;
-    });
-    return sorted[0] ?? null;
   };
 
   const picked = pickRootExpanded();
@@ -376,8 +366,8 @@ export async function importRoutes(fastify: FastifyInstance) {
             metadata: {
               type: 'standalone',
               lastEditedFormat: 'latex',
-            } as any,
-          } as CreateDocumentInput,
+            },
+          },
           request.userId
         );
 
