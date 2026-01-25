@@ -518,7 +518,7 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
         const item = node.item;
         return (
           <a
-            key={`figure-${item.id}-${index}`}
+            key={`figure-${item.id}`}
             href={`#${item.id}`}
             onClick={(e) => handleHeadingClick(e, item.id)}
             className="flex items-center gap-2 py-1 px-2 text-sm hover:bg-vscode-active rounded transition-colors text-vscode-text-secondary hover:text-vscode-text"
@@ -539,7 +539,7 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
         const hasChildren = node.children.length > 0;
         const isCollapsed = collapsedIds.has(item.id);
         return (
-          <div key={`grid-${item.id}-${index}`}>
+          <div key={`grid-${item.id}`}>
             <div
               className="flex items-center gap-2 py-1 px-2 text-sm hover:bg-vscode-active rounded transition-colors text-vscode-text-secondary hover:text-vscode-text"
               style={{ paddingLeft: `${pad}rem` }}
@@ -583,7 +583,7 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
       const pad = (item.level - 1) * 0.75 + 0.5 + basePadRem;
 
       return (
-        <div key={`heading-${item.id}-${index}`}>
+        <div key={`heading-${item.id}`}>
           <div
             className="flex items-center gap-2 py-1 px-2 text-sm hover:bg-vscode-active rounded transition-colors text-vscode-text-secondary hover:text-vscode-text"
             style={{ paddingLeft: `${pad}rem` }}
@@ -645,10 +645,7 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
       {/* Documents shown at root level. */}
       {projectId ? (
         <div className="space-y-1">
-          {(projectDocs.length > 0
-            ? projectDocs
-            : ([{ id: currentDocumentId || derivedIr?.docId || 'unknown', title: fileLabel, metadata: {} as any }] as any)
-          ).map((doc: any) => {
+          {projectDocs.map((doc: any) => {
             const activeDocId =
               (typeof params?.documentId === 'string' ? params.documentId : null) ??
               currentDocumentId ??
@@ -656,8 +653,8 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
               null;
             const isCurrent = Boolean(activeDocId && doc.id === activeDocId);
             const label = String(doc?.title ?? '').trim() || (isCurrent ? fileLabel : 'Untitled Document');
-                // Keep filename as tooltip-only (avoid noisy second line in the tree).
-                const name = toFileNameFromTitle(label);
+            // Keep filename as tooltip-only (avoid noisy second line in the tree).
+            const name = toFileNameFromTitle(label);
 
             if (!isCurrent) {
               return (
@@ -742,7 +739,7 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
                   <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
                   <div className="min-w-0">
                     <div className={'text-sm truncate ' + (isCurrent ? 'text-white font-medium' : 'text-vscode-text')}>
-                      {fileLabel}
+                      {label}
                     </div>
                   </div>
                   <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

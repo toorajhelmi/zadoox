@@ -215,7 +215,9 @@ export class DocumentService {
       .from('documents')
       .select()
       .eq('project_id', projectId)
-      .order('created_at', { ascending: true });
+      // Deterministic ordering: created_at can tie (same millisecond), so add a stable secondary key.
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true });
 
     if (error) {
       throw new Error(`Failed to list documents: ${error.message}`);
