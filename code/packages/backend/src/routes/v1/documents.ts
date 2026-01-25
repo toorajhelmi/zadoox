@@ -459,6 +459,105 @@ export async function documentRoutes(fastify: FastifyInstance) {
   );
 
   /**
+   * POST /api/v1/documents/:id/duplicate
+   * Duplicate a document (safe duplicate: content + metadata only; SG/LaTeX reset)
+   */
+  fastify.post(
+    '/documents/:id/duplicate',
+    {
+      schema: {
+        description: 'Duplicate a document (content + metadata only; SG/LaTeX reset)',
+        tags: ['Documents'],
+        security,
+        params: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+          },
+          required: ['id'],
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              data: schemas.Document,
+            },
+            required: ['success'],
+          },
+          400: schemas.ApiResponse,
+          404: schemas.ApiResponse,
+          500: schemas.ApiResponse,
+        },
+      },
+    },
+    async (request: AuthenticatedRequest, reply) => {
+      try {
+        const paramValidation = documentIdSchema.safeParse(request.params);
+        if (!paramValidation.success) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid document ID',
+              details: paramValidation.error.errors,
+            },
+          };
+          return reply.status(400).send(response);
+        }
+
+        const { id } = paramValidation.data;
+        const documentService = new DocumentService(request.supabase!);
+        const source = await documentService.getDocumentById(id);
+
+        const nextTitleBase = String(source.title ?? '').trim() || 'Untitled Document';
+        const nextTitle = `${nextTitleBase} (copy)`;
+
+        // Safe duplicate:
+        // - Copy XMD content + metadata (type/order/etc)
+        // - Reset lastEditedFormat to markdown (so we don't land in latex mode without a manifest)
+        // - Do NOT carry over SG or LaTeX manifest (avoid shared storage/clobbering)
+        const created = await documentService.createDocument(
+          {
+            projectId: source.projectId,
+            title: nextTitle,
+            content: source.content ?? '',
+            metadata: {
+              ...(source.metadata as any),
+              lastEditedFormat: 'markdown',
+            },
+            semanticGraph: null,
+            latex: null,
+          } as CreateDocumentInput,
+          request.userId!
+        );
+
+        const response: ApiResponse<Document> = { success: true, data: created };
+        return reply.send(response);
+      } catch (error: unknown) {
+        fastify.log.error(error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to duplicate document';
+        let statusCode = 500;
+        if (errorMessage.includes('not found')) statusCode = 404;
+        else if (errorMessage.includes('Invalid')) statusCode = 400;
+        const response: ApiResponse<null> = {
+          success: false,
+          error: {
+            code:
+              statusCode === 404
+                ? 'NOT_FOUND'
+                : statusCode === 400
+                  ? 'VALIDATION_ERROR'
+                  : 'INTERNAL_ERROR',
+            message: errorMessage,
+          },
+        };
+        return reply.status(statusCode).send(response);
+      }
+    }
+  );
+
+  /**
    * GET /api/v1/documents/:id/latex/entry
    *
    * Loads the LaTeX entry file from Storage using `documents.latex` manifest.

@@ -9,6 +9,8 @@ import {
   PhotoIcon,
   FolderIcon,
   Squares2X2Icon,
+  TrashIcon,
+  Square2StackIcon,
   ArrowsPointingInIcon,
   ArrowsPointingOutIcon,
 } from '@heroicons/react/24/outline';
@@ -195,6 +197,8 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
 
   const [projectDocs, setProjectDocs] = useState<ZadooxDocument[]>([]);
   const [docsLoading, setDocsLoading] = useState(false);
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
+  const [duplicatingDocId, setDuplicatingDocId] = useState<string | null>(null);
 
   // Load project documents so the outline can show which doc holds which sections (multi-doc projects).
   useEffect(() => {
@@ -223,6 +227,50 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
       cancelled = true;
     };
   }, [projectId]);
+
+  const deleteDoc = async (docId: string) => {
+    if (!projectId) return;
+    const ok = window.confirm('Delete this document? This cannot be undone.');
+    if (!ok) return;
+    setDeletingDocId(docId);
+    try {
+      await api.documents.delete(docId);
+      const activeId = currentDocumentId || derivedIr?.docId || null;
+      // Refresh list (ensures we always navigate based on the latest state).
+      const nextDocs = await api.documents.listByProject(projectId);
+      setProjectDocs(nextDocs);
+      if (activeId && docId === activeId) {
+        // Navigate away from deleted doc.
+        const remaining = nextDocs.filter((d) => d.id !== docId);
+        const next = remaining[0]?.id || null;
+        if (next) router.push(`/dashboard/projects/${projectId}/documents/${next}`);
+        else router.push(`/dashboard/projects/${projectId}`);
+      }
+    } finally {
+      setDeletingDocId(null);
+    }
+  };
+
+  const duplicateDoc = async (docId: string) => {
+    if (!projectId) return;
+    setDuplicatingDocId(docId);
+    try {
+      const created = await api.documents.duplicate(docId);
+      setProjectDocs((prev) => {
+        const next = [...prev, created];
+        // Keep same sort policy as initial load.
+        return next.sort((a: any, b: any) => {
+          const ao = typeof a?.metadata?.order === 'number' ? a.metadata.order : 0;
+          const bo = typeof b?.metadata?.order === 'number' ? b.metadata.order : 0;
+          if (ao !== bo) return ao - bo;
+          return String(a?.title || '').localeCompare(String(b?.title || ''));
+        });
+      });
+      router.push(`/dashboard/projects/${projectId}/documents/${created.id}`);
+    } finally {
+      setDuplicatingDocId(null);
+    }
+  };
 
   // Load persisted collapsed state (best-effort).
   useEffect(() => {
@@ -552,7 +600,7 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
                       <button
                         key={doc.id}
                         type="button"
-                        className="w-full text-left flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors"
+                        className="group w-full text-left flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors"
                         style={{ paddingLeft: '1.25rem' }}
                         onClick={() => {
                           if (!projectId) return;
@@ -564,13 +612,46 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
                           <div className="text-sm text-vscode-text truncate">{label}</div>
                           <div className="text-xs text-vscode-text-secondary truncate">{name}</div>
                         </div>
+                        <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            className="p-1 rounded hover:bg-vscode-hover text-vscode-text-secondary hover:text-vscode-text"
+                            title="Duplicate"
+                            aria-label="Duplicate document"
+                            disabled={duplicatingDocId === doc.id || deletingDocId === doc.id}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              void duplicateDoc(doc.id);
+                            }}
+                          >
+                            <Square2StackIcon className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            className="p-1 rounded hover:bg-vscode-hover text-vscode-text-secondary hover:text-vscode-text"
+                            title="Delete"
+                            aria-label="Delete document"
+                            disabled={deletingDocId === doc.id || duplicatingDocId === doc.id}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              void deleteDoc(doc.id);
+                            }}
+                          >
+                            <TrashIcon className="w-4 h-4" />
+                          </button>
+                        </div>
                       </button>
                     );
                   }
 
                   return (
                     <div key={doc.id}>
-                      <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors" style={{ paddingLeft: '1.25rem' }}>
+                      <div
+                        className="group flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors"
+                        style={{ paddingLeft: '1.25rem' }}
+                      >
                         <button
                           type="button"
                           aria-label={fileCollapsed ? 'Expand file' : 'Collapse file'}
@@ -583,6 +664,36 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
                         <div className="min-w-0">
                           <div className="text-sm text-vscode-text truncate">{fileLabel}</div>
                           <div className="text-xs text-vscode-text-secondary truncate">{fileName}</div>
+                        </div>
+                        <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            className="p-1 rounded hover:bg-vscode-hover text-vscode-text-secondary hover:text-vscode-text"
+                            title="Duplicate"
+                            aria-label="Duplicate document"
+                            disabled={duplicatingDocId === doc.id || deletingDocId === doc.id}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              void duplicateDoc(doc.id);
+                            }}
+                          >
+                            <Square2StackIcon className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            className="p-1 rounded hover:bg-vscode-hover text-vscode-text-secondary hover:text-vscode-text"
+                            title="Delete"
+                            aria-label="Delete document"
+                            disabled={deletingDocId === doc.id || duplicatingDocId === doc.id}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              void deleteDoc(doc.id);
+                            }}
+                          >
+                            <TrashIcon className="w-4 h-4" />
+                          </button>
                         </div>
                       </div>
 

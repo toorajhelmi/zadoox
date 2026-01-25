@@ -346,6 +346,18 @@ export const api = {
       return response.data;
     },
 
+    delete: async (id: string): Promise<void> => {
+      await fetchApi<void>(`/documents/${id}`, { method: 'DELETE' });
+    },
+
+    duplicate: async (id: string): Promise<Document> => {
+      const response = await fetchApi<Document>(`/documents/${id}/duplicate`, { method: 'POST' });
+      if (!response.data) {
+        throw new ApiError('Failed to duplicate document', 'DUPLICATE_FAILED', 500);
+      }
+      return response.data;
+    },
+
     latexEntryGet: async (id: string): Promise<{ text: string; latex: any }> => {
       const response = await fetchApi<{ text: string; latex: any }>(`/documents/${id}/latex/entry`);
       if (!response.data) throw new ApiError('Failed to load LaTeX entry', 'LATEX_ENTRY_GET_FAILED', 500);
