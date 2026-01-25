@@ -12,7 +12,6 @@ import { schemas, security } from '../../config/schemas.js';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import { existsSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -65,17 +64,29 @@ async function extractArxivMainTexFromSourceTarball(params: { arxivId: string; t
     throw new Error('arXiv source did not contain any .tex files');
   }
 
-  // Pick a likely main file: contains \begin{document}, prefer also \documentclass.
-  let best: { file: string; score: number; size: number } | null = null;
+  // Pick a likely main file.
+  // Heuristic: prefer the TeX file with the largest *document body* (between begin/end document).
+  // This avoids selecting tiny stubs (often present in arXiv sources) that have no real content.
+  let best: { file: string; bodyLen: number; size: number; hasBegin: boolean; hasDocClass: boolean } | null = null;
   for (const f of texFiles) {
     const content = await fs.readFile(f, 'utf8').catch(() => null);
     if (!content) continue;
     const hasBegin = content.includes('\\begin{document}');
     const hasDocClass = content.includes('\\documentclass');
     const size = content.length;
-    const score = (hasBegin ? 10 : 0) + (hasDocClass ? 5 : 0) + Math.min(5, Math.floor(size / 5000));
-    if (!best || score > best.score || (score === best.score && size > best.size)) {
-      best = { file: f, score, size };
+    const beginIdx = content.indexOf('\\begin{document}');
+    const endIdx = content.indexOf('\\end{document}');
+    const bodyLen = beginIdx >= 0 && endIdx > beginIdx ? Math.max(0, endIdx - (beginIdx + '\\begin{document}'.length)) : -1;
+
+    const isBetter =
+      !best ||
+      bodyLen > best.bodyLen ||
+      (bodyLen === best.bodyLen && size > best.size) ||
+      (bodyLen === best.bodyLen && size === best.size && hasBegin && !best.hasBegin) ||
+      (bodyLen === best.bodyLen && size === best.size && hasBegin === best.hasBegin && hasDocClass && !best.hasDocClass);
+
+    if (isBetter) {
+      best = { file: f, bodyLen, size, hasBegin, hasDocClass };
     }
   }
 
