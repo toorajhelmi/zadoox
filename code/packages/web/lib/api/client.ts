@@ -567,6 +567,19 @@ export const api = {
     },
   },
 
+  imports: {
+    arxiv: async (params: { projectId: string; arxiv: string; title?: string }): Promise<Document> => {
+      const response = await fetchApi<Document>('/import/arxiv', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
+      if (!response.data) {
+        throw new ApiError('Failed to import arXiv paper', 'IMPORT_ARXIV_FAILED', 500);
+      }
+      return response.data;
+    },
+  },
+
   assets: {
     upload: async (request: AssetUploadRequest): Promise<AssetUploadResponse> => {
       const response = await fetchApi<AssetUploadResponse>('/assets/upload', {
