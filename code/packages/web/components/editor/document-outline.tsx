@@ -194,6 +194,8 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
   const outlineItems = useMemo(() => items.filter((i) => !(i.kind === 'heading' && i.id === 'doc-title')), [items]);
 
   const tree = useMemo(() => buildOutlineTree(outlineItems), [outlineItems]);
+  // Use the route-param document id (passed from EditorLayout) as the stable key.
+  // Falling back to IR docId is allowed for unit tests / standalone usage.
   const docKey = currentDocumentId ?? derivedIr?.docId ?? 'unknown';
   const storageKey = useMemo(() => `zadoox:outline:collapsed:${docKey}`, [docKey]);
   const collapsibleIds = useMemo(() => collectCollapsibleHeadingIds(tree), [tree]);
@@ -634,7 +636,8 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
             ? projectDocs
             : ([{ id: currentDocumentId || derivedIr?.docId || 'unknown', title: fileLabel, metadata: {} as any }] as any)
           ).map((doc: any) => {
-            const isCurrent = Boolean((currentDocumentId || derivedIr?.docId) && doc.id === (currentDocumentId || derivedIr?.docId));
+            const activeDocId = currentDocumentId ?? derivedIr?.docId ?? null;
+            const isCurrent = Boolean(activeDocId && doc.id === activeDocId);
             const label = String(doc?.title ?? '').trim() || (isCurrent ? fileLabel : 'Untitled Document');
                 // Keep filename as tooltip-only (avoid noisy second line in the tree).
                 const name = toFileNameFromTitle(label);

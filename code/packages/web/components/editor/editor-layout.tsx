@@ -648,6 +648,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           ir={sidebarIr}
           projectName={projectName}
           projectId={projectId}
+          currentDocumentId={documentId}
           documentId={actualDocumentId}
           lastSaved={lastSaved}
           activeTab={sidebarTab}
