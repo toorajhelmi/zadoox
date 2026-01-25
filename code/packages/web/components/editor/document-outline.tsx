@@ -235,7 +235,6 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
     // Do NOT refetch on navigation. Keep the list visually stable.
     // We only fetch when there's no cache yet; create/delete/duplicate update the cache explicitly.
     if (cached.length === 0) setDocsLoading(true);
-    else return;
     (async () => {
       try {
         const docs = await api.documents.listByProject(projectId);
@@ -243,7 +242,21 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
         const prev = projectDocsCache.get(projectId) ?? [];
         const merged = prev.length > 0 ? mergeDocsPreserveOrder(prev, docs) : docs;
         projectDocsCache.set(projectId, merged);
-        setProjectDocs(merged);
+        setProjectDocs((cur) => {
+          // Avoid pointless state churn: if ids are identical and in the same order,
+          // keep the existing array reference.
+          if (cur.length === merged.length) {
+            let same = true;
+            for (let i = 0; i < cur.length; i++) {
+              if (cur[i]?.id !== merged[i]?.id) {
+                same = false;
+                break;
+              }
+            }
+            if (same) return cur;
+          }
+          return merged;
+        });
       } catch {
         if (!cancelled) setProjectDocs([]);
       } finally {
