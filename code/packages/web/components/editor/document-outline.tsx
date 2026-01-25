@@ -187,7 +187,6 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
   const assets = useMemo(() => (derivedIr ? collectAssetFilesFromIr(derivedIr) : []), [derivedIr]);
 
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
-  const [docsCollapsed, setDocsCollapsed] = useState(false);
   const [fileCollapsed, setFileCollapsed] = useState(false);
   const [assetsCollapsed, setAssetsCollapsed] = useState(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
@@ -623,197 +622,186 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
         </button>
       </div>
 
-      {/* Documents folder (project-scoped). */}
+      {/* Documents shown at root level. */}
       {projectId ? (
-        <div>
-          <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
-            <button
-              type="button"
-              aria-label={docsCollapsed ? 'Expand documents' : 'Collapse documents'}
-              onClick={() => setDocsCollapsed((v) => !v)}
-              className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
-            >
-              <ChevronRightIcon className={`w-4 h-4 transition-transform ${docsCollapsed ? '' : 'rotate-90'}`} />
-            </button>
-            <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
-            <div className="min-w-0 flex-1">
-              <div className="text-sm text-vscode-text-secondary truncate">documents</div>
-              <div className="text-xs text-vscode-text-secondary truncate">
-                {docsLoading ? 'Loading…' : `${projectDocs.length || 1} file${(projectDocs.length || 1) === 1 ? '' : 's'}`}
-              </div>
-            </div>
-          </div>
+        <div className="space-y-1">
+          {(projectDocs.length > 0
+            ? projectDocs
+            : ([{ id: currentDocumentId || derivedIr?.docId || 'unknown', title: fileLabel, metadata: {} as any }] as any)
+          ).map((doc: any) => {
+            const isCurrent = Boolean((currentDocumentId || derivedIr?.docId) && doc.id === (currentDocumentId || derivedIr?.docId));
+            const label = String(doc?.title ?? '').trim() || (isCurrent ? fileLabel : 'Untitled Document');
+            const name = toFileNameFromTitle(label);
 
-          {!docsCollapsed && (
-            <div className="mt-1">
-              {(projectDocs.length > 0 ? projectDocs : [{ id: currentDocumentId || derivedIr?.docId || 'unknown', title: fileLabel, metadata: {} as any }] as any).map(
-                (doc: any) => {
-                  const isCurrent = Boolean((currentDocumentId || derivedIr?.docId) && doc.id === (currentDocumentId || derivedIr?.docId));
-                  const label = String(doc?.title ?? '').trim() || (isCurrent ? fileLabel : 'Untitled Document');
-                  const name = toFileNameFromTitle(label);
+            if (!isCurrent) {
+              return (
+                <div key={doc.id} className="group flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
+                  <button
+                    type="button"
+                    className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
+                    aria-label="Open document"
+                    title="Open"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!projectId) return;
+                      router.push(`/dashboard/projects/${projectId}/documents/${doc.id}`);
+                    }}
+                  >
+                    <ChevronRightIcon className="w-4 h-4" />
+                  </button>
+                  <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
+                  <button
+                    type="button"
+                    className="min-w-0 text-left flex-1"
+                    title="Open"
+                    onClick={() => {
+                      if (!projectId) return;
+                      router.push(`/dashboard/projects/${projectId}/documents/${doc.id}`);
+                    }}
+                  >
+                    <div className="text-sm text-vscode-text truncate">{label}</div>
+                    <div className="text-xs text-vscode-text-secondary truncate">{name}</div>
+                  </button>
+                  <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      type="button"
+                      className="p-1 rounded hover:bg-vscode-hover text-vscode-text-secondary hover:text-vscode-text"
+                      title="Duplicate"
+                      aria-label="Duplicate document"
+                      disabled={duplicatingDocId === doc.id || deletingDocId === doc.id}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        void duplicateDoc(doc.id);
+                      }}
+                    >
+                      <Square2StackIcon className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className="p-1 rounded hover:bg-vscode-hover text-vscode-text-secondary hover:text-vscode-text"
+                      title="Delete"
+                      aria-label="Delete document"
+                      disabled={deletingDocId === doc.id || duplicatingDocId === doc.id}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openDeleteConfirm(doc);
+                      }}
+                    >
+                      <TrashIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            }
 
-                  if (!isCurrent) {
-                    return (
-                      <button
-                        key={doc.id}
-                        type="button"
-                        className="group w-full text-left flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors"
-                        style={{ paddingLeft: '1.25rem' }}
-                        onClick={() => {
-                          if (!projectId) return;
-                          router.push(`/dashboard/projects/${projectId}/documents/${doc.id}`);
-                        }}
-                      >
-                        <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
-                        <div className="min-w-0">
-                          <div className="text-sm text-vscode-text truncate">{label}</div>
-                          <div className="text-xs text-vscode-text-secondary truncate">{name}</div>
-                        </div>
-                        <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            return (
+              <div key={doc.id}>
+                <div className="group flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
+                  <button
+                    type="button"
+                    aria-label={fileCollapsed ? 'Expand file' : 'Collapse file'}
+                    onClick={() => setFileCollapsed((v) => !v)}
+                    className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
+                  >
+                    <ChevronRightIcon className={`w-4 h-4 transition-transform ${fileCollapsed ? '' : 'rotate-90'}`} />
+                  </button>
+                  <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
+                  <div className="min-w-0">
+                    <div className="text-sm text-vscode-text truncate">{fileLabel}</div>
+                    <div className="text-xs text-vscode-text-secondary truncate">{fileName}</div>
+                  </div>
+                  <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      type="button"
+                      className="p-1 rounded hover:bg-vscode-hover text-vscode-text-secondary hover:text-vscode-text"
+                      title="Duplicate"
+                      aria-label="Duplicate document"
+                      disabled={duplicatingDocId === doc.id || deletingDocId === doc.id}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        void duplicateDoc(doc.id);
+                      }}
+                    >
+                      <Square2StackIcon className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className="p-1 rounded hover:bg-vscode-hover text-vscode-text-secondary hover:text-vscode-text"
+                      title="Delete"
+                      aria-label="Delete document"
+                      disabled={deletingDocId === doc.id || duplicatingDocId === doc.id}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openDeleteConfirm(doc);
+                      }}
+                    >
+                      <TrashIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {!fileCollapsed && (
+                  <div>
+                    {tree.length > 0 ? (
+                      <nav className="space-y-1">{renderNodes(tree, null, 0.75)}</nav>
+                    ) : (
+                      <div className="px-2 py-2 text-sm text-vscode-text-secondary">No outline available</div>
+                    )}
+
+                    {assets.length > 0 && (
+                      <div className="mt-3">
+                        <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
                           <button
                             type="button"
-                            className="p-1 rounded hover:bg-vscode-hover text-vscode-text-secondary hover:text-vscode-text"
-                            title="Duplicate"
-                            aria-label="Duplicate document"
-                            disabled={duplicatingDocId === doc.id || deletingDocId === doc.id}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              void duplicateDoc(doc.id);
-                            }}
+                            aria-label={assetsCollapsed ? 'Expand assets' : 'Collapse assets'}
+                            onClick={() => setAssetsCollapsed((v) => !v)}
+                            className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
                           >
-                            <Square2StackIcon className="w-4 h-4" />
+                            <ChevronRightIcon className={`w-4 h-4 transition-transform ${assetsCollapsed ? '' : 'rotate-90'}`} />
                           </button>
-                          <button
-                            type="button"
-                            className="p-1 rounded hover:bg-vscode-hover text-vscode-text-secondary hover:text-vscode-text"
-                            title="Delete"
-                            aria-label="Delete document"
-                            disabled={deletingDocId === doc.id || duplicatingDocId === doc.id}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              openDeleteConfirm(doc);
-                            }}
-                          >
-                            <TrashIcon className="w-4 h-4" />
-                          </button>
+                          <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
+                          <span className="text-sm text-vscode-text-secondary truncate">assets</span>
                         </div>
-                      </button>
-                    );
-                  }
 
-                  return (
-                    <div key={doc.id}>
-                      <div
-                        className="group flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors"
-                        style={{ paddingLeft: '1.25rem' }}
-                      >
-                        <button
-                          type="button"
-                          aria-label={fileCollapsed ? 'Expand file' : 'Collapse file'}
-                          onClick={() => setFileCollapsed((v) => !v)}
-                          className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
-                        >
-                          <ChevronRightIcon className={`w-4 h-4 transition-transform ${fileCollapsed ? '' : 'rotate-90'}`} />
-                        </button>
-                        <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
-                        <div className="min-w-0">
-                          <div className="text-sm text-vscode-text truncate">{fileLabel}</div>
-                          <div className="text-xs text-vscode-text-secondary truncate">{fileName}</div>
-                        </div>
-                        <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            type="button"
-                            className="p-1 rounded hover:bg-vscode-hover text-vscode-text-secondary hover:text-vscode-text"
-                            title="Duplicate"
-                            aria-label="Duplicate document"
-                            disabled={duplicatingDocId === doc.id || deletingDocId === doc.id}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              void duplicateDoc(doc.id);
-                            }}
-                          >
-                            <Square2StackIcon className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            className="p-1 rounded hover:bg-vscode-hover text-vscode-text-secondary hover:text-vscode-text"
-                            title="Delete"
-                            aria-label="Delete document"
-                            disabled={deletingDocId === doc.id || duplicatingDocId === doc.id}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              openDeleteConfirm(doc);
-                            }}
-                          >
-                            <TrashIcon className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {!fileCollapsed && (
-                        <div>
-                          {tree.length > 0 ? (
-                            <nav className="space-y-1">{renderNodes(tree, null, 0.0)}</nav>
-                          ) : (
-                            <div className="px-2 py-2 text-sm text-vscode-text-secondary">No outline available</div>
-                          )}
-
-                          {assets.length > 0 && (
-                            <div className="mt-3">
-                              <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
-                                <button
-                                  type="button"
-                                  aria-label={assetsCollapsed ? 'Expand assets' : 'Collapse assets'}
-                                  onClick={() => setAssetsCollapsed((v) => !v)}
-                                  className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
-                                >
-                                  <ChevronRightIcon className={`w-4 h-4 transition-transform ${assetsCollapsed ? '' : 'rotate-90'}`} />
-                                </button>
-                                <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
-                                <span className="text-sm text-vscode-text-secondary truncate">assets</span>
+                        {!assetsCollapsed && (
+                          <div className="mt-1 space-y-1">
+                            {assets.map((a) => (
+                              <div
+                                key={a.key}
+                                className="relative flex items-center gap-2 py-1 px-2 text-sm rounded hover:bg-vscode-active transition-colors text-vscode-text-secondary"
+                                style={{ paddingLeft: '1.25rem' }}
+                                onMouseEnter={() => {
+                                  const el = document.querySelector(`[data-asset-row="${a.key}"]`);
+                                  if (el && el instanceof HTMLElement) {
+                                    setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: el.getBoundingClientRect() });
+                                  } else {
+                                    setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: new DOMRect(0, 0, 0, 0) });
+                                  }
+                                  void ensureAssetUrl(a.key);
+                                }}
+                                onMouseLeave={() => {
+                                  setHoveredAsset((cur) => (cur?.key === a.key ? null : cur));
+                                }}
+                                data-asset-row={a.key}
+                              >
+                                <PhotoIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
+                                <span className="truncate">{a.key}</span>
                               </div>
-
-                              {!assetsCollapsed && (
-                                <div className="mt-1 space-y-1">
-                                  {assets.map((a) => (
-                                    <div
-                                      key={a.key}
-                                      className="relative flex items-center gap-2 py-1 px-2 text-sm rounded hover:bg-vscode-active transition-colors text-vscode-text-secondary"
-                                      style={{ paddingLeft: '1.25rem' }}
-                                      onMouseEnter={() => {
-                                        const el = document.querySelector(`[data-asset-row="${a.key}"]`);
-                                        if (el && el instanceof HTMLElement) {
-                                          setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: el.getBoundingClientRect() });
-                                        } else {
-                                          setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: new DOMRect(0, 0, 0, 0) });
-                                        }
-                                        void ensureAssetUrl(a.key);
-                                      }}
-                                      onMouseLeave={() => {
-                                        setHoveredAsset((cur) => (cur?.key === a.key ? null : cur));
-                                      }}
-                                      data-asset-row={a.key}
-                                    >
-                                      <PhotoIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
-                                      <span className="truncate">{a.key}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                }
-              )}
-            </div>
-          )}
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div>
