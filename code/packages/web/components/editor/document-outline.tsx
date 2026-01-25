@@ -59,19 +59,14 @@ function toFileNameFromTitle(title: string): string {
   return `${safe || 'untitled-document'}.md`;
 }
 
-function sortProjectDocs(params: { docs: ZadooxDocument[]; currentDocId: string | null }): ZadooxDocument[] {
-  const { docs, currentDocId } = params;
+function sortProjectDocs(docs: ZadooxDocument[]): ZadooxDocument[] {
   const sorted = [...docs].sort((a: any, b: any) => {
     const ao = typeof a?.metadata?.order === 'number' ? a.metadata.order : 0;
     const bo = typeof b?.metadata?.order === 'number' ? b.metadata.order : 0;
     if (ao !== bo) return ao - bo;
     return String(a?.title || '').localeCompare(String(b?.title || ''));
   });
-  if (!currentDocId) return sorted;
-  const idx = sorted.findIndex((d) => d.id === currentDocId);
-  if (idx <= 0) return sorted;
-  const cur = sorted[idx]!;
-  return [cur, ...sorted.slice(0, idx), ...sorted.slice(idx + 1)];
+  return sorted;
 }
 
 function collectAssetFilesFromIr(ir: DocumentNode): AssetFile[] {
@@ -230,8 +225,7 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
       try {
         const docs = await api.documents.listByProject(projectId);
         if (cancelled) return;
-        const currentId = currentDocumentId ?? derivedIr?.docId ?? null;
-        const sorted = sortProjectDocs({ docs, currentDocId: currentId });
+        const sorted = sortProjectDocs(docs);
         projectDocsCache.set(projectId, sorted);
         setProjectDocs(sorted);
       } catch {
@@ -253,7 +247,7 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
       const activeId = currentDocumentId || derivedIr?.docId || null;
       // Refresh list (ensures we always navigate based on the latest state).
       const nextDocs = await api.documents.listByProject(projectId);
-      const sorted = sortProjectDocs({ docs: nextDocs, currentDocId: activeId });
+      const sorted = sortProjectDocs(nextDocs);
       projectDocsCache.set(projectId, sorted);
       setProjectDocs(sorted);
       if (activeId && docId === activeId) {
@@ -329,8 +323,7 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
     try {
       const created = await api.documents.duplicate(docId);
       setProjectDocs((prev) => {
-        const currentId = currentDocumentId ?? derivedIr?.docId ?? null;
-        const sorted = sortProjectDocs({ docs: [...prev, created], currentDocId: currentId });
+        const sorted = sortProjectDocs([...prev, created]);
         projectDocsCache.set(projectId, sorted);
         return sorted;
       });
@@ -711,7 +704,13 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
 
             return (
               <div key={doc.id}>
-                <div className="group flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
+                <div
+                  className={
+                    'group flex items-center gap-2 px-2 py-1 rounded transition-colors ' +
+                    (isCurrent ? 'bg-vscode-active' : 'hover:bg-vscode-active')
+                  }
+                  aria-current={isCurrent ? 'true' : undefined}
+                >
                   <button
                     type="button"
                     aria-label={fileCollapsed ? 'Expand file' : 'Collapse file'}
@@ -722,7 +721,9 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
                   </button>
                   <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
                   <div className="min-w-0">
-                    <div className="text-sm text-vscode-text truncate">{fileLabel}</div>
+                    <div className={'text-sm truncate ' + (isCurrent ? 'text-white font-medium' : 'text-vscode-text')}>
+                      {fileLabel}
+                    </div>
                   </div>
                   <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
