@@ -185,7 +185,6 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
   const assets = useMemo(() => (derivedIr ? collectAssetFilesFromIr(derivedIr) : []), [derivedIr]);
 
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
-  const [projectCollapsed, setProjectCollapsed] = useState(false);
   const [docsCollapsed, setDocsCollapsed] = useState(false);
   const [fileCollapsed, setFileCollapsed] = useState(false);
   const [assetsCollapsed, setAssetsCollapsed] = useState(false);
@@ -376,20 +375,17 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
 
   const collapseAll = () => {
     // Collapse everything: file node, assets folder, and all collapsible headings.
-    setProjectCollapsed(true);
     setFileCollapsed(true);
     setAssetsCollapsed(true);
     setCollapsedIds(new Set(collapsibleIds));
   };
   const expandAll = () => {
-    setProjectCollapsed(false);
     setFileCollapsed(false);
     setAssetsCollapsed(false);
     setCollapsedIds(new Set());
   };
 
-  const isFullyCollapsed =
-    projectCollapsed && fileCollapsed && assetsCollapsed && collapsedIds.size === collapsibleIds.length;
+  const isFullyCollapsed = fileCollapsed && assetsCollapsed && collapsedIds.size === collapsibleIds.length;
 
   const renderNodes = (nodes: OutlineNode[], parentHeadingLevel: number | null = null, basePadRem = 0) => {
     return nodes.map((node, index) => {
@@ -505,263 +501,226 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
 
   return (
     <div className="p-4">
-      {/* Project root node */}
-      <div className="mb-2">
-        <div className="flex items-center justify-between gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
-          <button
-            type="button"
-            aria-label={projectCollapsed ? 'Expand project' : 'Collapse project'}
-            onClick={() => setProjectCollapsed((v) => !v)}
-            className="flex items-center gap-2 min-w-0"
-          >
-            <span className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100" aria-hidden="true">
-              <ChevronRightIcon className={`w-4 h-4 transition-transform ${projectCollapsed ? '' : 'rotate-90'}`} />
-            </span>
-            <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
-            <span className="text-sm text-vscode-text truncate">
-              {String(projectName ?? '').trim() || 'Project'}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              isFullyCollapsed ? expandAll() : collapseAll();
-            }}
-            className="p-1 rounded hover:bg-vscode-active transition-colors text-vscode-text-secondary hover:text-vscode-text flex-shrink-0"
-            title={isFullyCollapsed ? 'Expand all' : 'Collapse all'}
-            aria-label={isFullyCollapsed ? 'Expand all' : 'Collapse all'}
-          >
-            {isFullyCollapsed ? (
-              <ArrowsPointingOutIcon className="w-4 h-4" />
-            ) : (
-              <ArrowsPointingInIcon className="w-4 h-4" />
-            )}
-          </button>
-        </div>
-
-        {!projectCollapsed && (
-          <div className="mt-1">
-            {/* Documents folder (project-scoped). */}
-            {projectId ? (
-              <div>
-                <div
-                  className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors"
-                  style={{ paddingLeft: '1.25rem' }}
-                >
-                  <button
-                    type="button"
-                    aria-label={docsCollapsed ? 'Expand documents' : 'Collapse documents'}
-                    onClick={() => setDocsCollapsed((v) => !v)}
-                    className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
-                  >
-                    <ChevronRightIcon className={`w-4 h-4 transition-transform ${docsCollapsed ? '' : 'rotate-90'}`} />
-                  </button>
-                  <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm text-vscode-text-secondary truncate">documents</div>
-                    <div className="text-xs text-vscode-text-secondary truncate">
-                      {docsLoading ? 'Loading…' : `${projectDocs.length || 1} file${(projectDocs.length || 1) === 1 ? '' : 's'}`}
-                    </div>
-                  </div>
-                </div>
-
-                {!docsCollapsed && (
-                  <div className="mt-1">
-                    {(projectDocs.length > 0 ? projectDocs : [{ id: currentDocumentId || derivedIr?.docId || 'unknown', title: fileLabel, metadata: {} as any }] as any).map(
-                      (doc: any) => {
-                        const isCurrent = Boolean((currentDocumentId || derivedIr?.docId) && doc.id === (currentDocumentId || derivedIr?.docId));
-                        const label = String(doc?.title ?? '').trim() || (isCurrent ? fileLabel : 'Untitled Document');
-                        const name = toFileNameFromTitle(label);
-
-                        if (!isCurrent) {
-                          return (
-                            <button
-                              key={doc.id}
-                              type="button"
-                              className="w-full text-left flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors"
-                              style={{ paddingLeft: '2.25rem' }}
-                              onClick={() => {
-                                if (!projectId) return;
-                                router.push(`/dashboard/projects/${projectId}/documents/${doc.id}`);
-                              }}
-                            >
-                              <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
-                              <div className="min-w-0">
-                                <div className="text-sm text-vscode-text truncate">{label}</div>
-                                <div className="text-xs text-vscode-text-secondary truncate">{name}</div>
-                              </div>
-                            </button>
-                          );
-                        }
-
-                        // Current document: keep the full outline+assets tree (IR-driven).
-                        return (
-                          <div key={doc.id}>
-                            <div
-                              className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors"
-                              style={{ paddingLeft: '2.25rem' }}
-                            >
-                              <button
-                                type="button"
-                                aria-label={fileCollapsed ? 'Expand file' : 'Collapse file'}
-                                onClick={() => setFileCollapsed((v) => !v)}
-                                className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
-                              >
-                                <ChevronRightIcon className={`w-4 h-4 transition-transform ${fileCollapsed ? '' : 'rotate-90'}`} />
-                              </button>
-                              <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
-                              <div className="min-w-0">
-                                <div className="text-sm text-vscode-text truncate">{fileLabel}</div>
-                                <div className="text-xs text-vscode-text-secondary truncate">{fileName}</div>
-                              </div>
-                            </div>
-
-                            {!fileCollapsed && (
-                              <div>
-                                {tree.length > 0 ? (
-                                  <nav className="space-y-1">{renderNodes(tree, null, 1.0)}</nav>
-                                ) : (
-                                  <div className="px-2 py-2 text-sm text-vscode-text-secondary">No outline available</div>
-                                )}
-
-                                {/* Assets folder (only when the doc references zadoox-asset:// files) */}
-                                {assets.length > 0 && (
-                                  <div className="mt-3">
-                                    <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
-                                      <button
-                                        type="button"
-                                        aria-label={assetsCollapsed ? 'Expand assets' : 'Collapse assets'}
-                                        onClick={() => setAssetsCollapsed((v) => !v)}
-                                        className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
-                                      >
-                                        <ChevronRightIcon
-                                          className={`w-4 h-4 transition-transform ${assetsCollapsed ? '' : 'rotate-90'}`}
-                                        />
-                                      </button>
-                                      <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
-                                      <span className="text-sm text-vscode-text-secondary truncate">assets</span>
-                                    </div>
-
-                                    {!assetsCollapsed && (
-                                      <div className="mt-1 space-y-1">
-                                        {assets.map((a) => (
-                                          <div
-                                            key={a.key}
-                                            className="relative flex items-center gap-2 py-1 px-2 text-sm rounded hover:bg-vscode-active transition-colors text-vscode-text-secondary"
-                                            style={{ paddingLeft: '2.25rem' }}
-                                            onMouseEnter={() => {
-                                              const el = document.querySelector(`[data-asset-row="${a.key}"]`);
-                                              if (el && el instanceof HTMLElement) {
-                                                setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: el.getBoundingClientRect() });
-                                              } else {
-                                                setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: new DOMRect(0, 0, 0, 0) });
-                                              }
-                                              void ensureAssetUrl(a.key);
-                                            }}
-                                            onMouseLeave={() => {
-                                              setHoveredAsset((cur) => (cur?.key === a.key ? null : cur));
-                                            }}
-                                            data-asset-row={a.key}
-                                          >
-                                            <PhotoIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
-                                            <span className="truncate">{a.key}</span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      }
-                    )}
-                  </div>
-                )}
-              </div>
-            ) : (
-              // Legacy/single-doc fallback: keep previous behavior.
-              <div>
-                <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors" style={{ paddingLeft: '1.25rem' }}>
-                  <button
-                    type="button"
-                    aria-label={fileCollapsed ? 'Expand file' : 'Collapse file'}
-                    onClick={() => setFileCollapsed((v) => !v)}
-                    className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
-                  >
-                    <ChevronRightIcon className={`w-4 h-4 transition-transform ${fileCollapsed ? '' : 'rotate-90'}`} />
-                  </button>
-                  <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
-                  <div className="min-w-0">
-                    <div className="text-sm text-vscode-text truncate">{fileLabel}</div>
-                    <div className="text-xs text-vscode-text-secondary truncate">{fileName}</div>
-                  </div>
-                </div>
-
-                {!fileCollapsed && (
-                  <div>
-                    {tree.length > 0 ? (
-                      <nav className="space-y-1">{renderNodes(tree, null, 1.0)}</nav>
-                    ) : (
-                      <div className="px-2 py-2 text-sm text-vscode-text-secondary">No outline available</div>
-                    )}
-
-                    {/* Assets folder (only when the doc references zadoox-asset:// files) */}
-                    {assets.length > 0 && (
-                      <div className="mt-3">
-                        <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
-                          <button
-                            type="button"
-                            aria-label={assetsCollapsed ? 'Expand assets' : 'Collapse assets'}
-                            onClick={() => setAssetsCollapsed((v) => !v)}
-                            className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
-                          >
-                            <ChevronRightIcon className={`w-4 h-4 transition-transform ${assetsCollapsed ? '' : 'rotate-90'}`} />
-                          </button>
-                          <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
-                          <span className="text-sm text-vscode-text-secondary truncate">assets</span>
-                        </div>
-
-                        {!assetsCollapsed && (
-                          <div className="mt-1 space-y-1">
-                            {assets.map((a) => (
-                              <div
-                                key={a.key}
-                                className="relative flex items-center gap-2 py-1 px-2 text-sm rounded hover:bg-vscode-active transition-colors text-vscode-text-secondary"
-                                style={{ paddingLeft: '2.25rem' }}
-                                onMouseEnter={() => {
-                                  const el = document.querySelector(`[data-asset-row="${a.key}"]`);
-                                  if (el && el instanceof HTMLElement) {
-                                    setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: el.getBoundingClientRect() });
-                                  } else {
-                                    setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: new DOMRect(0, 0, 0, 0) });
-                                  }
-                                  void ensureAssetUrl(a.key);
-                                }}
-                                onMouseLeave={() => {
-                                  setHoveredAsset((cur) => (cur?.key === a.key ? null : cur));
-                                }}
-                                data-asset-row={a.key}
-                              >
-                                <PhotoIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
-                                <span className="truncate">{a.key}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+      {/* No project-root folder row: the outline starts directly with actual folders (e.g. documents/assets). */}
+      <div className="mb-2 flex items-center justify-end">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            isFullyCollapsed ? expandAll() : collapseAll();
+          }}
+          className="p-1 rounded hover:bg-vscode-active transition-colors text-vscode-text-secondary hover:text-vscode-text"
+          title={isFullyCollapsed ? 'Expand all' : 'Collapse all'}
+          aria-label={isFullyCollapsed ? 'Expand all' : 'Collapse all'}
+        >
+          {isFullyCollapsed ? <ArrowsPointingOutIcon className="w-4 h-4" /> : <ArrowsPointingInIcon className="w-4 h-4" />}
+        </button>
       </div>
+
+      {/* Documents folder (project-scoped). */}
+      {projectId ? (
+        <div>
+          <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
+            <button
+              type="button"
+              aria-label={docsCollapsed ? 'Expand documents' : 'Collapse documents'}
+              onClick={() => setDocsCollapsed((v) => !v)}
+              className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
+            >
+              <ChevronRightIcon className={`w-4 h-4 transition-transform ${docsCollapsed ? '' : 'rotate-90'}`} />
+            </button>
+            <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm text-vscode-text-secondary truncate">documents</div>
+              <div className="text-xs text-vscode-text-secondary truncate">
+                {docsLoading ? 'Loading…' : `${projectDocs.length || 1} file${(projectDocs.length || 1) === 1 ? '' : 's'}`}
+              </div>
+            </div>
+          </div>
+
+          {!docsCollapsed && (
+            <div className="mt-1">
+              {(projectDocs.length > 0 ? projectDocs : [{ id: currentDocumentId || derivedIr?.docId || 'unknown', title: fileLabel, metadata: {} as any }] as any).map(
+                (doc: any) => {
+                  const isCurrent = Boolean((currentDocumentId || derivedIr?.docId) && doc.id === (currentDocumentId || derivedIr?.docId));
+                  const label = String(doc?.title ?? '').trim() || (isCurrent ? fileLabel : 'Untitled Document');
+                  const name = toFileNameFromTitle(label);
+
+                  if (!isCurrent) {
+                    return (
+                      <button
+                        key={doc.id}
+                        type="button"
+                        className="w-full text-left flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors"
+                        style={{ paddingLeft: '1.25rem' }}
+                        onClick={() => {
+                          if (!projectId) return;
+                          router.push(`/dashboard/projects/${projectId}/documents/${doc.id}`);
+                        }}
+                      >
+                        <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
+                        <div className="min-w-0">
+                          <div className="text-sm text-vscode-text truncate">{label}</div>
+                          <div className="text-xs text-vscode-text-secondary truncate">{name}</div>
+                        </div>
+                      </button>
+                    );
+                  }
+
+                  return (
+                    <div key={doc.id}>
+                      <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors" style={{ paddingLeft: '1.25rem' }}>
+                        <button
+                          type="button"
+                          aria-label={fileCollapsed ? 'Expand file' : 'Collapse file'}
+                          onClick={() => setFileCollapsed((v) => !v)}
+                          className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
+                        >
+                          <ChevronRightIcon className={`w-4 h-4 transition-transform ${fileCollapsed ? '' : 'rotate-90'}`} />
+                        </button>
+                        <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
+                        <div className="min-w-0">
+                          <div className="text-sm text-vscode-text truncate">{fileLabel}</div>
+                          <div className="text-xs text-vscode-text-secondary truncate">{fileName}</div>
+                        </div>
+                      </div>
+
+                      {!fileCollapsed && (
+                        <div>
+                          {tree.length > 0 ? (
+                            <nav className="space-y-1">{renderNodes(tree, null, 0.0)}</nav>
+                          ) : (
+                            <div className="px-2 py-2 text-sm text-vscode-text-secondary">No outline available</div>
+                          )}
+
+                          {assets.length > 0 && (
+                            <div className="mt-3">
+                              <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
+                                <button
+                                  type="button"
+                                  aria-label={assetsCollapsed ? 'Expand assets' : 'Collapse assets'}
+                                  onClick={() => setAssetsCollapsed((v) => !v)}
+                                  className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
+                                >
+                                  <ChevronRightIcon className={`w-4 h-4 transition-transform ${assetsCollapsed ? '' : 'rotate-90'}`} />
+                                </button>
+                                <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
+                                <span className="text-sm text-vscode-text-secondary truncate">assets</span>
+                              </div>
+
+                              {!assetsCollapsed && (
+                                <div className="mt-1 space-y-1">
+                                  {assets.map((a) => (
+                                    <div
+                                      key={a.key}
+                                      className="relative flex items-center gap-2 py-1 px-2 text-sm rounded hover:bg-vscode-active transition-colors text-vscode-text-secondary"
+                                      style={{ paddingLeft: '1.25rem' }}
+                                      onMouseEnter={() => {
+                                        const el = document.querySelector(`[data-asset-row="${a.key}"]`);
+                                        if (el && el instanceof HTMLElement) {
+                                          setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: el.getBoundingClientRect() });
+                                        } else {
+                                          setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: new DOMRect(0, 0, 0, 0) });
+                                        }
+                                        void ensureAssetUrl(a.key);
+                                      }}
+                                      onMouseLeave={() => {
+                                        setHoveredAsset((cur) => (cur?.key === a.key ? null : cur));
+                                      }}
+                                      data-asset-row={a.key}
+                                    >
+                                      <PhotoIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
+                                      <span className="truncate">{a.key}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div>
+          <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
+            <button
+              type="button"
+              aria-label={fileCollapsed ? 'Expand file' : 'Collapse file'}
+              onClick={() => setFileCollapsed((v) => !v)}
+              className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
+            >
+              <ChevronRightIcon className={`w-4 h-4 transition-transform ${fileCollapsed ? '' : 'rotate-90'}`} />
+            </button>
+            <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
+            <div className="min-w-0">
+              <div className="text-sm text-vscode-text truncate">{fileLabel}</div>
+              <div className="text-xs text-vscode-text-secondary truncate">{fileName}</div>
+            </div>
+          </div>
+
+          {!fileCollapsed && (
+            <div>
+              {tree.length > 0 ? (
+                <nav className="space-y-1">{renderNodes(tree, null, 0.0)}</nav>
+              ) : (
+                <div className="px-2 py-2 text-sm text-vscode-text-secondary">No outline available</div>
+              )}
+
+              {assets.length > 0 && (
+                <div className="mt-3">
+                  <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
+                    <button
+                      type="button"
+                      aria-label={assetsCollapsed ? 'Expand assets' : 'Collapse assets'}
+                      onClick={() => setAssetsCollapsed((v) => !v)}
+                      className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
+                    >
+                      <ChevronRightIcon className={`w-4 h-4 transition-transform ${assetsCollapsed ? '' : 'rotate-90'}`} />
+                    </button>
+                    <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
+                    <span className="text-sm text-vscode-text-secondary truncate">assets</span>
+                  </div>
+
+                  {!assetsCollapsed && (
+                    <div className="mt-1 space-y-1">
+                      {assets.map((a) => (
+                        <div
+                          key={a.key}
+                          className="relative flex items-center gap-2 py-1 px-2 text-sm rounded hover:bg-vscode-active transition-colors text-vscode-text-secondary"
+                          style={{ paddingLeft: '1.25rem' }}
+                          onMouseEnter={() => {
+                            const el = document.querySelector(`[data-asset-row="${a.key}"]`);
+                            if (el && el instanceof HTMLElement) {
+                              setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: el.getBoundingClientRect() });
+                            } else {
+                              setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: new DOMRect(0, 0, 0, 0) });
+                            }
+                            void ensureAssetUrl(a.key);
+                          }}
+                          onMouseLeave={() => {
+                            setHoveredAsset((cur) => (cur?.key === a.key ? null : cur));
+                          }}
+                          data-asset-row={a.key}
+                        >
+                          <PhotoIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
+                          <span className="truncate">{a.key}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Render hover preview outside the sidebar scroll container so it isn't clipped */}
       {typeof document !== 'undefined' && typeof window !== 'undefined' ? renderAssetPreview() : null}

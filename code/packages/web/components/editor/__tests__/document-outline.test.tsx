@@ -107,8 +107,6 @@ describe('DocumentOutline', () => {
 
     render(<DocumentOutline content="" ir={ir} projectName="My Project" />);
 
-    expect(screen.getByText('My Project')).toBeInTheDocument();
-
     expect(screen.getByText('assets')).toBeInTheDocument();
     expect(screen.getByText('doc-1__img-1.png')).toBeInTheDocument();
   });
