@@ -419,10 +419,14 @@ describe('DocumentService', () => {
         },
       ];
 
-      mockQueryBuilder.order.mockResolvedValue({
-        data: mockDocuments,
-        error: null,
-      });
+      // listDocumentsByProject now applies a deterministic secondary ordering:
+      // .order('created_at').order('id')
+      mockQueryBuilder.order
+        .mockImplementationOnce(() => mockQueryBuilder)
+        .mockResolvedValueOnce({
+          data: mockDocuments,
+          error: null,
+        });
 
       const result = await service.listDocumentsByProject('project-id');
 
