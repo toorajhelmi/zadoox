@@ -18,7 +18,7 @@ import type { OutlineItem } from '@zadoox/shared';
 import { createClient } from '@/lib/supabase/client';
 import { api } from '@/lib/api/client';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import type { Document as ZadooxDocument } from '@zadoox/shared';
 
 interface DocumentOutlineProps {
@@ -188,6 +188,7 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
   // Do not parse content here; that would create a second IR and can diverge across edit modes.
   const derivedIr = ir ?? null;
   const router = useRouter();
+  const params = useParams<{ id?: string; documentId?: string }>();
 
   const items = useMemo(() => {
     // Phase 11: outline is IR-driven.
@@ -231,7 +232,10 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
     if (!projectId) return;
     let cancelled = false;
     const cached = projectDocsCache.get(projectId) ?? [];
+    // Do NOT refetch on navigation. Keep the list visually stable.
+    // We only fetch when there's no cache yet; create/delete/duplicate update the cache explicitly.
     if (cached.length === 0) setDocsLoading(true);
+    else return;
     (async () => {
       try {
         const docs = await api.documents.listByProject(projectId);
@@ -645,7 +649,11 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
             ? projectDocs
             : ([{ id: currentDocumentId || derivedIr?.docId || 'unknown', title: fileLabel, metadata: {} as any }] as any)
           ).map((doc: any) => {
-            const activeDocId = currentDocumentId ?? derivedIr?.docId ?? null;
+            const activeDocId =
+              (typeof params?.documentId === 'string' ? params.documentId : null) ??
+              currentDocumentId ??
+              derivedIr?.docId ??
+              null;
             const isCurrent = Boolean(activeDocId && doc.id === activeDocId);
             const label = String(doc?.title ?? '').trim() || (isCurrent ? fileLabel : 'Untitled Document');
                 // Keep filename as tooltip-only (avoid noisy second line in the tree).
