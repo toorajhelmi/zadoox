@@ -1107,8 +1107,9 @@ export async function documentRoutes(fastify: FastifyInstance) {
                       : 'application/octet-stream';
         reply.header('Content-Type', contentType);
         reply.header('Cache-Control', 'private, max-age=300');
-        // Fastify can send a ReadableStream-like object from Supabase download directly.
-        return reply.send(data);
+        // Supabase returns a Blob in Node; Fastify needs Buffer/string/stream.
+        const buf = Buffer.from(await data.arrayBuffer());
+        return reply.send(buf);
       } catch (error: unknown) {
         fastify.log.error(error);
         const msg = error instanceof Error ? error.message : 'Failed to download LaTeX file';
