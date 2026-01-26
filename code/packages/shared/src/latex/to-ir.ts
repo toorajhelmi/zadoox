@@ -1298,7 +1298,11 @@ function parseBlocks(latex: string): Block[] {
     }
 
     // figure environment (Zadoox subset)
-    if (line.trim() === '\\begin{figure}') {
+    // Support optional placement args and starred form used by many LaTeX papers:
+    // - \begin{figure}[t]
+    // - \begin{figure*}[t]
+    const beginFigure = /^\\begin\{figure\*?\}(?:\[[^\]]*\])?\s*$/.test(line.trim());
+    if (beginFigure) {
       const startOffset = start;
       let j = i + 1;
       let src = '';
@@ -1309,7 +1313,8 @@ function parseBlocks(latex: string): Block[] {
       let caption = '';
       let label: string | undefined;
 
-      while (j < lines.length && lines[j].line.trim() !== '\\end{figure}') {
+      // End can be \end{figure} or \end{figure*}
+      while (j < lines.length && !/^\\end\{figure\*?\}\s*$/.test(lines[j].line.trim())) {
         const t = lines[j].line.trim();
         const c = /^%\s*zadoox-([a-zA-Z0-9_-]+)\s*:\s*(.*)$/.exec(t);
         if (c) {
@@ -1345,7 +1350,7 @@ function parseBlocks(latex: string): Block[] {
         }
         j++;
       }
-      if (j < lines.length && lines[j].line.trim() === '\\end{figure}') {
+      if (j < lines.length && /^\\end\{figure\*?\}\s*$/.test(lines[j].line.trim())) {
         const endOffset = lines[j].end;
         const raw = lines.slice(i, j + 1).map((l) => l.line).join('\n');
 
@@ -1432,7 +1437,7 @@ function parseBlocks(latex: string): Block[] {
         (/^\\(section|subsection|subsubsection)\{/.test(t) ||
           t === '\\begin{verbatim}' ||
           t === '\\begin{equation}' ||
-          t === '\\begin{figure}' ||
+          /^\\begin\{figure\*?\}(?:\[[^\]]*\])?\s*$/.test(t) ||
           /^\\begin\{wrapfigure\}\{[lr]\}\{/.test(t) ||
           /^\\begin\{(itemize|enumerate)\}/.test(t))
       ) {
