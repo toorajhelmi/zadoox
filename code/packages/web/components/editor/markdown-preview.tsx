@@ -3,7 +3,7 @@
 import { renderMarkdownToHtml, extractHeadings } from '@zadoox/shared';
 import { useMemo, useEffect, useRef, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import * as katex from 'katex';
+import katex from 'katex';
 
 interface MarkdownPreviewProps {
   content: string;
