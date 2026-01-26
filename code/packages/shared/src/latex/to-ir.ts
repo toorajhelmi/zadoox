@@ -126,6 +126,7 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
           id: stableNodeId({ docId, nodeType: 'section', path }),
           level: b.level,
           title: b.title,
+          ...(b.label ? { label: b.label } : null),
           children: [],
           source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
         };
@@ -213,6 +214,7 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
           type: 'math_block',
           id: stableNodeId({ docId, nodeType: 'math_block', path }),
           latex: b.latex,
+          ...(b.label ? { label: b.label } : null),
           source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
         };
         appendToCurrentContainer(node);
@@ -452,6 +454,7 @@ type Block =
       kind: 'section';
       level: number;
       title: string;
+      label?: string;
       raw: string;
       blockIndex: number;
       startOffset: number;
@@ -486,6 +489,7 @@ type Block =
   | {
       kind: 'math';
       latex: string;
+      label?: string;
       raw: string;
       blockIndex: number;
       startOffset: number;
@@ -1192,19 +1196,39 @@ function parseBlocks(latex: string): Block[] {
     }
 
     // Sections
-    const sec = /^\\+(section|subsection|subsubsection)\{([^}]*)\}(?:\s*%.*)?$/.exec(trimmed);
+    const sec = /^\\+(section|subsection|subsubsection)\{([^}]*)\}([\s\S]*)$/.exec(trimmed);
     if (sec) {
       const level = sec[1] === 'section' ? 1 : sec[1] === 'subsection' ? 2 : 3;
       const title = latexInlineToMarkdown((sec[2] ?? '').trim());
+      let tail = String(sec[3] ?? '').trim();
+      // Allow "\subsection{X} \label{sec:x} Some text..." on the same line.
+      let label: string | undefined;
+      const lm = /\\label\{([^}]+)\}/.exec(tail);
+      if (lm) {
+        label = String(lm[1] ?? '').trim();
+        tail = tail.replace(lm[0], ' ').trim();
+      }
       blocks.push({
         kind: 'section',
         level,
         title,
+        ...(label ? { label } : null),
         raw: line,
         blockIndex,
         startOffset: start,
         endOffset: end,
       });
+      if (tail.length > 0) {
+        blocks.push({
+          kind: 'paragraph',
+          text: latexInlineToMarkdown(tail),
+          raw: line,
+          blockIndex: blockIndex + 1,
+          startOffset: start,
+          endOffset: end,
+        });
+        blockIndex++;
+      }
       i++;
       blockIndex++;
       continue;
@@ -1240,10 +1264,17 @@ function parseBlocks(latex: string): Block[] {
       const startOffset = start;
       let j = i + 1;
       const body: string[] = [];
+      let label: string | undefined;
       while (j < lines.length && lines[j].line.trim() !== `\\end{${env}}`) {
         const rawLine = lines[j].line;
         const t = rawLine.trim();
         if (t.startsWith('%') && !isZxMarkerLine(t)) {
+          j++;
+          continue;
+        }
+        const lab = /^\\label\{([^}]*)\}(?:\s*%.*)?$/.exec(t);
+        if (lab) {
+          label = String(lab[1] ?? '').trim();
           j++;
           continue;
         }
@@ -1253,7 +1284,7 @@ function parseBlocks(latex: string): Block[] {
       if (j < lines.length && lines[j].line.trim() === `\\end{${env}}`) {
         const endOffset = lines[j].end;
         const raw = lines.slice(i, j + 1).map((l) => l.line).join('\n');
-        blocks.push({ kind: 'math', latex: body.join('\n').trim(), raw, blockIndex, startOffset, endOffset });
+        blocks.push({ kind: 'math', latex: body.join('\n').trim(), ...(label ? { label } : null), raw, blockIndex, startOffset, endOffset });
         i = j + 1;
         blockIndex++;
         continue;
@@ -1551,6 +1582,27 @@ function buildXmdFigureLine(b: Extract<Block, { kind: 'figure' }>): string {
 function latexInlineToMarkdown(text: string): string {
   let s = text ?? '';
 
+  const sanitizeRef = (raw: string): string =>
+    String(raw ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+
+  const refTargetId = (labelRaw: string): string => {
+    const label = String(labelRaw ?? '').trim();
+    const slug = sanitizeRef(label);
+    const prefix = label.split(':')[0]?.toLowerCase().trim();
+    if (prefix === 'fig') return `figure-${slug}`;
+    if (prefix === 'grid') return `grid-${slug}`;
+    if (prefix === 'tbl' || prefix === 'tab') return `table-${slug}`;
+    if (prefix === 'eq') return `eq-${slug}`;
+    if (prefix === 'sec') return `sec-${slug}`;
+    // Default to section-style id.
+    return `sec-${slug}`;
+  };
+
   // Citations:
   // Convert \cite/\citep/\citet (+ optional star) into a stable inline token we can render later.
   // We intentionally ignore optional args ([...]) for now.
@@ -1576,6 +1628,14 @@ function latexInlineToMarkdown(text: string): string {
   s = s.replace(/\\emph\{([^}]+)\}/g, (_m, t) => `*${t}*`);
   // \texttt{t} -> `t`
   s = s.replace(/\\texttt\{([^}]+)\}/g, (_m, t) => `\`${t}\``);
+
+  // Cross references:
+  // - Drop \label in inline text (we attach labels to blocks we recognize; others are not rendered as text).
+  s = s.replace(/\\label\{[^}]+\}/g, '');
+  // - \eqref{lbl} -> ([lbl](#...))
+  s = s.replace(/\\eqref\{([^}]+)\}/g, (_m, lbl) => `([${String(lbl ?? '').trim()}](#${refTargetId(lbl)}))`);
+  // - \ref{lbl} -> [lbl](#...)
+  s = s.replace(/\\ref\{([^}]+)\}/g, (_m, lbl) => `[${String(lbl ?? '').trim()}](#${refTargetId(lbl)})`);
 
   // Unescape common escaped characters
   s = s.replace(/\\([%&#_{}])/g, '$1');

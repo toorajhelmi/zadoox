@@ -71,6 +71,11 @@ export interface SectionNode extends BaseNode {
   type: 'section';
   level: number;
   title: string;
+  /**
+   * Optional LaTeX/XMD label (e.g. "sec:intro") for linking via \ref.
+   * Renderers may use this to set a stable DOM id.
+   */
+  label?: string;
   children: IrNode[];
 }
 
@@ -115,6 +120,10 @@ export interface CodeBlockNode extends BaseNode {
 export interface MathBlockNode extends BaseNode {
   type: 'math_block';
   latex: string;
+  /**
+   * Optional LaTeX label (e.g. "eq:attention") for linking via \eqref/\ref.
+   */
+  label?: string;
 }
 
 export interface FigureNode extends BaseNode {

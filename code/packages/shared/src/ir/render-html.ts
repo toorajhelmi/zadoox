@@ -191,6 +191,12 @@ function sanitizeDomId(raw: string): string {
     .replace(/^-|-$/g, '');
 }
 
+function latexLabelToDomId(labelRaw: string, kind: 'sec' | 'eq' | 'table'): string {
+  const label = String(labelRaw ?? '').trim();
+  if (!label) return '';
+  return `${kind}-${sanitizeDomId(label)}`;
+}
+
 function renderNode(node: IrNode): string {
   switch (node.type) {
     case 'document_title': {
@@ -210,7 +216,9 @@ function renderNode(node: IrNode): string {
       // Distinguish title from sections: section level 1 => h2, level 2 => h3, level 3 => h4...
       const tagLevel = Math.max(2, Math.min(6, (node.level ?? 1) + 1));
       const tag = `h${tagLevel}`;
-      const heading = `<${tag}>${escapeHtml(node.title ?? '')}</${tag}>`;
+      const label = String((node as unknown as { label?: string }).label ?? '').trim();
+      const idAttr = label ? ` id="${latexLabelToDomId(label, 'sec')}"` : '';
+      const heading = `<${tag}${idAttr}>${escapeHtml(node.title ?? '')}</${tag}>`;
       const body = node.children?.length ? renderNodes(node.children) : '';
       return `${heading}${body}`;
     }
@@ -237,7 +245,9 @@ function renderNode(node: IrNode): string {
       // Render as a block; formatting/KaTeX is a later concern.
       // We still render it in a dedicated wrapper so the UI can style it cleanly.
       const latex = escapeHtml(node.latex ?? '');
-      return `<div class="math-block"><code class="math-latex">${latex}</code></div>`;
+      const label = String((node as unknown as { label?: string }).label ?? '').trim();
+      const idAttr = label ? ` id="${latexLabelToDomId(label, 'eq')}"` : '';
+      return `<div class="math-block"${idAttr}><code class="math-latex">${latex}</code></div>`;
     }
     case 'figure': {
       const figId = node.label ? `figure-${sanitizeDomId(node.label)}` : `figure-${sanitizeDomId(node.id)}`;
@@ -377,7 +387,9 @@ function renderNode(node: IrNode): string {
 
       const caption = String(node.caption ?? '').trim();
       const capHtml = caption.length > 0 ? `<caption style="caption-side:top;text-align:left;margin-bottom:6px;color:#9aa0a6;font-style:italic">${escapeHtml(caption)}</caption>` : '';
-      return `<table style="border-collapse:collapse;width:100%">${capHtml}<thead>${header}</thead><tbody>${bodyRows}</tbody></table>`;
+      const label = String((node as unknown as { label?: string }).label ?? '').trim();
+      const idAttr = label ? ` id="${latexLabelToDomId(label, 'table')}"` : '';
+      return `<table${idAttr} style="border-collapse:collapse;width:100%">${capHtml}<thead>${header}</thead><tbody>${bodyRows}</tbody></table>`;
     }
     case 'grid': {
       const g = node as GridNode;
