@@ -3,7 +3,8 @@
 import { renderMarkdownToHtml, extractHeadings } from '@zadoox/shared';
 import { useMemo, useEffect, useRef, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import katex from 'katex';
+// Use the ESM bundle to avoid Next/webpack complaining about missing named exports.
+import katex from 'katex/dist/katex.mjs';
 
 interface MarkdownPreviewProps {
   content: string;
@@ -591,7 +592,7 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
       const tex = el.textContent ?? '';
       const displayMode = Boolean(el.closest('.math-block'));
       try {
-        katex.render(tex, el, { throwOnError: false, displayMode });
+        katex.render(tex, el, { throwOnError: false, displayMode, strict: 'ignore' });
         el.setAttribute('data-zx-math-rendered', '1');
       } catch {
         // ignore (math will remain as raw LaTeX)
