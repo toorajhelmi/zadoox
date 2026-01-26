@@ -262,26 +262,45 @@ function renderNode(node: IrNode): string {
       const relPath = escapeHtml(rawSrc.replace(/^\/+/, ''));
       const ext = rawSrc.split('?')[0]!.split('#')[0]!.toLowerCase().trim().endsWith('.pdf') ? '.pdf' : '';
       const cap = escapeHtml(node.caption ?? '');
+      const parseXmdFigureAttrs = (rawLine: string | undefined): { width?: string; align?: string } => {
+        const s = String(rawLine ?? '').trim();
+        // XMD figure attr-block: ![cap](src){align="center" width="60%" ...}
+        const m = /\{([^}]*)\}\s*$/.exec(s);
+        if (!m) return {};
+        const attrs = String(m[1] ?? '');
+        const widthM = /\bwidth="([^"]+)"/.exec(attrs);
+        const alignM = /\balign="([^"]+)"/.exec(attrs);
+        return {
+          ...(widthM ? { width: String(widthM[1] ?? '').trim() } : null),
+          ...(alignM ? { align: String(alignM[1] ?? '').trim() } : null),
+        };
+      };
+      const parsedAttrs = parseXmdFigureAttrs(raw);
+      const width = String(parsedAttrs.width ?? '').trim();
+      const align = String(parsedAttrs.align ?? '').trim().toLowerCase();
+      const innerMargin =
+        align === 'center' ? 'margin-left:auto;margin-right:auto' : align === 'right' ? 'margin-left:auto;margin-right:0' : 'margin-left:0;margin-right:auto';
+      const innerWidth = width ? `width:${escapeHtml(width)};max-width:100%` : 'max-width:100%';
       const caption =
         cap.trim().length > 0
           ? `<em class="figure-caption" style="display:block;width:100%;text-align:center">${cap}</em>`
           : '';
       // Keep caption centered relative to the image width by using an inner inline-block wrapper.
       if (isAlreadyResolvable) {
-        return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;max-width:100%;margin-left:0;margin-right:auto"><img src="${escapeHtml(
+        return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;${innerWidth};${innerMargin}"><span class="zx-figure-media-frame"><img src="${escapeHtml(
           rawSrc
-        )}" alt="${cap}" style="display:block;max-width:100%" />${caption}</span></span>`;
+        )}" alt="${cap}" style="display:block;max-width:100%;width:100%;height:auto" /></span>${caption}</span></span>`;
       }
       if (ext === '.pdf') {
         // Render PDFs via <object> so browsers can display them inline (or at least provide a fallback link).
-        return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;max-width:100%;margin-left:0;margin-right:auto">
-          <object class="latex-figure-pdf" data="${TRANSPARENT_PIXEL}" data-zx-asset-path="${relPath}" type="application/pdf" style="width:min(900px,100%);height:520px;display:block;border:1px solid rgba(255,255,255,0.12);border-radius:8px">
+        return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;${innerWidth};${innerMargin}">
+          <span class="zx-figure-media-frame"><object class="latex-figure-pdf" data="${TRANSPARENT_PIXEL}" data-zx-asset-path="${relPath}" type="application/pdf" style="width:100%;height:min(420px,60vh);display:block;border:1px solid rgba(255,255,255,0.12);border-radius:8px">
             <a class="latex-figure-link" href="#" data-zx-asset-path="${relPath}">Open figure (PDF)</a>
-          </object>
+          </object></span>
           ${caption}
         </span></span>`;
       }
-      return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;max-width:100%;margin-left:0;margin-right:auto"><img src="${TRANSPARENT_PIXEL}" data-zx-asset-path="${relPath}" alt="${cap}" style="display:block;max-width:100%" />${caption}</span></span>`;
+      return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;${innerWidth};${innerMargin}"><span class="zx-figure-media-frame"><img src="${TRANSPARENT_PIXEL}" data-zx-asset-path="${relPath}" alt="${cap}" style="display:block;max-width:100%;width:100%;height:auto" /></span>${caption}</span></span>`;
     }
     case 'table': {
       const cols = Math.max(0, (node.header ?? []).length);

@@ -25,6 +25,11 @@ const TRANSPARENT_PIXEL =
 export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownPreviewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [figureBg, setFigureBg] = useState<'dark' | 'light'>(() => {
+    if (typeof window === 'undefined') return 'dark';
+    const v = window.localStorage.getItem('zx.preview.figureBg');
+    return v === 'light' ? 'light' : 'dark';
+  });
   const assetUrlCacheRef = useRef<Map<string, string>>(new Map());
   const assetInFlightRef = useRef<Set<string>>(new Set());
   const latexAssetUrlCacheRef = useRef<Map<string, { url: string; contentType: string }>>(new Map());
@@ -679,7 +684,24 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
   }
 
   return (
-    <div className="h-full overflow-auto p-6 bg-vscode-bg">
+    <div className={`h-full overflow-auto p-6 bg-vscode-bg ${figureBg === 'light' ? 'zx-figure-bg-light' : ''}`}>
+      <div className="sticky top-0 z-10 flex justify-end pb-2">
+        <button
+          type="button"
+          className="text-xs px-2 py-1 rounded border border-white/10 bg-white/5 hover:bg-white/10"
+          onClick={() => {
+            const next = figureBg === 'light' ? 'dark' : 'light';
+            setFigureBg(next);
+            try {
+              window.localStorage.setItem('zx.preview.figureBg', next);
+            } catch {
+              // ignore
+            }
+          }}
+        >
+          Figure background: {figureBg === 'light' ? 'Light' : 'Dark'}
+        </button>
+      </div>
       <div
         ref={containerRef}
         className="markdown-content"
@@ -691,6 +713,16 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
         }}
       />
       <style jsx global>{`
+        .zx-figure-bg-light .markdown-content .zx-figure-media-frame {
+          background: #ffffff;
+          padding: 8px;
+          border-radius: 10px;
+          display: inline-block;
+          box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+        }
+        .zx-figure-bg-light .markdown-content .latex-figure-pdf {
+          border-color: rgba(0, 0, 0, 0.12) !important;
+        }
         .markdown-content .doc-title {
           font-size: 2.2em;
           font-weight: 800;

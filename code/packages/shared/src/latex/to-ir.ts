@@ -374,7 +374,17 @@ function latexWidthToXmdWidth(widthRaw: string): string | undefined {
   return undefined;
 }
 
-function parseIncludegraphicsLine(line: string): { src?: string; width?: string } {
+function latexScaleToXmdWidth(scaleRaw: string): string | undefined {
+  const s = String(scaleRaw ?? '').trim();
+  if (!s) return undefined;
+  const n = Number(s);
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  const pct = n * 100;
+  const pretty = pct % 1 === 0 ? String(pct.toFixed(0)) : String(pct.toFixed(1));
+  return `${pretty}%`;
+}
+
+function parseIncludegraphicsLine(line: string): { src?: string; width?: string; scale?: string } {
   const raw = String(line ?? '');
   // \includegraphics is often wrapped (e.g. \fbox{...}, \fcolorbox{...}{...}{...}),
   // so we must match it as a substring and not require end-of-line anchors.
@@ -386,11 +396,14 @@ function parseIncludegraphicsLine(line: string): { src?: string; width?: string 
   const pathArg = String(m[2] ?? '').trim();
 
   let width: string | undefined;
+  let scale: string | undefined;
   if (opt) {
     const wm = /(^|,)\s*width\s*=\s*([^,]+)\s*(,|$)/.exec(opt);
     if (wm) width = String(wm[2] ?? '').trim();
+    const sm = /(^|,)\s*scale\s*=\s*([^,]+)\s*(,|$)/.exec(opt);
+    if (sm) scale = String(sm[2] ?? '').trim();
   }
-  return { src: latexGraphicPathToSrc(pathArg), width };
+  return { src: latexGraphicPathToSrc(pathArg), width, scale };
 }
 
 type Block =
@@ -1335,6 +1348,7 @@ function parseBlocks(latex: string): Block[] {
         const ig = parseIncludegraphicsLine(t);
         if (!src && ig.src) src = ig.src;
         if (!width && ig.width) width = latexWidthToXmdWidth(ig.width);
+        if (!width && ig.scale) width = latexScaleToXmdWidth(ig.scale);
 
         const cap = /^\\caption\{([^}]*)\}(?:\s*%.*)?$/.exec(t);
         if (cap) {
@@ -1920,6 +1934,7 @@ function parseFigureGridFromSubfigureRaw(raw: string): {
       const ig = parseIncludegraphicsLine(t);
       if (!src && ig.src) src = ig.src;
       if (!width && ig.width) width = latexWidthToXmdWidth(ig.width);
+      if (!width && ig.scale) width = latexScaleToXmdWidth(ig.scale);
       const mCap = /^\\caption\{([^}]*)\}(?:\s*%.*)?$/.exec(t);
       if (mCap) cap = latexInlineToMarkdown(String(mCap[1] ?? '').trim());
     }
