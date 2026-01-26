@@ -225,11 +225,11 @@ function renderNode(node: IrNode): string {
     case 'paragraph': {
       const html0 = renderMarkdownToHtml(node.text ?? '');
       // Inline math: replace @@ZXMATHI{...}@@ placeholders emitted by LaTeX inline conversion.
-      // We render them as <code.math-latex> so the web preview can KaTeX-typeset them.
+      // We render them as .math-latex so the web preview can KaTeX-typeset them.
       const html = html0.replace(/@@ZXMATHI\{([^}]*)\}@@/g, (_m, enc) => {
         try {
           const tex = decodeURIComponent(String(enc ?? ''));
-          return `<span class="math-inline"><code class="math-latex">${escapeHtml(tex)}</code></span>`;
+          return `<span class="math-inline"><span class="math-latex">${escapeHtml(tex)}</span></span>`;
         } catch {
           return '';
         }
@@ -257,7 +257,7 @@ function renderNode(node: IrNode): string {
       const latex = escapeHtml(node.latex ?? '');
       const label = String((node as unknown as { label?: string }).label ?? '').trim();
       const idAttr = label ? ` id="${latexLabelToDomId(label, 'eq')}"` : '';
-      return `<div class="math-block"${idAttr}><code class="math-latex">${latex}</code></div>`;
+      return `<div class="math-block"${idAttr}><span class="math-latex">${latex}</span></div>`;
     }
     case 'figure': {
       const figId = node.label ? `figure-${sanitizeDomId(node.label)}` : `figure-${sanitizeDomId(node.id)}`;

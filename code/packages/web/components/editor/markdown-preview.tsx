@@ -604,13 +604,13 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
   const typesetMath = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
-    const codeNodes = Array.from(container.querySelectorAll('code.math-latex')) as HTMLElement[];
+    const codeNodes = Array.from(container.querySelectorAll('.math-latex')) as HTMLElement[];
     const blockNodes = Array.from(container.querySelectorAll('div.math-block')) as HTMLElement[];
     const nodes: HTMLElement[] = [...codeNodes];
     for (const b of blockNodes) {
       // Some math blocks might not include the <code.math-latex> wrapper (e.g. legacy/alternate HTML).
       // If so, typeset the whole block.
-      if (!b.querySelector('code.math-latex')) nodes.push(b);
+      if (!b.querySelector('.math-latex')) nodes.push(b);
     }
     if (nodes.length === 0) return;
 
@@ -942,6 +942,18 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
           margin: 0.55em 0 0.25em 0;
           color: #ffffff;
         }
+        .markdown-content h5 {
+          font-size: 1.02em;
+          font-weight: 800;
+          margin: 0.5em 0 0.2em 0;
+          color: #ffffff;
+        }
+        .markdown-content h6 {
+          font-size: 0.98em;
+          font-weight: 800;
+          margin: 0.45em 0 0.2em 0;
+          color: rgba(255, 255, 255, 0.92);
+        }
         .markdown-content p {
           margin: 0.5em 0;
         }
@@ -1033,6 +1045,20 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
         .markdown-content .math-block .math-latex {
           white-space: pre;
           color: #e6e6e6;
+        }
+        .markdown-content .math-inline .math-latex {
+          /* Inline math should not look like inline code. */
+          background: transparent !important;
+          padding: 0 !important;
+          border-radius: 0 !important;
+          font-family: inherit;
+          white-space: normal;
+        }
+        .markdown-content code.math-latex {
+          background: transparent !important;
+          padding: 0 !important;
+          border-radius: 0 !important;
+          font-family: inherit;
         }
         .markdown-content .raw-latex-block {
           opacity: 0.75;
