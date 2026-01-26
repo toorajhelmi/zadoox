@@ -173,6 +173,25 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     expect(xmd).not.toContain('\\AND');
   });
 
+  it('Template variants (\\And, \\hspace{...}) are removed from author blocks', () => {
+    const latex = [
+      '\\documentclass{article}',
+      '\\title{T}',
+      '\\author{Alice \\And \\hspace{1em} Bob}',
+      '\\begin{document}',
+      '\\maketitle',
+      'Hello.',
+      '\\end{document}',
+    ].join('\n');
+
+    const ir = parseLatexToIr({ docId: 'doc-auth-ml-3', latex });
+    const xmd = irToXmd(ir);
+    expect(xmd).toContain('@^ Alice');
+    expect(xmd).toContain('@^ Bob');
+    expect(xmd).not.toContain('\\And');
+    expect(xmd).not.toContain('hspace');
+  });
+
   it('LaTeX abstract environment becomes an "Abstract" section in IR', () => {
     const latex = [
       '\\documentclass{article}',

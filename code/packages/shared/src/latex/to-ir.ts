@@ -693,9 +693,21 @@ function parseBlocks(latex: string): Block[] {
     for (const cmd of ['thanks', 'samethanks', 'footnotemark', 'footnotetext']) {
       s = stripCmdWithArg(s, cmd);
     }
+    // Strip common spacing macros that appear between author tokens in some templates.
+    for (const cmd of ['hspace', 'hspace*', 'vspace', 'vspace*']) {
+      s = stripCmdWithArg(s, cmd);
+    }
+    // Strip no-arg spacing commands.
+    s = s
+      .replace(/\\hfill\b/g, ' ')
+      .replace(/\\quad\b/g, ' ')
+      .replace(/\\qquad\b/g, ' ')
+      .replace(/\\hskip\b/g, ' ')
+      .replace(/\\vskip\b/g, ' ');
 
     const normalized = s
       .replace(/\\AND\b/g, '\n')
+      .replace(/\\And\b/g, '\n')
       .replace(/\\and\b/g, '\n')
       .replace(/\\\\/g, '\n')
       .replace(/\\newline\b/g, '\n');
