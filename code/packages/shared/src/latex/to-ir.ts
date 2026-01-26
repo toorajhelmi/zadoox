@@ -1267,6 +1267,37 @@ function parseBlocks(latex: string): Block[] {
       break;
     }
 
+    // table environment (best-effort)
+    // Support optional placement args and starred form used by many LaTeX papers:
+    // - \begin{table}[t]
+    // - \begin{table*}[t]
+    const beginTable = /^\\begin\{table\*?\}(?:\[[^\]]*\])?/.test(line.trim());
+    if (beginTable) {
+      const startOffset = start;
+      let j = i;
+      // If \end{table} isn't on this line, scan until it.
+      if (!/\\end\{table\*?\}/.test(line)) {
+        j = i + 1;
+        while (j < lines.length && !/^\\end\{table\*?\}/.test(lines[j].line.trim())) j++;
+      }
+      if (j < lines.length && (j === i || /^\\end\{table\*?\}/.test(lines[j].line.trim()))) {
+        const endOffset = lines[j]?.end ?? end;
+        const seg = lines.slice(i, j + 1);
+        const raw = seg.map((l) => l.line).join('\n');
+        const parsed = parseLatexTableEnvironment(raw);
+        if (parsed) {
+          blocks.push({ ...parsed, raw, blockIndex, startOffset, endOffset });
+          i = j + 1;
+          blockIndex++;
+          continue;
+        }
+      }
+      // Unclosed or unparseable => raw
+      const raw = lines.slice(i).map((l) => l.line).join('\n');
+      blocks.push({ kind: 'raw', latex: raw, raw, blockIndex, startOffset, endOffset: lines[lines.length - 1]?.end ?? end });
+      break;
+    }
+
     // math environments (best-effort)
     const mathBegin = /^\\begin\{(equation\*?|align\*?|gather\*?|multline\*?)\}$/.exec(line.trim());
     if (mathBegin) {
@@ -2069,6 +2100,272 @@ function parseTableFromRaw(raw: string): Extract<Block, { kind: 'table' }> | nul
     startOffset: 0,
     endOffset: raw.length,
   };
+}
+
+function parseLatexTableEnvironment(raw: string): Extract<Block, { kind: 'table' }> | null {
+  const text = String(raw ?? '');
+  const captionMatch = /\\caption\{([^}]*)\}/.exec(text);
+  const labelMatch = /\\label\{([^}]*)\}/.exec(text);
+  const caption = captionMatch ? latexInlineToMarkdown(String(captionMatch[1] ?? '').trim()) : undefined;
+  const label = labelMatch ? latexInlineToMarkdown(String(labelMatch[1] ?? '').trim()) : undefined;
+
+  // Prefer tabularx when possible.
+  const tabularx = parseAnyTabularxToTable(text);
+  if (tabularx) return { ...tabularx, ...(caption ? { caption } : null), ...(label ? { label } : null) };
+
+  const tabular = parseAnyTabularToTable(text);
+  if (tabular) return { ...tabular, ...(caption ? { caption } : null), ...(label ? { label } : null) };
+
+  return null;
+}
+
+function parseAnyTabularxToTable(textRaw: string): Extract<Block, { kind: 'table' }> | null {
+  const text = String(textRaw ?? '');
+  const beginIdx = text.indexOf('\\begin{tabularx}');
+  if (beginIdx < 0) return null;
+
+  let pos = beginIdx + '\\begin{tabularx}'.length;
+  while (pos < text.length && /\s/.test(text[pos]!)) pos++;
+
+  const readBraceGroup = (): string | null => {
+    if (text[pos] !== '{') return null;
+    let depth = 1;
+    pos++;
+    const start = pos;
+    while (pos < text.length && depth > 0) {
+      const ch = text[pos]!;
+      if (ch === '{') depth++;
+      else if (ch === '}') depth--;
+      pos++;
+    }
+    if (depth !== 0) return null;
+    return text.slice(start, pos - 1);
+  };
+
+  const _width = readBraceGroup();
+  if (_width == null) return null;
+  while (pos < text.length && /\s/.test(text[pos]!)) pos++;
+  const colSpec = readBraceGroup();
+  if (colSpec == null) return null;
+
+  const endNeedle = '\\end{tabularx}';
+  const endIdx = text.indexOf(endNeedle, pos);
+  if (endIdx < 0) return null;
+  const body = text.slice(pos, endIdx);
+
+  const cols = countTabularCols(colSpec);
+  if (cols <= 0) return null;
+  const { colAlign, vRules } = parseGenericColSpecToAlignAndVRules(colSpec, cols);
+  const style = parseTabularRuleStyleFromRaw(textRaw) ?? undefined;
+  const { header, rows, hRules } = parseTabularBodyToRows(body, cols);
+
+  return {
+    kind: 'table',
+    header,
+    rows,
+    colAlign,
+    vRules,
+    hRules,
+    ...(style ? { style } : null),
+    raw: textRaw,
+    blockIndex: 0,
+    startOffset: 0,
+    endOffset: textRaw.length,
+  };
+}
+
+function parseAnyTabularToTable(textRaw: string): Extract<Block, { kind: 'table' }> | null {
+  const text = String(textRaw ?? '');
+  const beginNeedle = '\\begin{tabular}{';
+  const beginIdx = text.indexOf(beginNeedle);
+  if (beginIdx < 0) return null;
+
+  let pos = beginIdx + beginNeedle.length;
+  let depth = 1;
+  const colStart = pos;
+  while (pos < text.length && depth > 0) {
+    const ch = text[pos]!;
+    if (ch === '{') depth++;
+    else if (ch === '}') depth--;
+    pos++;
+  }
+  if (depth !== 0) return null;
+  const colSpec = text.slice(colStart, pos - 1);
+
+  const endNeedle = '\\end{tabular}';
+  const endIdx = text.indexOf(endNeedle, pos);
+  if (endIdx < 0) return null;
+  const body = text.slice(pos, endIdx);
+
+  const cols = countTabularCols(colSpec);
+  if (cols <= 0) return null;
+  const { colAlign, vRules } = parseGenericColSpecToAlignAndVRules(colSpec, cols);
+  const style = parseTabularRuleStyleFromRaw(textRaw) ?? undefined;
+  const { header, rows, hRules } = parseTabularBodyToRows(body, cols);
+
+  return {
+    kind: 'table',
+    header,
+    rows,
+    colAlign,
+    vRules,
+    hRules,
+    ...(style ? { style } : null),
+    raw: textRaw,
+    blockIndex: 0,
+    startOffset: 0,
+    endOffset: textRaw.length,
+  };
+}
+
+function parseGenericColSpecToAlignAndVRules(colSpecRaw: string, cols: number): { colAlign: TableColumnAlign[]; vRules: TableRule[] } {
+  const spec = String(colSpecRaw ?? '');
+  const colAlign: TableColumnAlign[] = [];
+  const vRules: TableRule[] = [];
+
+  const readBars = (s: string, idx: number): { rule: TableRule; idx: number } => {
+    let i = idx;
+    let n = 0;
+    while (i < s.length && s[i] === '|') {
+      n++;
+      i++;
+    }
+    const rule: TableRule = n >= 2 ? 'double' : n === 1 ? 'single' : 'none';
+    return { rule, idx: i };
+  };
+
+  const readBraceGroupEnd = (s: string, idx: number): number => {
+    if (s[idx] !== '{') return idx;
+    let depth = 1;
+    let i = idx + 1;
+    while (i < s.length && depth > 0) {
+      const ch = s[i]!;
+      if (ch === '{') depth++;
+      else if (ch === '}') depth--;
+      i++;
+    }
+    return i;
+  };
+
+  const tokenAlign = (t: string): TableColumnAlign => {
+    const ch = t.trim()[0];
+    if (ch === 'c' || ch === 'C') return 'center';
+    if (ch === 'r' || ch === 'R') return 'right';
+    return 'left';
+  };
+
+  const bars0 = readBars(spec, 0);
+  vRules.push(bars0.rule);
+  let i = bars0.idx;
+  let depth = 0;
+
+  while (i < spec.length && colAlign.length < cols) {
+    const ch = spec[i]!;
+    if (ch === '{') {
+      depth++;
+      i++;
+      continue;
+    }
+    if (ch === '}') {
+      depth = Math.max(0, depth - 1);
+      i++;
+      continue;
+    }
+    if (depth !== 0) {
+      i++;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      i++;
+      continue;
+    }
+    if (ch === '|') {
+      const bars = readBars(spec, i);
+      i = bars.idx;
+      continue;
+    }
+    // Skip >{...} and <{...}
+    if ((ch === '>' || ch === '<') && spec[i + 1] === '{') {
+      i = readBraceGroupEnd(spec, i + 1);
+      continue;
+    }
+
+    const tokenStart = i;
+    if ((ch === 'p' || ch === 'm' || ch === 'b') && spec[i + 1] === '{') {
+      i = readBraceGroupEnd(spec, i + 1);
+      colAlign.push(tokenAlign(spec.slice(tokenStart, i)));
+    } else {
+      i++;
+      colAlign.push(tokenAlign(spec.slice(tokenStart, i)));
+    }
+
+    const bars = readBars(spec, i);
+    vRules.push(bars.rule);
+    i = bars.idx;
+  }
+
+  while (colAlign.length < cols) colAlign.push('left');
+  if (colAlign.length > cols) colAlign.length = cols;
+  while (vRules.length < cols + 1) vRules.push('none');
+  if (vRules.length > cols + 1) vRules.length = cols + 1;
+  return { colAlign, vRules };
+}
+
+function parseTabularBodyToRows(bodyRaw: string, cols: number): { header: string[]; rows: string[][]; hRules: TableRule[] } {
+  const body = String(bodyRaw ?? '');
+  const lines = body
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+    .filter((l) => !/^\\arrayrulecolor\{[^}]+\}(?:\s*%.*)?$/.test(l));
+
+  const toRule = (n: number): TableRule => (n >= 2 ? 'double' : n === 1 ? 'single' : 'none');
+  const toCellText = (s: string): string => latexInlineToMarkdown(String(s ?? '').trim());
+
+  const hRules: TableRule[] = [];
+  const rows: string[][] = [];
+  const header: string[] = [];
+  let i = 0;
+
+  const readHLines = () => {
+    let n = 0;
+    while (i < lines.length && lines[i] === '\\hline') {
+      n++;
+      i++;
+    }
+    return n;
+  };
+
+  const readRow = (): string[] | null => {
+    if (i >= lines.length) return null;
+    const rowLine = lines[i] ?? '';
+    i++;
+    const m = /^(.*)\\\\\s*$/.exec(rowLine);
+    const core = String((m ? m[1] : rowLine) ?? '').trim();
+    if (!core) return Array.from({ length: cols }).map(() => '');
+    const parts = core.split(/&(?![^{}]*\})/).map((p) => toCellText(p));
+    while (parts.length < cols) parts.push('');
+    if (parts.length > cols) parts.length = cols;
+    return parts;
+  };
+
+  hRules.push(toRule(readHLines()));
+  const h = readRow();
+  if (!h) return { header: [], rows: [], hRules: [] };
+  header.push(...h);
+  hRules.push(toRule(readHLines()));
+
+  while (i < lines.length) {
+    const r = readRow();
+    if (!r) break;
+    rows.push(r);
+    hRules.push(toRule(readHLines()));
+  }
+
+  const totalRows = 1 + rows.length;
+  while (hRules.length < totalRows + 1) hRules.push('none');
+  if (hRules.length > totalRows + 1) hRules.length = totalRows + 1;
+  return { header, rows, hRules };
 }
 
 function parseFigureGridFromSubfigureRaw(raw: string): {
