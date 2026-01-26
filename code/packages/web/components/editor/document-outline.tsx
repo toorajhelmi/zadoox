@@ -27,6 +27,7 @@ interface DocumentOutlineProps {
   projectName?: string;
   projectId?: string;
   currentDocumentId?: string;
+  documentLatex?: unknown | null;
 }
 
 type HeadingItem = Extract<OutlineItem, { kind: 'heading' }>;
@@ -38,6 +39,65 @@ type OutlineNode =
   | { kind: 'figure_node'; item: FigureItem };
 
 type AssetFile = { key: string; relPath: string };
+
+type LatexManifest = {
+  bucket?: string;
+  basePrefix?: string;
+  entryPath?: string;
+  files?: Array<{ path: string; sha256?: string; size?: number }>;
+};
+
+type LatexTreeNode =
+  | { kind: 'folder'; path: string; name: string; children: LatexTreeNode[] }
+  | { kind: 'file'; path: string; name: string };
+
+function buildLatexTree(paths: string[]): LatexTreeNode[] {
+  const root: { kind: 'folder'; path: string; name: string; children: LatexTreeNode[] } = {
+    kind: 'folder',
+    path: '',
+    name: '',
+    children: [],
+  };
+
+  const ensureFolder = (parent: LatexTreeNode[], folderPath: string, name: string) => {
+    const existing = parent.find((c) => c.kind === 'folder' && c.path === folderPath) as
+      | { kind: 'folder'; path: string; name: string; children: LatexTreeNode[] }
+      | undefined;
+    if (existing) return existing;
+    const next = { kind: 'folder' as const, path: folderPath, name, children: [] };
+    parent.push(next);
+    return next;
+  };
+
+  for (const p of paths) {
+    const clean = String(p ?? '').replace(/^\/+/, '').replace(/\/+$/, '');
+    if (!clean) continue;
+    const parts = clean.split('/').filter(Boolean);
+    let cur = root;
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i]!;
+      const isLeaf = i === parts.length - 1;
+      const curPath = parts.slice(0, i + 1).join('/');
+      if (isLeaf) {
+        cur.children.push({ kind: 'file', path: curPath, name: part });
+      } else {
+        cur = ensureFolder(cur.children, curPath, part);
+      }
+    }
+  }
+
+  const sortNode = (nodes: LatexTreeNode[]) => {
+    nodes.sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === 'folder' ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const n of nodes) {
+      if (n.kind === 'folder') sortNode(n.children);
+    }
+  };
+  sortNode(root.children);
+  return root.children;
+}
 
 type HoveredAsset = {
   key: string;
@@ -183,7 +243,7 @@ function collectCollapsibleHeadingIds(nodes: OutlineNode[]): string[] {
   return ids;
 }
 
-export function DocumentOutline({ content, ir, projectName, projectId, currentDocumentId }: DocumentOutlineProps) {
+export function DocumentOutline({ content, ir, projectName, projectId, currentDocumentId, documentLatex }: DocumentOutlineProps) {
   // IMPORTANT: Outline must be driven from the canonical IR provided by the editor pipeline.
   // Do not parse content here; that would create a second IR and can diverge across edit modes.
   const derivedIr = ir ?? null;
@@ -213,6 +273,8 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [fileCollapsed, setFileCollapsed] = useState(false);
   const [assetsCollapsed, setAssetsCollapsed] = useState(false);
+  const [latexCollapsed, setLatexCollapsed] = useState(false);
+  const [latexCollapsedFolders, setLatexCollapsedFolders] = useState<Set<string>>(new Set());
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [hoveredAsset, setHoveredAsset] = useState<HoveredAsset | null>(null);
   const [assetUrlByKey, setAssetUrlByKey] = useState<Record<string, string>>({});
@@ -514,15 +576,82 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
     // Collapse everything: file node, assets folder, and all collapsible headings.
     setFileCollapsed(true);
     setAssetsCollapsed(true);
+    setLatexCollapsed(true);
+    setLatexCollapsedFolders(new Set());
     setCollapsedIds(new Set(collapsibleIds));
   };
   const expandAll = () => {
     setFileCollapsed(false);
     setAssetsCollapsed(false);
+    setLatexCollapsed(false);
+    setLatexCollapsedFolders(new Set());
     setCollapsedIds(new Set());
   };
 
-  const isFullyCollapsed = fileCollapsed && assetsCollapsed && collapsedIds.size === collapsibleIds.length;
+  const isFullyCollapsed = fileCollapsed && assetsCollapsed && latexCollapsed && collapsedIds.size === collapsibleIds.length;
+
+  const latexManifest: LatexManifest | null =
+    documentLatex && typeof documentLatex === 'object' ? (documentLatex as LatexManifest) : null;
+  const latexFiles = useMemo(() => {
+    const files = latexManifest?.files;
+    if (!Array.isArray(files)) return [];
+    return files.map((f) => String((f as any)?.path ?? '')).filter(Boolean);
+  }, [latexManifest]);
+  const latexTree = useMemo(() => buildLatexTree(latexFiles), [latexFiles]);
+
+  const toggleLatexFolder = (folderPath: string) => {
+    setLatexCollapsedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderPath)) next.delete(folderPath);
+      else next.add(folderPath);
+      return next;
+    });
+  };
+
+  const renderLatexTree = (nodes: LatexTreeNode[], basePadRem: number) => {
+    return nodes.map((n) => {
+      if (n.kind === 'folder') {
+        const isCollapsed = latexCollapsedFolders.has(n.path);
+        return (
+          <div key={`latex-folder-${n.path}`}>
+            <div
+              className="flex items-center gap-2 py-1 px-2 text-sm hover:bg-vscode-active rounded transition-colors text-vscode-text-secondary hover:text-vscode-text"
+              style={{ paddingLeft: `${basePadRem}rem` }}
+            >
+              <button
+                type="button"
+                aria-label={isCollapsed ? 'Expand folder' : 'Collapse folder'}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  toggleLatexFolder(n.path);
+                }}
+                className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
+              >
+                <ChevronRightIcon className={`w-4 h-4 transition-transform ${isCollapsed ? '' : 'rotate-90'}`} />
+              </button>
+              <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
+              <span className="truncate">{n.name}</span>
+            </div>
+            {!isCollapsed && <div className="space-y-1">{renderLatexTree(n.children, basePadRem + 0.75)}</div>}
+          </div>
+        );
+      }
+
+      return (
+        <div
+          key={`latex-file-${n.path}`}
+          className="flex items-center gap-2 py-1 px-2 text-sm hover:bg-vscode-active rounded transition-colors text-vscode-text-secondary hover:text-vscode-text"
+          style={{ paddingLeft: `${basePadRem + 0.75}rem` }}
+          title={n.path}
+        >
+          <span className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+          <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
+          <span className="truncate">{n.name}</span>
+        </div>
+      );
+    });
+  };
 
   const renderNodes = (nodes: OutlineNode[], parentHeadingLevel: number | null = null, basePadRem = 0) => {
     return nodes.map((node, index) => {
@@ -793,6 +922,26 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
                       <nav className="space-y-1">{renderNodes(tree, null, 0.75)}</nav>
                     ) : (
                       <div className="px-2 py-2 text-sm text-vscode-text-secondary">No outline available</div>
+                    )}
+
+                    {/* LaTeX bundle tree (Storage-backed import). View-only for now. */}
+                    {latexFiles.length > 0 && (
+                      <div className="mt-3">
+                        <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
+                          <button
+                            type="button"
+                            aria-label={latexCollapsed ? 'Expand LaTeX files' : 'Collapse LaTeX files'}
+                            onClick={() => setLatexCollapsed((v) => !v)}
+                            className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
+                          >
+                            <ChevronRightIcon className={`w-4 h-4 transition-transform ${latexCollapsed ? '' : 'rotate-90'}`} />
+                          </button>
+                          <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
+                          <span className="text-sm text-vscode-text-secondary truncate">latex</span>
+                        </div>
+
+                        {!latexCollapsed && <div className="mt-1 space-y-1">{renderLatexTree(latexTree, 1.25)}</div>}
+                      </div>
                     )}
 
                     {assets.length > 0 && (
