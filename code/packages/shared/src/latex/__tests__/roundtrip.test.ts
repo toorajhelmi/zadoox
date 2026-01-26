@@ -206,6 +206,12 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     expect(xmd).not.toContain('\\begin{center}');
     expect(xmd).not.toContain('\\color');
     expect(xmd).not.toContain('\\large');
+
+    // Style hint is preserved in IR (even though it doesn't round-trip to XMD).
+    const p = ir.children.find((n) => n.type === 'paragraph' && String((n as any).text || '').includes('Provided proper attribution')) as any;
+    expect(p?.style?.align).toBe('center');
+    expect(p?.style?.color).toBe('red');
+    expect(p?.style?.size).toBe('large');
   });
 
   it('LaTeX abstract environment becomes an "Abstract" section in IR', () => {

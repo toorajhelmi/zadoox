@@ -18,6 +18,7 @@ import type {
   TableRule,
   TableColumnAlign,
 } from '../ir/types';
+import type { TextStyle } from '../ir/types';
 
 /**
  * Parse a supported-subset LaTeX string into IR (best-effort, Phase 12).
@@ -168,6 +169,7 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
           type: 'paragraph',
           id: stableNodeId({ docId, nodeType: 'paragraph', path }),
           text: b.text,
+          ...(b.style ? { style: b.style } : null),
           source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
         };
         appendToCurrentContainer(node);
@@ -428,6 +430,7 @@ type Block =
   | {
       kind: 'paragraph';
       text: string;
+      style?: TextStyle;
       raw: string;
       blockIndex: number;
       startOffset: number;
@@ -577,6 +580,39 @@ function parseBlocks(latex: string): Block[] {
     s = s.replace(/\\vspace\*?\{[^}]*\}/g, ' ');
     s = s.replace(/\\hfill\b/g, ' ');
     return s.replace(/\s+/g, ' ').trim();
+  };
+
+  const extractTextStyleAndClean = (input: string): { text: string; style?: TextStyle } => {
+    let s = String(input ?? '');
+    const style: TextStyle = {};
+
+    // Alignment (currently only from explicit environments like center; handled by caller)
+    // Color
+    const colorMatch = /\\color\{([^}]+)\}/.exec(s);
+    if (colorMatch) {
+      const c = String(colorMatch[1] ?? '').trim();
+      if (c) style.color = c;
+      s = s.replace(/\\color\{[^}]*\}/g, ' ');
+    }
+
+    // Size (map many LaTeX size switches to a small enum)
+    const sizeMatch = /\\(tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge)\b/.exec(s);
+    if (sizeMatch) {
+      const k = String(sizeMatch[1] ?? '');
+      if (['tiny', 'scriptsize', 'footnotesize', 'small'].includes(k)) style.size = 'small';
+      else if (k === 'normalsize') style.size = 'normal';
+      else style.size = 'large';
+      s = s.replace(/\\(tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge)\b/g, ' ');
+    }
+
+    // Strip spacing macros that should not render as text.
+    s = s.replace(/\\hspace\*?\{[^}]*\}/g, ' ');
+    s = s.replace(/\\vspace\*?\{[^}]*\}/g, ' ');
+    s = s.replace(/\\hfill\b/g, ' ');
+
+    const cleaned = stripFormattingOnlyMacros(s);
+    const outStyle = Object.keys(style).length > 0 ? style : undefined;
+    return { text: cleaned, style: outStyle };
   };
 
   const parseBracedCommand = (
@@ -903,6 +939,7 @@ function parseBlocks(latex: string): Block[] {
       const startOffset = start;
       let j = i;
       const body: string[] = [];
+      const blockStyle: TextStyle = { align: 'center' };
 
       // Extract any inline content that appears on the same line as \begin{center}
       const afterBeginFull = stripInlineComment(line).replace(/^.*?\\begin\{center\}/, '').trim();
@@ -910,10 +947,22 @@ function parseBlocks(latex: string): Block[] {
       if (inlineEndIdx >= 0) {
         const inlineBody = afterBeginFull.slice(0, inlineEndIdx).trim();
         const raw = line;
-        const cleaned = stripFormattingOnlyMacros(inlineBody);
+        const { text: cleaned, style } = extractTextStyleAndClean(inlineBody);
         const text = latexInlineToMarkdown(cleaned);
         if (text.trim().length > 0) {
-          blocks.push({ kind: 'paragraph', text, raw, blockIndex, startOffset, endOffset: end });
+          const merged: TextStyle | undefined = (() => {
+            const s = { ...blockStyle, ...(style || {}) };
+            return Object.keys(s).length ? s : undefined;
+          })();
+          blocks.push({
+            kind: 'paragraph',
+            text,
+            raw,
+            blockIndex,
+            startOffset,
+            endOffset: end,
+            ...(merged ? { style: merged } : null),
+          } as Extract<Block, { kind: 'paragraph' }>);
         }
         i = i + 1;
         blockIndex++;
@@ -943,10 +992,22 @@ function parseBlocks(latex: string): Block[] {
       if (j < lines.length && (lines[j]!.line.trim() === '\\end{center}' || stripInlineComment(lines[j]!.line).includes('\\end{center}'))) {
         const endOffset = lines[j]!.end;
         const raw = lines.slice(i, j + 1).map((l) => l.line).join('\n');
-        const cleaned = stripFormattingOnlyMacros(body.join('\n'));
+        const { text: cleaned, style } = extractTextStyleAndClean(body.join('\n'));
         const text = latexInlineToMarkdown(cleaned);
         if (text.trim().length > 0) {
-          blocks.push({ kind: 'paragraph', text, raw, blockIndex, startOffset, endOffset });
+          const merged: TextStyle | undefined = (() => {
+            const s = { ...blockStyle, ...(style || {}) };
+            return Object.keys(s).length ? s : undefined;
+          })();
+          blocks.push({
+            kind: 'paragraph',
+            text,
+            raw,
+            blockIndex,
+            startOffset,
+            endOffset,
+            ...(merged ? { style: merged } : null),
+          } as Extract<Block, { kind: 'paragraph' }>);
         }
         i = j + 1;
         blockIndex++;

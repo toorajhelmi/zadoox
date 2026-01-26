@@ -1,5 +1,5 @@
 import { renderMarkdownToHtml } from '../editor/markdown';
-import type { DocumentNode, GridNode, IrNode } from './types';
+import type { DocumentNode, GridNode, IrNode, TextStyle } from './types';
 import { getGridSpacingPreset } from './grid-spacing';
 
 const TRANSPARENT_PIXEL =
@@ -41,6 +41,19 @@ function renderNodes(nodes: IrNode[]): string {
     if (rendered) parts.push(rendered);
   }
   return parts.join('');
+}
+
+function styleToCss(style?: TextStyle): string {
+  if (!style) return '';
+  const parts: string[] = [];
+  if (style.align) parts.push(`text-align:${style.align}`);
+  if (style.color) parts.push(`color:${style.color}`);
+  if (style.size) {
+    // Use conservative scaling (avoid huge typography changes).
+    const fs = style.size === 'small' ? '0.92em' : style.size === 'large' ? '1.12em' : '1em';
+    parts.push(`font-size:${fs}`);
+  }
+  return parts.join(';');
 }
 
 function forceGridCellMediaToFill(html: string): string {
@@ -203,7 +216,10 @@ function renderNode(node: IrNode): string {
     }
     case 'paragraph': {
       const html = renderMarkdownToHtml(node.text ?? '');
-      return html;
+      const css = styleToCss((node as unknown as { style?: TextStyle }).style);
+      if (!css) return html;
+      // Wrap so we can apply block-level styling without re-parsing the markdown HTML.
+      return `<div class="text-block" style="${css}">${html}</div>`;
     }
     case 'list': {
       const tag = node.ordered ? 'ol' : 'ul';

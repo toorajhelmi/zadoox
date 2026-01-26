@@ -77,6 +77,27 @@ export interface SectionNode extends BaseNode {
 export interface ParagraphNode extends BaseNode {
   type: 'paragraph';
   text: string;
+  /**
+   * Optional styling hints for renderers. This is intentionally small + generic to avoid
+   * exploding IR node types for every LaTeX/XMD visual construct.
+   */
+  style?: TextStyle;
+  /**
+   * Optional inline style ranges within `text` (character offsets in the stored string).
+   * This reuses `TextStyle` but is separate from `style` since inline styling is span-based.
+   * Not all renderers support this yet.
+   */
+  inlineStyles?: Array<{ from: number; to: number; style: TextStyle }>;
+}
+
+/**
+ * Minimal, cross-format styling hints for text blocks/spans.
+ * Keep this very small + whitelist-like.
+ */
+export interface TextStyle {
+  align?: 'left' | 'center' | 'right' | 'justify';
+  color?: string; // CSS color name or #RRGGBB
+  size?: 'small' | 'normal' | 'large';
 }
 
 export interface ListNode extends BaseNode {
