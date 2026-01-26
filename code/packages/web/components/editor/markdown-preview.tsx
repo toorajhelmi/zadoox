@@ -27,7 +27,7 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const assetUrlCacheRef = useRef<Map<string, string>>(new Map());
   const assetInFlightRef = useRef<Set<string>>(new Set());
-  const latexAssetUrlCacheRef = useRef<Map<string, string>>(new Map());
+  const latexAssetUrlCacheRef = useRef<Map<string, { url: string; contentType: string }>>(new Map());
   const latexAssetInFlightRef = useRef<Set<string>>(new Set());
   const abortRef = useRef<AbortController | null>(null);
   const html = useMemo(() => {
@@ -440,6 +440,19 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
 
     if (latexImgs.length === 0 && latexObjs.length === 0) return;
 
+    const asPdfObject = (p: string, url: string): HTMLObjectElement => {
+      const obj = document.createElement('object');
+      obj.className = 'latex-figure-pdf';
+      obj.setAttribute('data-zx-asset-path', p);
+      obj.setAttribute('type', 'application/pdf');
+      obj.setAttribute('data', url);
+      obj.setAttribute(
+        'style',
+        'width:min(900px,100%);height:520px;display:block;border:1px solid rgba(255,255,255,0.12);border-radius:8px'
+      );
+      return obj;
+    };
+
     await Promise.all(
       [...latexImgs.map((img) => ({ kind: 'img' as const, el: img })), ...latexObjs.map((obj) => ({ kind: 'obj' as const, el: obj }))].map(async (item) => {
         const p =
@@ -448,8 +461,17 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
 
         const cached = latexAssetUrlCacheRef.current.get(p);
         if (cached) {
-          if (item.kind === 'img') (item.el as HTMLImageElement).src = cached;
-          else (item.el as HTMLObjectElement).setAttribute('data', cached);
+          if (cached.contentType.includes('application/pdf')) {
+            if (item.kind === 'img') {
+              const imgEl = item.el as HTMLImageElement;
+              imgEl.replaceWith(asPdfObject(p, cached.url));
+            } else {
+              (item.el as HTMLObjectElement).setAttribute('data', cached.url);
+            }
+          } else {
+            if (item.kind === 'img') (item.el as HTMLImageElement).src = cached.url;
+            else (item.el as HTMLObjectElement).setAttribute('data', cached.url);
+          }
           return;
         }
 
@@ -461,9 +483,19 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
           if (!res.ok) return;
           const blob = await res.blob();
           const objUrl = URL.createObjectURL(blob);
-          latexAssetUrlCacheRef.current.set(p, objUrl);
-          if (item.kind === 'img') (item.el as HTMLImageElement).src = objUrl;
-          else (item.el as HTMLObjectElement).setAttribute('data', objUrl);
+          const contentType = (res.headers.get('Content-Type') || blob.type || '').toLowerCase();
+          latexAssetUrlCacheRef.current.set(p, { url: objUrl, contentType });
+          if (contentType.includes('application/pdf')) {
+            if (item.kind === 'img') {
+              const imgEl = item.el as HTMLImageElement;
+              imgEl.replaceWith(asPdfObject(p, objUrl));
+            } else {
+              (item.el as HTMLObjectElement).setAttribute('data', objUrl);
+            }
+          } else {
+            if (item.kind === 'img') (item.el as HTMLImageElement).src = objUrl;
+            else (item.el as HTMLObjectElement).setAttribute('data', objUrl);
+          }
           clampFigureCaptionsToImageWidth();
           applyGridIntrinsicPercentSizing();
         } catch {
@@ -520,7 +552,7 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
       cache.clear();
       inflight.clear();
       for (const url of latexCache.values()) {
-        URL.revokeObjectURL(url);
+        URL.revokeObjectURL(url.url);
       }
       latexCache.clear();
       latexInflight.clear();
