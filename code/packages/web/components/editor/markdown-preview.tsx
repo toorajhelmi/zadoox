@@ -621,6 +621,39 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
     applyGridIntrinsicPercentSizing();
   }, [html, clampFigureCaptionsToImageWidth, applyGridIntrinsicPercentSizing]);
 
+  // Typeset LaTeX math blocks using KaTeX.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const nodes = Array.from(container.querySelectorAll('code.math-latex')) as HTMLElement[];
+    if (nodes.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const katexMod = await import('katex');
+        const katex = (katexMod as unknown as { renderToString: (tex: string, opts: any) => string }).renderToString;
+        if (!katex) return;
+        for (const el of nodes) {
+          if (cancelled) return;
+          if ((el as any).dataset?.zxMathRendered === '1') continue;
+          const tex = el.textContent ?? '';
+          const displayMode = Boolean(el.closest('.math-block'));
+          const htmlOut = katex(tex, { throwOnError: false, displayMode });
+          // Replace code contents with KaTeX HTML
+          el.innerHTML = htmlOut;
+          (el as any).dataset.zxMathRendered = '1';
+        }
+      } catch {
+        // ignore (math will remain as raw LaTeX)
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [html]);
+
   // Cleanup blob URLs + in-flight fetch on unmount
   useEffect(() => {
     const cache = assetUrlCacheRef.current;
