@@ -115,6 +115,25 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     expect(xmd).not.toContain('this is a comment');
   });
 
+  it('LaTeX preamble macros are ignored (do not show up in IR/XMD)', () => {
+    const latex = [
+      '\\documentclass{article}',
+      '\\PassOptionsToPackage{numbers, compress}{natbib}',
+      '\\newcommand\\mc[1]{\\mathcal{#1}}',
+      '\\title{T}',
+      '\\begin{document}',
+      'Hello.',
+      '\\end{document}',
+    ].join('\n');
+
+    const ir = parseLatexToIr({ docId: 'doc-pre-1', latex });
+    const xmd = irToXmd(ir);
+    expect(xmd).toContain('@ T');
+    expect(xmd).toContain('Hello.');
+    expect(xmd).not.toContain('PassOptionsToPackage');
+    expect(xmd).not.toContain('newcommand');
+  });
+
   it('LaTeX abstract environment becomes an "Abstract" section in IR', () => {
     const latex = [
       '\\documentclass{article}',

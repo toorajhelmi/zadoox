@@ -756,6 +756,28 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
         .markdown-content .raw-latex-block {
           opacity: 0.75;
         }
+        .markdown-content .unrecognized-block {
+          margin: 14px 0;
+          padding: 10px 12px;
+          border: 1px solid rgba(255, 165, 0, 0.35);
+          border-radius: 10px;
+          background: rgba(255, 165, 0, 0.06);
+        }
+        .markdown-content .unrecognized-badge {
+          display: inline-block;
+          font-size: 11px;
+          letter-spacing: 0.02em;
+          padding: 2px 8px;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 165, 0, 0.45);
+          color: rgba(255, 215, 160, 0.95);
+          margin-bottom: 8px;
+        }
+        .markdown-content .unrecognized-block pre {
+          margin: 0;
+          white-space: pre-wrap;
+          overflow-wrap: anywhere;
+        }
       `}</style>
     </div>
   );

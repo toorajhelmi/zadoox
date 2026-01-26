@@ -374,8 +374,11 @@ function renderNode(node: IrNode): string {
         : 'border-collapse:collapse;table-layout:auto;display:inline-table;width:auto;max-width:100%';
       return `<div class="xmd-grid"${gridId} style="${alignCss};${outerCss}">${capHtml}<table style="${tableCss}"><tbody>${body}</tbody></table></div>`;
     }
-    case 'raw_xmd_block':
-      return renderMarkdownToHtml(node.xmd ?? '');
+    case 'raw_xmd_block': {
+      const raw = escapeHtml(node.xmd ?? '');
+      if (!raw.trim()) return '';
+      return `<div class="unrecognized-block"><div class="unrecognized-badge">Unrecognized</div><pre><code>${raw}</code></pre></div>`;
+    }
     case 'raw_latex_block': {
       // Best-effort: remove comment-only lines and boilerplate so previews don't show LaTeX scaffolding.
       const raw = String(node.latex ?? '');
@@ -413,7 +416,7 @@ function renderNode(node: IrNode): string {
         .join('\n')
         .trim();
       if (!cleaned) return '';
-      return `<pre class="raw-latex-block"><code>${escapeHtml(cleaned)}</code></pre>`;
+      return `<div class="unrecognized-block raw-latex-block"><div class="unrecognized-badge">Unrecognized</div><pre><code>${escapeHtml(cleaned)}</code></pre></div>`;
     }
     case 'document':
       return renderNodes(node.children ?? []);

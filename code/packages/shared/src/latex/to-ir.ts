@@ -539,6 +539,8 @@ function isBlank(line: string): boolean {
 function parseBlocks(latex: string): Block[] {
   const lines = splitLinesWithOffsets(latex);
   const blocks: Block[] = [];
+  const hasBeginDocument = /\\begin\{document\}/.test(latex);
+  let inPreamble = hasBeginDocument;
 
   const isZxMarkerLine = (trimmed: string): boolean => /^%\s*ZX-(BEGIN|END):/i.test(trimmed);
 
@@ -598,6 +600,52 @@ function parseBlocks(latex: string): Block[] {
     // Some environments may introduce a BOM/zero-width chars (e.g. from copy/paste or server transforms).
     // Strip them so boilerplate lines like \end{document} never leak into IR/XMD.
     const trimmed = line.trim().replace(/^[\uFEFF\u200B\u200C\u200D]+/, '');
+    // If this doc has an explicit \begin{document}, treat everything before it as "preamble":
+    // - ignore macro/package/setup lines (e.g. \PassOptionsToPackage, \newcommand, \def, etc.)
+    // - but still extract \title/\author/\date so the document renders nicely.
+    if (inPreamble) {
+      if (/^\\+begin\{document\}(?:\s*%.*)?$/.test(trimmed)) {
+        inPreamble = false;
+        i++;
+        blockIndex++;
+        continue;
+      }
+      // Keep comment-line ignore behavior in preamble too.
+      if (trimmed.startsWith('%') && !isZxMarkerLine(trimmed)) {
+        i++;
+        blockIndex++;
+        continue;
+      }
+      // Preserve metadata fields from preamble.
+      const titleMatch = /^\\+title\{([^}]*)\}(?:\s*%.*)?$/.exec(trimmed);
+      if (titleMatch) {
+        const title = latexInlineToMarkdown((titleMatch[1] ?? '').trim());
+        blocks.push({ kind: 'title', title, raw: line, blockIndex, startOffset: start, endOffset: end });
+        i++;
+        blockIndex++;
+        continue;
+      }
+      if (/^\\+author\{[^}]*\}(?:\s*%.*)?$/.test(trimmed)) {
+        const m = /^\\+author\{([^}]*)\}(?:\s*%.*)?$/.exec(trimmed);
+        const text = latexInlineToMarkdown((m?.[1] ?? '').trim());
+        blocks.push({ kind: 'author', text, raw: line, blockIndex, startOffset: start, endOffset: end });
+        i++;
+        blockIndex++;
+        continue;
+      }
+      if (/^\\+date\{[^}]*\}(?:\s*%.*)?$/.test(trimmed)) {
+        const m = /^\\+date\{([^}]*)\}(?:\s*%.*)?$/.exec(trimmed);
+        const text = latexInlineToMarkdown((m?.[1] ?? '').trim());
+        blocks.push({ kind: 'date', text, raw: line, blockIndex, startOffset: start, endOffset: end });
+        i++;
+        blockIndex++;
+        continue;
+      }
+      // Ignore everything else in preamble.
+      i++;
+      blockIndex++;
+      continue;
+    }
     if (/^\\+documentclass\{[^}]+\}(?:\s*%.*)?$/.test(trimmed)) {
       i++;
       blockIndex++;
