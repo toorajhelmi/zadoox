@@ -12,6 +12,7 @@ import {
   Document,
 } from '@zadoox/shared';
 import { parseLatexToIr } from '@zadoox/shared';
+import type { DocumentNode, ParagraphNode, SectionNode } from '@zadoox/shared';
 import {
   createDocumentSchema,
   updateDocumentSchema,
@@ -64,6 +65,113 @@ function inlineInputs(params: {
     const expanded = inlineInputs({ tex: next, baseDir: nextDir, byPath, visited, depth: depth + 1 });
     return `\n% [zadoox] begin include: ${resolved}\n${expanded}\n% [zadoox] end include: ${resolved}\n`;
   });
+}
+
+function extractCiteKeys(latex: string): string[] {
+  const out = new Set<string>();
+  const re = /\\cite[a-zA-Z*]*\s*\{([^}]+)\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(latex))) {
+    const raw = String(m[1] ?? '');
+    for (const part of raw.split(',')) {
+      const k = part.trim();
+      if (k) out.add(k);
+    }
+  }
+  return Array.from(out);
+}
+
+type BibEntry = { key: string; type: string; fields: Record<string, string> };
+
+function parseBibtexEntries(bib: string): BibEntry[] {
+  const text = String(bib ?? '');
+  const entries: BibEntry[] = [];
+  let i = 0;
+  while (i < text.length) {
+    const at = text.indexOf('@', i);
+    if (at < 0) break;
+    i = at + 1;
+    const typeMatch = /^[a-zA-Z]+/.exec(text.slice(i));
+    if (!typeMatch) continue;
+    const entryType = typeMatch[0];
+    i += entryType.length;
+    // Skip whitespace until '{' or '('
+    while (i < text.length && /\s/.test(text[i]!)) i++;
+    const open = text[i];
+    if (open !== '{' && open !== '(') continue;
+    const close = open === '{' ? '}' : ')';
+    i++;
+    // Read key up to first comma
+    const comma = text.indexOf(',', i);
+    if (comma < 0) continue;
+    const key = text.slice(i, comma).trim();
+    i = comma + 1;
+
+    // Read body until matching close, tracking nested braces.
+    let depth = 1;
+    let j = i;
+    for (; j < text.length; j++) {
+      const ch = text[j]!;
+      if (ch === open) depth++;
+      else if (ch === close) {
+        depth--;
+        if (depth === 0) break;
+      }
+    }
+    const body = j > i ? text.slice(i, j) : '';
+    i = j + 1;
+
+    const fields: Record<string, string> = {};
+    // Very small BibTeX field parser (good enough for title/author/year).
+    // Matches: name = {value} OR name = "value" OR name = bareValue
+    const fieldRe = /([a-zA-Z][a-zA-Z0-9_-]*)\s*=\s*(\{[\s\S]*?\}|"[\s\S]*?"|[^,\n]+)\s*,?/g;
+    let fm: RegExpExecArray | null;
+    while ((fm = fieldRe.exec(body))) {
+      const name = String(fm[1] ?? '').toLowerCase();
+      let val = String(fm[2] ?? '').trim();
+      if ((val.startsWith('{') && val.endsWith('}')) || (val.startsWith('"') && val.endsWith('"'))) {
+        val = val.slice(1, -1).trim();
+      }
+      if (name) fields[name] = val;
+    }
+    if (key) entries.push({ key, type: entryType, fields });
+  }
+  return entries;
+}
+
+function clampText(s: string, max: number): string {
+  const t = String(s ?? '').replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max)}…`;
+}
+
+function buildReferencesSection(params: {
+  docId: string;
+  citedKeys: string[];
+  entries: Map<string, BibEntry>;
+}): SectionNode | null {
+  const { docId, citedKeys, entries } = params;
+  const keys = citedKeys.length > 0 ? citedKeys.filter((k) => entries.has(k)) : Array.from(entries.keys()).slice(0, 50);
+  if (keys.length === 0) return null;
+
+  const children: ParagraphNode[] = keys.map((k, idx) => {
+    const e = entries.get(k)!;
+    const title = e.fields.title ? clampText(e.fields.title, 200) : '';
+    const author = e.fields.author ? clampText(e.fields.author, 160) : '';
+    const year = e.fields.year ? clampText(e.fields.year, 16) : '';
+    const bits = [title, author, year].filter(Boolean).join(' — ');
+    const text = bits ? `[${k}] ${bits}` : `[${k}]`;
+    return { id: `ref-${docId}-${idx}`, type: 'paragraph', text };
+  });
+
+  const section: SectionNode = {
+    id: `refs-${docId}`,
+    type: 'section',
+    level: 1,
+    title: 'References',
+    children,
+  };
+  return section;
 }
 
 const latexEntryPutSchema = z.object({
@@ -794,16 +902,28 @@ export async function documentRoutes(fastify: FastifyInstance) {
         // Download all .tex files listed in the manifest into a map so we can inline includes.
         const byPath = new Map<string, string>();
         const files: Array<{ path: string; sha256?: string; size?: number }> = Array.isArray(manifest.files) ? manifest.files : [];
+        const bibEntriesByKey = new Map<string, BibEntry>();
         for (const f of files) {
           const rel = String(f?.path || '');
           if (!rel) continue;
-          if (!rel.toLowerCase().endsWith('.tex')) continue;
           const key = `${basePrefix.replace(/\/+$/g, '')}/${rel.replace(/^\/+/, '')}`;
-          const { data, error } = await admin.storage.from(latexBucket).download(key);
-          if (error || !data) continue;
-          const text = await data.text();
-          if (!text) continue;
-          byPath.set(normalizeTexPath(rel), text);
+          if (rel.toLowerCase().endsWith('.tex')) {
+            const { data, error } = await admin.storage.from(latexBucket).download(key);
+            if (error || !data) continue;
+            const text = await data.text();
+            if (!text) continue;
+            byPath.set(normalizeTexPath(rel), text);
+            continue;
+          }
+          if (rel.toLowerCase().endsWith('.bib')) {
+            const { data, error } = await admin.storage.from(latexBucket).download(key);
+            if (error || !data) continue;
+            const bib = await data.text();
+            if (!bib) continue;
+            for (const entry of parseBibtexEntries(bib)) {
+              if (!bibEntriesByKey.has(entry.key)) bibEntriesByKey.set(entry.key, entry);
+            }
+          }
         }
 
         const entryKey = `${basePrefix.replace(/\/+$/g, '')}/${entryPath.replace(/^\/+/, '')}`;
@@ -836,7 +956,16 @@ export async function documentRoutes(fastify: FastifyInstance) {
           depth: 0,
         });
 
-        const ir = parseLatexToIr({ docId: id, latex: expanded });
+        const ir = parseLatexToIr({ docId: id, latex: expanded }) as DocumentNode;
+
+        // Append bibliography context so AI/XMD conversion can see references.
+        // We include cited keys when possible; otherwise include a small slice of entries.
+        const citedKeys = extractCiteKeys(expanded);
+        const refs = buildReferencesSection({ docId: id, citedKeys, entries: bibEntriesByKey });
+        if (refs && ir && ir.type === 'document') {
+          ir.children = [...ir.children, refs];
+        }
+
         const response: ApiResponse<{ ir: unknown }> = { success: true, data: { ir } };
         return reply.send(response);
       } catch (error: unknown) {
