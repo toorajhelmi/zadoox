@@ -3,8 +3,7 @@
 import { renderMarkdownToHtml, extractHeadings } from '@zadoox/shared';
 import { useMemo, useEffect, useRef, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-// Use the ESM bundle to avoid Next/webpack complaining about missing named exports.
-import katex from 'katex/dist/katex.mjs';
+// KaTeX is loaded lazily so math rendering can never break the preview (figures/assets/etc).
 
 interface MarkdownPreviewProps {
   content: string;
@@ -582,23 +581,54 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
     return () => container.removeEventListener('click', onClick);
   }, [html, figureBgDefault]);
 
+  const katexRef = useRef<any>(null);
+  const katexLoadPromiseRef = useRef<Promise<any> | null>(null);
+  const loadKatex = useCallback(async (): Promise<any | null> => {
+    if (katexRef.current) return katexRef.current;
+    if (!katexLoadPromiseRef.current) {
+      katexLoadPromiseRef.current = (async () => {
+        // Import the ESM bundle; it exports { default }.
+        const mod: any = await import('katex/dist/katex.mjs');
+        const k = mod?.default ?? mod;
+        katexRef.current = k;
+        return k;
+      })();
+    }
+    try {
+      return await katexLoadPromiseRef.current;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const typesetMath = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
     const nodes = Array.from(container.querySelectorAll('code.math-latex')) as HTMLElement[];
     if (nodes.length === 0) return;
-    for (const el of nodes) {
-      if (el.getAttribute('data-zx-math-rendered') === '1') continue;
-      const tex = el.textContent ?? '';
-      const displayMode = Boolean(el.closest('.math-block'));
-      try {
-        katex.render(tex, el, { throwOnError: false, displayMode, strict: 'ignore' });
-        el.setAttribute('data-zx-math-rendered', '1');
-      } catch {
-        // ignore (math will remain as raw LaTeX)
+    void (async () => {
+      const k = await loadKatex();
+      if (!k) return;
+      const render = k.render as ((tex: string, el: HTMLElement, opts: any) => void) | undefined;
+      const renderToString = k.renderToString as ((tex: string, opts: any) => string) | undefined;
+      if (!render && !renderToString) return;
+      for (const el of nodes) {
+        if (el.getAttribute('data-zx-math-rendered') === '1') continue;
+        const tex = el.textContent ?? '';
+        const displayMode = Boolean(el.closest('.math-block'));
+        try {
+          if (render) {
+            render(tex, el, { throwOnError: false, displayMode, strict: 'ignore' });
+          } else if (renderToString) {
+            el.innerHTML = renderToString(tex, { throwOnError: false, displayMode, strict: 'ignore' });
+          }
+          el.setAttribute('data-zx-math-rendered', '1');
+        } catch {
+          // ignore (math will remain as raw LaTeX)
+        }
       }
-    }
-  }, []);
+    })();
+  }, [loadKatex]);
 
   // If the preview DOM is replaced/reconciled (or images are inserted later),
   // keep resolving any placeholder asset images.
