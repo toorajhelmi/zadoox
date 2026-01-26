@@ -280,7 +280,16 @@ function renderNode(node: IrNode): string {
       const align = String(parsedAttrs.align ?? '').trim().toLowerCase();
       const innerMargin =
         align === 'center' ? 'margin-left:auto;margin-right:auto' : align === 'right' ? 'margin-left:auto;margin-right:0' : 'margin-left:0;margin-right:auto';
-      const innerWidth = width ? `width:${escapeHtml(width)};max-width:100%` : 'max-width:100%';
+      // LaTeX "page/column width" is much narrower than our preview viewport.
+      // To avoid giant figures (e.g. width="100%") we cap figure width to a paper-like max.
+      const PAPER_MAX_PX = 760;
+      const pct = /^\s*(\d+(?:\.\d+)?)%\s*$/.exec(width);
+      const widthCss = pct
+        ? `min(100%, calc(${PAPER_MAX_PX}px * ${(Number(pct[1]) / 100).toFixed(4)}))`
+        : width
+          ? `min(100%, ${escapeHtml(width)})`
+          : `min(100%, ${PAPER_MAX_PX}px)`;
+      const innerWidth = `width:${widthCss};max-width:100%`;
       const caption =
         cap.trim().length > 0
           ? `<em class="figure-caption" style="display:block;width:100%;text-align:center">${cap}</em>`

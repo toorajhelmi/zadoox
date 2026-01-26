@@ -25,7 +25,7 @@ const TRANSPARENT_PIXEL =
 export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownPreviewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [figureBg, setFigureBg] = useState<'dark' | 'light'>(() => {
+  const [figureBgDefault] = useState<'dark' | 'light'>(() => {
     if (typeof window === 'undefined') return 'dark';
     const v = window.localStorage.getItem('zx.preview.figureBg');
     return v === 'light' ? 'light' : 'dark';
@@ -517,6 +517,40 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
     void resolveLatexAssetImages();
   }, [html, accessToken, resolveAssetImages, resolveLatexAssetImages]);
 
+  // Add per-figure background toggle buttons (and apply default background) after each HTML change.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const frames = Array.from(container.querySelectorAll('.zx-figure-media-frame')) as HTMLElement[];
+    for (const f of frames) {
+      if (figureBgDefault === 'light') f.classList.add('zx-figure-frame-light');
+      else f.classList.remove('zx-figure-frame-light');
+
+      if (!f.querySelector(':scope > .zx-figure-bg-toggle')) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'zx-figure-bg-toggle';
+        btn.textContent = 'Bg';
+        f.appendChild(btn);
+      }
+    }
+
+    const onClick = (e: Event) => {
+      const target = e.target as HTMLElement | null;
+      const btn = target?.closest?.('.zx-figure-bg-toggle') as HTMLButtonElement | null;
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const frame = btn.closest('.zx-figure-media-frame') as HTMLElement | null;
+      if (!frame) return;
+      frame.classList.toggle('zx-figure-frame-light');
+    };
+
+    container.addEventListener('click', onClick);
+    return () => container.removeEventListener('click', onClick);
+  }, [html, figureBgDefault]);
+
   // If the preview DOM is replaced/reconciled (or images are inserted later),
   // keep resolving any placeholder asset images.
   useEffect(() => {
@@ -684,24 +718,7 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
   }
 
   return (
-    <div className={`h-full overflow-auto p-6 bg-vscode-bg ${figureBg === 'light' ? 'zx-figure-bg-light' : ''}`}>
-      <div className="sticky top-0 z-10 flex justify-end pb-2">
-        <button
-          type="button"
-          className="text-xs px-2 py-1 rounded border border-white/10 bg-white/5 hover:bg-white/10"
-          onClick={() => {
-            const next = figureBg === 'light' ? 'dark' : 'light';
-            setFigureBg(next);
-            try {
-              window.localStorage.setItem('zx.preview.figureBg', next);
-            } catch {
-              // ignore
-            }
-          }}
-        >
-          Figure background: {figureBg === 'light' ? 'Light' : 'Dark'}
-        </button>
-      </div>
+    <div className="h-full overflow-auto p-6 bg-vscode-bg">
       <div
         ref={containerRef}
         className="markdown-content"
@@ -713,15 +730,38 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
         }}
       />
       <style jsx global>{`
-        .zx-figure-bg-light .markdown-content .zx-figure-media-frame {
+        /* Figure background is controlled per-image via .zx-figure-frame-light. */
+        .markdown-content .zx-figure-media-frame {
+          position: relative;
+          display: inline-block;
+        }
+        .markdown-content .zx-figure-media-frame.zx-figure-frame-light {
           background: #ffffff;
           padding: 8px;
           border-radius: 10px;
           display: inline-block;
           box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
         }
-        .zx-figure-bg-light .markdown-content .latex-figure-pdf {
+        .markdown-content .zx-figure-media-frame.zx-figure-frame-light .latex-figure-pdf {
           border-color: rgba(0, 0, 0, 0.12) !important;
+        }
+        .markdown-content .zx-figure-bg-toggle {
+          position: absolute;
+          top: 6px;
+          right: 6px;
+          font-size: 11px;
+          line-height: 1;
+          padding: 4px 6px;
+          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          background: rgba(0, 0, 0, 0.35);
+          color: rgba(255, 255, 255, 0.92);
+          cursor: pointer;
+        }
+        .markdown-content .zx-figure-media-frame.zx-figure-frame-light .zx-figure-bg-toggle {
+          border-color: rgba(0, 0, 0, 0.12);
+          background: rgba(255, 255, 255, 0.9);
+          color: rgba(0, 0, 0, 0.75);
         }
         .markdown-content .doc-title {
           font-size: 2.2em;
