@@ -2334,7 +2334,78 @@ function parseTabularBodyToRows(bodyRaw: string, cols: number): { header: string
     .filter((l) => !/^\\arrayrulecolor\{[^}]+\}(?:\s*%.*)?$/.test(l));
 
   const toRule = (n: number): TableRule => (n >= 2 ? 'double' : n === 1 ? 'single' : 'none');
-  const toCellText = (s: string): string => latexInlineToMarkdown(String(s ?? '').trim());
+
+  const unwrapCmd3Args = (inputRaw: string, cmd: string): string => {
+    // Best-effort: replace \cmd{a}{b}{c} with c, preserving the rest of the string.
+    // Handles nested braces in each argument.
+    const input = String(inputRaw ?? '');
+    let out = '';
+    let i = 0;
+    const needle = `\\${cmd}`;
+    const readGroup = (s: string, start: number): { value: string; end: number } | null => {
+      if (s[start] !== '{') return null;
+      let depth = 1;
+      let j = start + 1;
+      const groupStart = j;
+      while (j < s.length && depth > 0) {
+        const ch = s[j]!;
+        if (ch === '{') depth++;
+        else if (ch === '}') depth--;
+        j++;
+      }
+      if (depth !== 0) return null;
+      return { value: s.slice(groupStart, j - 1), end: j };
+    };
+    while (i < input.length) {
+      const next = input.indexOf(needle, i);
+      if (next < 0) {
+        out += input.slice(i);
+        break;
+      }
+      out += input.slice(i, next);
+      let pos = next + needle.length;
+      while (pos < input.length && /\s/.test(input[pos]!)) pos++;
+      const g1 = readGroup(input, pos);
+      if (!g1) {
+        out += needle;
+        i = pos;
+        continue;
+      }
+      pos = g1.end;
+      while (pos < input.length && /\s/.test(input[pos]!)) pos++;
+      const g2 = readGroup(input, pos);
+      if (!g2) {
+        out += needle + '{' + g1.value + '}';
+        i = pos;
+        continue;
+      }
+      pos = g2.end;
+      while (pos < input.length && /\s/.test(input[pos]!)) pos++;
+      const g3 = readGroup(input, pos);
+      if (!g3) {
+        out += needle + '{' + g1.value + '}{' + g2.value + '}';
+        i = pos;
+        continue;
+      }
+      // Replace whole command invocation with the third arg.
+      out += g3.value;
+      i = g3.end;
+    }
+    return out;
+  };
+
+  const normalizeCellLatex = (s: string): string => {
+    let t = String(s ?? '').trim();
+    // Common table macros we don't model (row/col spans). Best-effort: keep their visible content.
+    t = unwrapCmd3Args(t, 'multicolumn');
+    t = unwrapCmd3Args(t, 'multirow');
+    // Some tables use \makecell{...} for line breaks inside a cell.
+    // Best-effort: drop the wrapper braces.
+    t = t.replace(/\\makecell\{([\s\S]*?)\}/g, (_m, inner) => String(inner ?? '').replace(/\\\\/g, ' ').trim());
+    return t;
+  };
+
+  const toCellText = (s: string): string => latexInlineToMarkdown(normalizeCellLatex(String(s ?? '')));
 
   const hRules: TableRule[] = [];
   const rows: string[][] = [];
