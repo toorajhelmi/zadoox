@@ -51,6 +51,20 @@ type LatexTreeNode =
   | { kind: 'folder'; path: string; name: string; children: LatexTreeNode[] }
   | { kind: 'file'; path: string; name: string };
 
+function collectLatexFolderPaths(nodes: LatexTreeNode[]): string[] {
+  const out: string[] = [];
+  const walk = (ns: LatexTreeNode[]) => {
+    for (const n of ns) {
+      if (n.kind === 'folder') {
+        out.push(n.path);
+        walk(n.children);
+      }
+    }
+  };
+  walk(nodes);
+  return out;
+}
+
 function buildLatexTree(paths: string[]): LatexTreeNode[] {
   const root: { kind: 'folder'; path: string; name: string; children: LatexTreeNode[] } = {
     kind: 'folder',
@@ -273,7 +287,6 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [fileCollapsed, setFileCollapsed] = useState(false);
   const [assetsCollapsed, setAssetsCollapsed] = useState(false);
-  const [latexCollapsed, setLatexCollapsed] = useState(false);
   const [latexCollapsedFolders, setLatexCollapsedFolders] = useState<Set<string>>(new Set());
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [hoveredAsset, setHoveredAsset] = useState<HoveredAsset | null>(null);
@@ -576,19 +589,15 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
     // Collapse everything: file node, assets folder, and all collapsible headings.
     setFileCollapsed(true);
     setAssetsCollapsed(true);
-    setLatexCollapsed(true);
-    setLatexCollapsedFolders(new Set());
+    setLatexCollapsedFolders(new Set(latexAllFolderPaths));
     setCollapsedIds(new Set(collapsibleIds));
   };
   const expandAll = () => {
     setFileCollapsed(false);
     setAssetsCollapsed(false);
-    setLatexCollapsed(false);
     setLatexCollapsedFolders(new Set());
     setCollapsedIds(new Set());
   };
-
-  const isFullyCollapsed = fileCollapsed && assetsCollapsed && latexCollapsed && collapsedIds.size === collapsibleIds.length;
 
   const latexManifest: LatexManifest | null =
     documentLatex && typeof documentLatex === 'object' ? (documentLatex as LatexManifest) : null;
@@ -598,6 +607,29 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
     return files.map((f) => String((f as any)?.path ?? '')).filter(Boolean);
   }, [latexManifest]);
   const latexTree = useMemo(() => buildLatexTree(latexFiles), [latexFiles]);
+  const latexAllFolderPaths = useMemo(() => collectLatexFolderPaths(latexTree), [latexTree]);
+
+  const isFullyCollapsed =
+    fileCollapsed &&
+    assetsCollapsed &&
+    collapsedIds.size === collapsibleIds.length &&
+    latexCollapsedFolders.size === latexAllFolderPaths.length;
+
+  // After latexAllFolderPaths exists, wire collapseAll to also collapse imported folders.
+  useEffect(() => {
+    // If user collapses all folders but the tree shape changes (e.g. a new import), keep set bounded.
+    setLatexCollapsedFolders((prev) => {
+      if (prev.size === 0) return prev;
+      const allowed = new Set(latexAllFolderPaths);
+      let changed = false;
+      const next = new Set<string>();
+      for (const p of prev) {
+        if (allowed.has(p)) next.add(p);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [latexAllFolderPaths]);
 
   const toggleLatexFolder = (folderPath: string) => {
     setLatexCollapsedFolders((prev) => {
@@ -924,24 +956,9 @@ export function DocumentOutline({ content, ir, projectName, projectId, currentDo
                       <div className="px-2 py-2 text-sm text-vscode-text-secondary">No outline available</div>
                     )}
 
-                    {/* LaTeX bundle tree (Storage-backed import). View-only for now. */}
+                    {/* Imported bundle files/folders (from LaTeX manifest). View-only for now. */}
                     {latexFiles.length > 0 && (
-                      <div className="mt-3">
-                        <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
-                          <button
-                            type="button"
-                            aria-label={latexCollapsed ? 'Expand LaTeX files' : 'Collapse LaTeX files'}
-                            onClick={() => setLatexCollapsed((v) => !v)}
-                            className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
-                          >
-                            <ChevronRightIcon className={`w-4 h-4 transition-transform ${latexCollapsed ? '' : 'rotate-90'}`} />
-                          </button>
-                          <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
-                          <span className="text-sm text-vscode-text-secondary truncate">latex</span>
-                        </div>
-
-                        {!latexCollapsed && <div className="mt-1 space-y-1">{renderLatexTree(latexTree, 1.25)}</div>}
-                      </div>
+                      <div className="mt-3 space-y-1">{renderLatexTree(latexTree, 0.75)}</div>
                     )}
 
                     {assets.length > 0 && (
