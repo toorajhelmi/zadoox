@@ -70,11 +70,13 @@ export function useCanonicalIrState(params: {
     }
 
     // editMode === 'latex'
-    // Rule: IR changes only on user edits. Mode switches do not parse.
-    // We treat `latexEditNonce` as the single source of truth for “user edited LaTeX”.
+    // Rule:
+    // - On initial load for LaTeX-first docs, we MUST build canonical IR once so preview/outline work.
+    // - After that, we only re-parse on user edits (latexEditNonce).
     const meta = (documentMetadata || {}) as any;
-    const lastEdited = meta.lastEditedFormat;
-    const shouldInitFromLatexOnLoad = lastEdited === 'latex' && didInitFromLatexDocKeyRef.current !== docKey;
+    // We no longer rely on metadata.lastEditedFormat here (it's not guaranteed/persisted).
+    // If the document has a LaTeX manifest, treat it as LaTeX-first and bootstrap IR once.
+    const shouldInitFromLatexOnLoad = Boolean(documentLatex) && didInitFromLatexDocKeyRef.current !== docKey;
     const shouldParseFromLatexEdit = latexEditNonce !== lastParsedLatexNonceRef.current;
 
     if (!shouldInitFromLatexOnLoad && !shouldParseFromLatexEdit) {
