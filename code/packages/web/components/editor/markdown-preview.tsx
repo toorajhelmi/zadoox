@@ -425,9 +425,7 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
     const imgs = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
     const latexImgs = imgs.filter((img) => {
       const p = img.dataset.zxAssetPath;
-      const scope = img.dataset.zxAssetScope;
       if (!p) return false;
-      if (scope !== 'latex') return false;
       const src = img.getAttribute('src') || '';
       return src === TRANSPARENT_PIXEL || src.trim() === '';
     });
@@ -435,9 +433,7 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
     const pdfObjects = Array.from(container.querySelectorAll('object.latex-figure-pdf')) as HTMLObjectElement[];
     const latexObjs = pdfObjects.filter((obj) => {
       const p = obj.getAttribute('data-zx-asset-path') || '';
-      const scope = obj.getAttribute('data-zx-asset-scope') || '';
       if (!p) return false;
-      if (scope !== 'latex') return false;
       const data = obj.getAttribute('data') || '';
       return data === TRANSPARENT_PIXEL || data.trim() === '';
     });

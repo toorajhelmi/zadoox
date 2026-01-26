@@ -275,13 +275,13 @@ function renderNode(node: IrNode): string {
       if (ext === '.pdf') {
         // Render PDFs via <object> so browsers can display them inline (or at least provide a fallback link).
         return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;max-width:100%;margin-left:0;margin-right:auto">
-          <object class="latex-figure-pdf" data="${TRANSPARENT_PIXEL}" data-zx-asset-scope="latex" data-zx-asset-path="${relPath}" type="application/pdf" style="width:min(900px,100%);height:520px;display:block;border:1px solid rgba(255,255,255,0.12);border-radius:8px">
-            <a class="latex-figure-link" href="#" data-zx-asset-scope="latex" data-zx-asset-path="${relPath}">Open figure (PDF)</a>
+          <object class="latex-figure-pdf" data="${TRANSPARENT_PIXEL}" data-zx-asset-path="${relPath}" type="application/pdf" style="width:min(900px,100%);height:520px;display:block;border:1px solid rgba(255,255,255,0.12);border-radius:8px">
+            <a class="latex-figure-link" href="#" data-zx-asset-path="${relPath}">Open figure (PDF)</a>
           </object>
           ${caption}
         </span></span>`;
       }
-      return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;max-width:100%;margin-left:0;margin-right:auto"><img src="${TRANSPARENT_PIXEL}" data-zx-asset-scope="latex" data-zx-asset-path="${relPath}" alt="${cap}" style="display:block;max-width:100%" />${caption}</span></span>`;
+      return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;max-width:100%;margin-left:0;margin-right:auto"><img src="${TRANSPARENT_PIXEL}" data-zx-asset-path="${relPath}" alt="${cap}" style="display:block;max-width:100%" />${caption}</span></span>`;
     }
     case 'table': {
       const cols = Math.max(0, (node.header ?? []).length);
