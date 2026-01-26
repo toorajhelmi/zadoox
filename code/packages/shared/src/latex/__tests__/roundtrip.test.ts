@@ -134,6 +134,26 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     expect(xmd).not.toContain('newcommand');
   });
 
+  it('Multi-line \\author{...} is parsed and multiple authors are preserved', () => {
+    const latex = [
+      '\\documentclass{article}',
+      '\\title{T}',
+      '\\author{',
+      'Alice \\\\',
+      'Bob',
+      '}',
+      '\\begin{document}',
+      '\\maketitle',
+      'Hello.',
+      '\\end{document}',
+    ].join('\n');
+
+    const ir = parseLatexToIr({ docId: 'doc-auth-ml-1', latex });
+    const xmd = irToXmd(ir);
+    expect(xmd).toContain('@^ Alice');
+    expect(xmd).toContain('@^ Bob');
+  });
+
   it('LaTeX abstract environment becomes an "Abstract" section in IR', () => {
     const latex = [
       '\\documentclass{article}',

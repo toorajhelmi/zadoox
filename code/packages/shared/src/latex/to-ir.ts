@@ -566,6 +566,92 @@ function parseBlocks(latex: string): Block[] {
     return s;
   };
 
+  const parseBracedCommand = (
+    startLineIndex: number,
+    cmd: 'title' | 'author' | 'date'
+  ): { content: string; raw: string; endIndex: number; startOffset: number; endOffset: number } | null => {
+    const first = lines[startLineIndex];
+    if (!first) return null;
+    const firstTrim = first.line.trim().replace(/^[\uFEFF\u200B\u200C\u200D]+/, '');
+    const openRe = new RegExp(`^\\\\+${cmd}\\s*\\{`, 'i');
+    const m = openRe.exec(firstTrim);
+    if (!m) return null;
+
+    const segStartOffset = first.start;
+    let i = startLineIndex;
+    let depth = 0;
+    let started = false;
+    let content = '';
+    let endOffset = first.end;
+
+    const scan = (s: string, includeNewlineBefore: boolean) => {
+      const lineText = stripInlineComment(s);
+      let escaped = false;
+      for (let k = 0; k < lineText.length; k++) {
+        const ch = lineText[k]!;
+        if (escaped) {
+          escaped = false;
+          if (started) content += ch;
+          continue;
+        }
+        if (ch === '\\') {
+          escaped = true;
+          if (started) content += ch;
+          continue;
+        }
+        if (!started) {
+          // Wait until we hit the first opening '{' of the command.
+          if (ch === '{') {
+            started = true;
+            depth = 1;
+            if (includeNewlineBefore) content += '\n';
+            continue;
+          }
+          continue;
+        }
+        if (ch === '{') {
+          depth++;
+          content += ch;
+          continue;
+        }
+        if (ch === '}') {
+          depth--;
+          if (depth === 0) return true; // done
+          content += ch;
+          continue;
+        }
+        content += ch;
+      }
+      return false;
+    };
+
+    while (i < lines.length) {
+      const ln = lines[i]!;
+      const done = scan(ln.line, i !== startLineIndex);
+      endOffset = ln.end;
+      if (done) {
+        const raw = lines.slice(startLineIndex, i + 1).map((l) => l.line).join('\n');
+        return { content: content.trim(), raw, endIndex: i, startOffset: segStartOffset, endOffset };
+      }
+      i++;
+    }
+    return null;
+  };
+
+  const splitAuthorContent = (raw: string): string[] => {
+    const s = String(raw ?? '');
+    const normalized = s
+      .replace(/\\and\b/g, '\n')
+      .replace(/\\\\/g, '\n')
+      .replace(/\\newline\b/g, '\n');
+    const parts = normalized
+      .split('\n')
+      .map((p) => latexInlineToMarkdown(String(p ?? '').trim()))
+      .map((p) => p.trim())
+      .filter(Boolean);
+    return parts.length ? parts : [''];
+  };
+
   const pushParagraph = (startIdx: number, endIdxExclusive: number, blockIndex: number) => {
     const seg = lines.slice(startIdx, endIdxExclusive);
     const raw = seg.map((l) => l.line).join('\n');
@@ -617,27 +703,27 @@ function parseBlocks(latex: string): Block[] {
         continue;
       }
       // Preserve metadata fields from preamble.
-      const titleMatch = /^\\+title\{([^}]*)\}(?:\s*%.*)?$/.exec(trimmed);
-      if (titleMatch) {
-        const title = latexInlineToMarkdown((titleMatch[1] ?? '').trim());
-        blocks.push({ kind: 'title', title, raw: line, blockIndex, startOffset: start, endOffset: end });
-        i++;
+      const titleBlock = parseBracedCommand(i, 'title');
+      if (titleBlock) {
+        blocks.push({ kind: 'title', title: latexInlineToMarkdown(titleBlock.content), raw: titleBlock.raw, blockIndex, startOffset: titleBlock.startOffset, endOffset: titleBlock.endOffset });
+        i = titleBlock.endIndex + 1;
         blockIndex++;
         continue;
       }
-      if (/^\\+author\{[^}]*\}(?:\s*%.*)?$/.test(trimmed)) {
-        const m = /^\\+author\{([^}]*)\}(?:\s*%.*)?$/.exec(trimmed);
-        const text = latexInlineToMarkdown((m?.[1] ?? '').trim());
-        blocks.push({ kind: 'author', text, raw: line, blockIndex, startOffset: start, endOffset: end });
-        i++;
-        blockIndex++;
+      const authorBlock = parseBracedCommand(i, 'author');
+      if (authorBlock) {
+        const authors = splitAuthorContent(authorBlock.content);
+        for (const a of authors) {
+          blocks.push({ kind: 'author', text: a, raw: authorBlock.raw, blockIndex, startOffset: authorBlock.startOffset, endOffset: authorBlock.endOffset });
+          blockIndex++;
+        }
+        i = authorBlock.endIndex + 1;
         continue;
       }
-      if (/^\\+date\{[^}]*\}(?:\s*%.*)?$/.test(trimmed)) {
-        const m = /^\\+date\{([^}]*)\}(?:\s*%.*)?$/.exec(trimmed);
-        const text = latexInlineToMarkdown((m?.[1] ?? '').trim());
-        blocks.push({ kind: 'date', text, raw: line, blockIndex, startOffset: start, endOffset: end });
-        i++;
+      const dateBlock = parseBracedCommand(i, 'date');
+      if (dateBlock) {
+        blocks.push({ kind: 'date', text: latexInlineToMarkdown(dateBlock.content), raw: dateBlock.raw, blockIndex, startOffset: dateBlock.startOffset, endOffset: dateBlock.endOffset });
+        i = dateBlock.endIndex + 1;
         blockIndex++;
         continue;
       }
@@ -846,38 +932,29 @@ function parseBlocks(latex: string): Block[] {
       blockIndex++;
       continue;
     }
-    if (/^\\+author\{[^}]*\}(?:\s*%.*)?$/.test(trimmed)) {
-      const m = /^\\+author\{([^}]*)\}(?:\s*%.*)?$/.exec(trimmed);
-      const text = latexInlineToMarkdown((m?.[1] ?? '').trim());
-      // Preserve explicit author marker even if empty (\author{} means "no author")
-      blocks.push({ kind: 'author', text, raw: line, blockIndex, startOffset: start, endOffset: end });
-      i++;
-      blockIndex++;
+    const authorBlock2 = parseBracedCommand(i, 'author');
+    if (authorBlock2) {
+      const authors = splitAuthorContent(authorBlock2.content);
+      for (const a of authors) {
+        blocks.push({ kind: 'author', text: a, raw: authorBlock2.raw, blockIndex, startOffset: authorBlock2.startOffset, endOffset: authorBlock2.endOffset });
+        blockIndex++;
+      }
+      i = authorBlock2.endIndex + 1;
       continue;
     }
-    if (/^\\+date\{[^}]*\}(?:\s*%.*)?$/.test(trimmed)) {
-      const m = /^\\+date\{([^}]*)\}(?:\s*%.*)?$/.exec(trimmed);
-      const text = latexInlineToMarkdown((m?.[1] ?? '').trim());
-      // Preserve explicit date marker even if empty (\date{} means "no date" / suppress default)
-      blocks.push({ kind: 'date', text, raw: line, blockIndex, startOffset: start, endOffset: end });
-      i++;
+    const dateBlock2 = parseBracedCommand(i, 'date');
+    if (dateBlock2) {
+      blocks.push({ kind: 'date', text: latexInlineToMarkdown(dateBlock2.content), raw: dateBlock2.raw, blockIndex, startOffset: dateBlock2.startOffset, endOffset: dateBlock2.endOffset });
+      i = dateBlock2.endIndex + 1;
       blockIndex++;
       continue;
     }
 
     // \title{...}
-    const titleMatch = /^\\+title\{([^}]*)\}(?:\s*%.*)?$/.exec(trimmed);
-    if (titleMatch) {
-      const title = latexInlineToMarkdown((titleMatch[1] ?? '').trim());
-      blocks.push({
-        kind: 'title',
-        title,
-        raw: line,
-        blockIndex,
-        startOffset: start,
-        endOffset: end,
-      });
-      i++;
+    const titleBlock2 = parseBracedCommand(i, 'title');
+    if (titleBlock2) {
+      blocks.push({ kind: 'title', title: latexInlineToMarkdown(titleBlock2.content), raw: titleBlock2.raw, blockIndex, startOffset: titleBlock2.startOffset, endOffset: titleBlock2.endOffset });
+      i = titleBlock2.endIndex + 1;
       blockIndex++;
       continue;
     }
