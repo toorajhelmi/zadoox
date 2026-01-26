@@ -197,6 +197,20 @@ function latexLabelToDomId(labelRaw: string, kind: 'sec' | 'eq' | 'table'): stri
   return `${kind}-${sanitizeDomId(label)}`;
 }
 
+function renderInlineTextWithMathTokens(textRaw: string): string {
+  const text = String(textRaw ?? '');
+  // Inline math placeholders emitted by LaTeX inline conversion:
+  // @@ZXMATHI{<urlencoded tex>}@@
+  return text.replace(/@@ZXMATHI\{([^}]*)\}@@/g, (_m, enc) => {
+    try {
+      const tex = decodeURIComponent(String(enc ?? ''));
+      return `<span class="math-inline"><span class="math-latex">${escapeHtml(tex)}</span></span>`;
+    } catch {
+      return '';
+    }
+  });
+}
+
 function renderNode(node: IrNode): string {
   switch (node.type) {
     case 'document_title': {
@@ -380,7 +394,7 @@ function renderNode(node: IrNode): string {
       };
 
       const headerCells = (node.header ?? [])
-        .map((h, c) => `<th style="${cellStyle({ rowIndex: 0, colIndex: c, isHeader: true })}">${escapeHtml(String(h))}</th>`)
+        .map((h, c) => `<th style="${cellStyle({ rowIndex: 0, colIndex: c, isHeader: true })}">${renderInlineTextWithMathTokens(escapeHtml(String(h)))}</th>`)
         .join('');
       const header = `<tr>${headerCells}</tr>`;
 
@@ -389,14 +403,19 @@ function renderNode(node: IrNode): string {
           const rowIndex = 1 + rIdx;
           const tds = Array.from({ length: cols }).map((_, c) => {
             const cell = (r ?? [])[c] ?? '';
-            return `<td style="${cellStyle({ rowIndex, colIndex: c, isHeader: false })}">${escapeHtml(String(cell))}</td>`;
+            return `<td style="${cellStyle({ rowIndex, colIndex: c, isHeader: false })}">${renderInlineTextWithMathTokens(escapeHtml(String(cell)))}</td>`;
           });
           return `<tr>${tds.join('')}</tr>`;
         })
         .join('');
 
       const caption = String(node.caption ?? '').trim();
-      const capHtml = caption.length > 0 ? `<caption style="caption-side:top;text-align:left;margin-bottom:6px;color:#9aa0a6;font-style:italic">${escapeHtml(caption)}</caption>` : '';
+      const capHtml =
+        caption.length > 0
+          ? `<caption style="caption-side:top;text-align:left;margin-bottom:6px;color:#9aa0a6;font-style:italic">${renderInlineTextWithMathTokens(
+              escapeHtml(caption)
+            )}</caption>`
+          : '';
       const label = String((node as unknown as { label?: string }).label ?? '').trim();
       const idAttr = label ? ` id="${latexLabelToDomId(label, 'table')}"` : '';
       return `<table${idAttr} style="border-collapse:collapse;width:100%">${capHtml}<thead>${header}</thead><tbody>${bodyRows}</tbody></table>`;

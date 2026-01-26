@@ -2312,7 +2312,17 @@ function parseGenericColSpecToAlignAndVRules(colSpecRaw: string, cols: number): 
 }
 
 function parseTabularBodyToRows(bodyRaw: string, cols: number): { header: string[]; rows: string[][]; hRules: TableRule[] } {
-  const body = String(bodyRaw ?? '');
+  let body = String(bodyRaw ?? '');
+  // Imported LaTeX sometimes has tabular content on a single line.
+  // Normalize common row/rule separators into line breaks so we can parse deterministically.
+  // - Insert a newline after each row terminator "\\".
+  // - Force booktabs rules onto their own lines.
+  body = body.replace(/\\\\/g, '\\\\\n');
+  body = body.replace(/\\toprule\b/g, '\\toprule\n');
+  body = body.replace(/\\midrule\b/g, '\\midrule\n');
+  body = body.replace(/\\bottomrule\b/g, '\\bottomrule\n');
+  body = body.replace(/\\cmidrule\b/g, '\\cmidrule\n');
+
   const lines = body
     .split('\n')
     .map((l) => l.trim())
@@ -2329,9 +2339,36 @@ function parseTabularBodyToRows(bodyRaw: string, cols: number): { header: string
 
   const readHLines = () => {
     let n = 0;
-    while (i < lines.length && lines[i] === '\\hline') {
-      n++;
-      i++;
+    while (i < lines.length) {
+      const t = lines[i] ?? '';
+      if (t === '\\hline') {
+        n += 1;
+        i++;
+        continue;
+      }
+      // booktabs: treat top/bottom as "double" boundaries, mid as single
+      if (t === '\\toprule') {
+        n += 2;
+        i++;
+        continue;
+      }
+      if (t === '\\midrule') {
+        n += 1;
+        i++;
+        continue;
+      }
+      if (t === '\\bottomrule') {
+        n += 2;
+        i++;
+        continue;
+      }
+      // cmidrule spans columns; we don't model spans yet, but treat it as a single rule boundary.
+      if (/^\\cmidrule/.test(t)) {
+        n += 1;
+        i++;
+        continue;
+      }
+      break;
     }
     return n;
   };
