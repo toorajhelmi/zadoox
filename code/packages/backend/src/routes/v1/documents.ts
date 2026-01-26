@@ -11,6 +11,7 @@ import {
   ApiResponse,
   Document,
 } from '@zadoox/shared';
+import { parseLatexToIr } from '@zadoox/shared';
 import {
   createDocumentSchema,
   updateDocumentSchema,
@@ -20,6 +21,7 @@ import {
 import { schemas, security } from '../../config/schemas.js';
 import { supabaseAdmin } from '../../db/client.js';
 import { z } from 'zod';
+import path from 'node:path';
 
 type LatexManifest = {
   bucket: string;
@@ -27,6 +29,42 @@ type LatexManifest = {
   entryPath: string; // e.g. ms.tex
   files?: Array<{ path: string; sha256?: string; size?: number }>;
 };
+
+function normalizeTexPath(p: string): string {
+  return path.normalize(p).replace(/^[.][\\/]/, '');
+}
+
+function resolveInputPath(baseDir: string, raw: string): string {
+  let p = String(raw ?? '').trim();
+  p = p.replace(/^\{/, '').replace(/\}$/, '');
+  if (!p) return p;
+  if (!path.extname(p)) p = `${p}.tex`;
+  return normalizeTexPath(path.join(baseDir, p));
+}
+
+function inlineInputs(params: {
+  tex: string;
+  baseDir: string;
+  byPath: Map<string, string>;
+  visited: Set<string>;
+  depth: number;
+}): string {
+  const { tex, baseDir, byPath, visited, depth } = params;
+  if (depth > 25) return tex;
+  const re = /\\(input|include|subfile)\s*(?:\{([^}]+)\}|([^\s%]+))/g;
+  return tex.replace(re, (full, _cmd, argBraced, argBare) => {
+    const arg = String(argBraced ?? argBare ?? '').trim();
+    if (!arg) return full;
+    const resolved = resolveInputPath(baseDir, arg);
+    const next = byPath.get(resolved);
+    if (!next) return full;
+    if (visited.has(resolved)) return `\n% [zadoox] skipped recursive include: ${resolved}\n`;
+    visited.add(resolved);
+    const nextDir = path.dirname(resolved);
+    const expanded = inlineInputs({ tex: next, baseDir: nextDir, byPath, visited, depth: depth + 1 });
+    return `\n% [zadoox] begin include: ${resolved}\n${expanded}\n% [zadoox] end include: ${resolved}\n`;
+  });
+}
 
 const latexEntryPutSchema = z.object({
   text: z.string().min(0),
@@ -701,6 +739,109 @@ export async function documentRoutes(fastify: FastifyInstance) {
       } catch (error: unknown) {
         fastify.log.error(error);
         const msg = error instanceof Error ? error.message : 'Failed to save LaTeX entry';
+        const response: ApiResponse<null> = { success: false, error: { code: 'INTERNAL_ERROR', message: msg } };
+        return reply.status(500).send(response);
+      }
+    }
+  );
+
+  /**
+   * GET /api/v1/documents/:id/latex/ir
+   *
+   * Builds IR from LaTeX by expanding \input/\include using the Storage bundle listed in `documents.latex.files`.
+   * This is used for outline/preview on imported multi-file LaTeX docs.
+   */
+  fastify.get(
+    '/documents/:id/latex/ir',
+    {
+      schema: {
+        description: 'Build IR from the LaTeX bundle for a document (expands includes via documents.latex manifest)',
+        tags: ['Documents'],
+        security,
+        params: {
+          type: 'object',
+          properties: { id: { type: 'string', format: 'uuid' } },
+          required: ['id'],
+        },
+        response: { 200: schemas.ApiResponse, 400: schemas.ApiResponse, 404: schemas.ApiResponse, 500: schemas.ApiResponse },
+      },
+    },
+    async (request: AuthenticatedRequest, reply) => {
+      try {
+        const paramValidation = documentIdSchema.safeParse(request.params);
+        if (!paramValidation.success) {
+          const response: ApiResponse<null> = { success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid document ID' } };
+          return reply.status(400).send(response);
+        }
+        const { id } = paramValidation.data;
+        const documentService = new DocumentService(request.supabase!);
+        const doc = await documentService.getDocumentById(id);
+        const manifest = (doc.latex as unknown as LatexManifest | null) ?? null;
+        if (!manifest || typeof manifest !== 'object') {
+          const response: ApiResponse<null> = { success: false, error: { code: 'NOT_FOUND', message: 'No LaTeX manifest for document' } };
+          return reply.status(404).send(response);
+        }
+        const basePrefix = String(manifest.basePrefix || '');
+        const entryPath = String(manifest.entryPath || '');
+        if (!basePrefix || !entryPath) {
+          const response: ApiResponse<null> = { success: false, error: { code: 'INVALID_STATE', message: 'Invalid LaTeX manifest (missing basePrefix/entryPath)' } };
+          return reply.status(500).send(response);
+        }
+
+        const admin = supabaseAdmin();
+        await ensureLatexBucket();
+
+        // Download all .tex files listed in the manifest into a map so we can inline includes.
+        const byPath = new Map<string, string>();
+        const files: Array<{ path: string; sha256?: string; size?: number }> = Array.isArray(manifest.files) ? manifest.files : [];
+        for (const f of files) {
+          const rel = String(f?.path || '');
+          if (!rel) continue;
+          if (!rel.toLowerCase().endsWith('.tex')) continue;
+          const key = `${basePrefix.replace(/\/+$/g, '')}/${rel.replace(/^\/+/, '')}`;
+          const { data, error } = await admin.storage.from(latexBucket).download(key);
+          if (error || !data) continue;
+          const text = await data.text();
+          if (!text) continue;
+          byPath.set(normalizeTexPath(rel), text);
+        }
+
+        const entryKey = `${basePrefix.replace(/\/+$/g, '')}/${entryPath.replace(/^\/+/, '')}`;
+        const { data: entryData, error: entryErr } = await admin.storage.from(latexBucket).download(entryKey);
+        if (entryErr || !entryData) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'NOT_FOUND',
+              message: 'LaTeX entry file not found in storage',
+              details: {
+                bucket: latexBucket,
+                key: entryKey,
+                basePrefix,
+                entryPath,
+                reason: entryErr?.message ? String(entryErr.message) : 'Download returned empty data',
+              },
+            },
+          };
+          return reply.status(404).send(response);
+        }
+        const entryText = await entryData.text();
+
+        // Inline includes starting from entryPath.
+        const expanded = inlineInputs({
+          tex: entryText,
+          baseDir: path.dirname(normalizeTexPath(entryPath)),
+          byPath,
+          visited: new Set<string>([normalizeTexPath(entryPath)]),
+          depth: 0,
+        });
+
+        const ir = parseLatexToIr({ docId: id, latex: expanded });
+        const response: ApiResponse<{ ir: unknown }> = { success: true, data: { ir } };
+        return reply.send(response);
+      } catch (error: unknown) {
+        fastify.log.error(error);
+        const msg = error instanceof Error ? error.message : 'Failed to build LaTeX IR';
         const response: ApiResponse<null> = { success: false, error: { code: 'INTERNAL_ERROR', message: msg } };
         return reply.status(500).send(response);
       }

@@ -372,6 +372,12 @@ export const api = {
       if (!response.data) throw new ApiError('Failed to save LaTeX entry', 'LATEX_ENTRY_PUT_FAILED', 500);
       return response.data;
     },
+
+    latexIrGet: async (id: string): Promise<{ ir: any }> => {
+      const response = await fetchApi<{ ir: any }>(`/documents/${id}/latex/ir`);
+      if (!response.data) throw new ApiError('Failed to build LaTeX IR', 'LATEX_IR_GET_FAILED', 500);
+      return response.data;
+    },
   },
 
   ai: {

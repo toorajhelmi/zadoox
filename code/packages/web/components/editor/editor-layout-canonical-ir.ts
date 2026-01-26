@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DocumentNode } from '@zadoox/shared';
 import { parseLatexToIr, parseXmdToIr } from '@zadoox/shared';
 import { computeDocIrHash } from './ir-hash';
+import { api } from '@/lib/api/client';
 
 export function useCanonicalIrState(params: {
   docKey: string | null;
@@ -12,8 +13,9 @@ export function useCanonicalIrState(params: {
   documentMetadata: Record<string, any> | undefined;
   setDocumentMetadata: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   latexEditNonce: number;
+  documentLatex: unknown | null | undefined;
 }) {
-  const { docKey, editMode, content, latexDraft, mdIr, documentMetadata, setDocumentMetadata, latexEditNonce } = params;
+  const { docKey, editMode, content, latexDraft, mdIr, documentMetadata, setDocumentMetadata, latexEditNonce, documentLatex } = params;
 
   const [canonicalIr, setCanonicalIr] = useState<DocumentNode | null>(null);
   const canonicalIrRef = useRef<DocumentNode | null>(null);
@@ -88,16 +90,35 @@ export function useCanonicalIrState(params: {
     }
 
     latexIrParseTimeoutRef.current = setTimeout(() => {
-      try {
-        const nextIr = parseLatexToIr({ docId: docKey, latex: latexDraft });
-        setCanonicalIr(nextIr);
-        didInitFromLatexDocKeyRef.current = docKey;
-        lastParsedLatexNonceRef.current = latexEditNonce;
+      (async () => {
+        // On initial load for LaTeX docs, prefer backend-expanded IR so multi-file imports (\input/\include)
+        // produce a complete outline. On user edits, fall back to local parse (fast).
+        if (shouldInitFromLatexOnLoad && documentLatex) {
+          try {
+            const built = await api.documents.latexIrGet(docKey);
+            const nextIr = (built as any)?.ir as DocumentNode | null;
+            if (nextIr) {
+              setCanonicalIr(nextIr);
+              didInitFromLatexDocKeyRef.current = docKey;
+              // Do NOT touch lastParsedLatexNonceRef here: user hasn't edited latex yet.
+              return;
+            }
+          } catch {
+            // fall through to local parse
+          }
+        }
 
-        // Phase 17: LaTeX is stored separately (storage-backed) and we no longer persist latexIrHash in metadata.
-      } catch {
-        // keep last good IR
-      }
+        try {
+          const nextIr = parseLatexToIr({ docId: docKey, latex: latexDraft });
+          setCanonicalIr(nextIr);
+          didInitFromLatexDocKeyRef.current = docKey;
+          lastParsedLatexNonceRef.current = latexEditNonce;
+        } catch {
+          // keep last good IR
+        }
+      })().catch(() => {
+        // ignore
+      });
     }, 250);
 
     return () => {
@@ -106,7 +127,7 @@ export function useCanonicalIrState(params: {
         latexIrParseTimeoutRef.current = null;
       }
     };
-  }, [content, docKey, documentMetadata, editMode, latexDraft, latexEditNonce, mdIr, setDocumentMetadata]);
+  }, [content, docKey, documentMetadata, documentLatex, editMode, latexDraft, latexEditNonce, mdIr, setDocumentMetadata]);
 
   return { canonicalIr, getCurrentIr };
 }

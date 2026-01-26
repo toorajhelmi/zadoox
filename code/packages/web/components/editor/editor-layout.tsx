@@ -213,6 +213,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     documentMetadata,
     setDocumentMetadata,
     latexEditNonce: latexEditNonceRef.current,
+    documentLatex,
   });
 
   useEffect(() => {
