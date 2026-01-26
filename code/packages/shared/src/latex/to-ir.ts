@@ -1280,6 +1280,8 @@ function parseBlocks(latex: string): Block[] {
         j = i + 1;
         while (j < lines.length && !/^\\end\{table\*?\}/.test(lines[j].line.trim())) j++;
       }
+      // If we found the end of the environment, either parse it or fall back to a raw block,
+      // but ALWAYS continue parsing after it. Only break when the env is unclosed.
       if (j < lines.length && (j === i || /^\\end\{table\*?\}/.test(lines[j].line.trim()))) {
         const endOffset = lines[j]?.end ?? end;
         const seg = lines.slice(i, j + 1);
@@ -1287,12 +1289,14 @@ function parseBlocks(latex: string): Block[] {
         const parsed = parseLatexTableEnvironment(raw);
         if (parsed) {
           blocks.push({ ...parsed, raw, blockIndex, startOffset, endOffset });
-          i = j + 1;
-          blockIndex++;
-          continue;
+        } else {
+          blocks.push({ kind: 'raw', latex: raw, raw, blockIndex, startOffset, endOffset });
         }
+        i = j + 1;
+        blockIndex++;
+        continue;
       }
-      // Unclosed or unparseable => raw
+      // Unclosed => raw remainder and stop.
       const raw = lines.slice(i).map((l) => l.line).join('\n');
       blocks.push({ kind: 'raw', latex: raw, raw, blockIndex, startOffset, endOffset: lines[lines.length - 1]?.end ?? end });
       break;
