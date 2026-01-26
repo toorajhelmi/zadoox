@@ -522,20 +522,40 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
     const container = containerRef.current;
     if (!container) return;
 
-    const frames = Array.from(container.querySelectorAll('.zx-figure-media-frame')) as HTMLElement[];
-    for (const f of frames) {
-      if (figureBgDefault === 'light') f.classList.add('zx-figure-frame-light');
-      else f.classList.remove('zx-figure-frame-light');
+    const ensureFigureButtons = () => {
+      // Some figures may not have the expected wrapper; normalize:
+      // - Ensure media (<img>/<object>) is wrapped in .zx-figure-media-frame
+      // - Ensure each frame has a .zx-figure-bg-toggle button
+      const figureInners = Array.from(container.querySelectorAll('.figure-inner')) as HTMLElement[];
+      for (const inner of figureInners) {
+        const media = inner.querySelector('img, object') as HTMLElement | null;
+        if (!media) continue;
+        const existingFrame = media.closest('.zx-figure-media-frame') as HTMLElement | null;
+        let frame = existingFrame;
+        if (!frame) {
+          frame = document.createElement('span');
+          frame.className = 'zx-figure-media-frame';
+          media.replaceWith(frame);
+          frame.appendChild(media);
+        }
+        if (figureBgDefault === 'light') frame.classList.add('zx-figure-frame-light');
+        else frame.classList.remove('zx-figure-frame-light');
 
-      // NOTE: Avoid :scope selector for broader browser compatibility (Safari can throw).
-      if (!f.querySelector('.zx-figure-bg-toggle')) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'zx-figure-bg-toggle';
-        btn.textContent = 'Bg';
-        btn.setAttribute('aria-label', 'Toggle figure background');
-        f.appendChild(btn);
+        if (!frame.querySelector('.zx-figure-bg-toggle')) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'zx-figure-bg-toggle';
+          btn.textContent = 'Bg';
+          btn.setAttribute('aria-label', 'Toggle figure background');
+          frame.appendChild(btn);
+        }
       }
+    };
+
+    try {
+      ensureFigureButtons();
+    } catch {
+      // ignore
     }
 
     const onClick = (e: Event) => {
@@ -564,6 +584,22 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
       void resolveLatexAssetImages();
       clampFigureCaptionsToImageWidth();
       applyGridIntrinsicPercentSizing();
+      // If figures/media were inserted after initial HTML render, ensure per-figure Bg buttons exist.
+      try {
+        const frames = Array.from(container.querySelectorAll('.zx-figure-media-frame')) as HTMLElement[];
+        for (const f of frames) {
+          if (!f.querySelector('.zx-figure-bg-toggle')) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'zx-figure-bg-toggle';
+            btn.textContent = 'Bg';
+            btn.setAttribute('aria-label', 'Toggle figure background');
+            f.appendChild(btn);
+          }
+        }
+      } catch {
+        // ignore
+      }
     });
     obs.observe(container, { childList: true, subtree: true });
 

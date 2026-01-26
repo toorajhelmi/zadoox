@@ -406,6 +406,21 @@ function parseIncludegraphicsLine(line: string): { src?: string; width?: string;
   return { src: latexGraphicPathToSrc(pathArg), width, scale };
 }
 
+function parseAllIncludegraphics(line: string): Array<{ src: string; width?: string; scale?: string }> {
+  const raw = String(line ?? '');
+  const hits: Array<{ src: string; width?: string; scale?: string }> = [];
+  let idx = 0;
+  while (idx < raw.length) {
+    const next = raw.indexOf('\\includegraphics', idx);
+    if (next < 0) break;
+    const sub = raw.slice(next);
+    const one = parseIncludegraphicsLine(sub);
+    if (one.src) hits.push({ src: one.src, ...(one.width ? { width: one.width } : null), ...(one.scale ? { scale: one.scale } : null) });
+    idx = next + '\\includegraphics'.length;
+  }
+  return hits;
+}
+
 type Block =
   | {
       kind: 'title';
@@ -1325,6 +1340,7 @@ function parseBlocks(latex: string): Block[] {
       let desc: string | undefined;
       let caption = '';
       let label: string | undefined;
+      const includegraphics: Array<{ src: string; width?: string; scale?: string }> = [];
 
       // End can be \end{figure} or \end{figure*}
       while (j < lines.length && !/^\\end\{figure\*?\}\s*$/.test(lines[j].line.trim())) {
@@ -1345,7 +1361,9 @@ function parseBlocks(latex: string): Block[] {
         if (t === '\\raggedright') align = 'left';
         if (t === '\\centering') align = 'center';
 
-        const ig = parseIncludegraphicsLine(t);
+        const allIg = parseAllIncludegraphics(t);
+        if (allIg.length) includegraphics.push(...allIg);
+        const ig = allIg[0] ?? parseIncludegraphicsLine(t);
         if (!src && ig.src) src = ig.src;
         if (!width && ig.width) width = latexWidthToXmdWidth(ig.width);
         if (!width && ig.scale) width = latexScaleToXmdWidth(ig.scale);
@@ -1377,6 +1395,30 @@ function parseBlocks(latex: string): Block[] {
             cols: grid.cols,
             caption: caption || undefined,
             rows: grid.rows,
+            raw,
+            blockIndex,
+            startOffset,
+            endOffset,
+          });
+          i = j + 1;
+          blockIndex++;
+          continue;
+        }
+
+        // Generic multi-image figure (common in arXiv: "(left)... (right)..."):
+        // if we saw multiple includegraphics calls, render them as a 1-row grid.
+        if (includegraphics.length > 1) {
+          const cols = includegraphics.length;
+          const row = includegraphics.map((ig) => ({
+            src: ig.src,
+            caption: '',
+            width: ig.width ? latexWidthToXmdWidth(ig.width) : ig.scale ? latexScaleToXmdWidth(ig.scale) : undefined,
+          }));
+          blocks.push({
+            kind: 'grid',
+            cols,
+            caption: caption || undefined,
+            rows: [row],
             raw,
             blockIndex,
             startOffset,
