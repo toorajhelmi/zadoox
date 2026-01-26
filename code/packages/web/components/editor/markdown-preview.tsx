@@ -637,6 +637,19 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
           margin: 0.1em 0;
           text-align: center;
         }
+        .markdown-content .doc-authors {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+          gap: 4px 16px;
+          align-items: center;
+          justify-items: center;
+          margin: 0.1em 0;
+        }
+        .markdown-content .doc-authors .doc-author {
+          margin: 0;
+          text-align: center;
+          width: 100%;
+        }
         .markdown-content h1 {
           font-size: 2em;
           font-weight: bold;

@@ -19,7 +19,28 @@ export function renderIrToHtml(ir: DocumentNode): string {
 }
 
 function renderNodes(nodes: IrNode[]): string {
-  return nodes.map(renderNode).filter(Boolean).join('');
+  const parts: string[] = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i]!;
+    if (n.type === 'document_author') {
+      const authors: Array<{ text: string }> = [];
+      while (i < nodes.length && nodes[i]!.type === 'document_author') {
+        const a = nodes[i]! as { type: 'document_author'; text?: string };
+        const t = String(a.text ?? '').trim();
+        if (t) authors.push({ text: t });
+        i++;
+      }
+      i--; // compensate for for-loop increment
+      if (authors.length > 0) {
+        const inner = authors.map((a) => `<div class="doc-author">${escapeHtml(a.text)}</div>`).join('');
+        parts.push(`<div class="doc-authors">${inner}</div>`);
+        continue;
+      }
+    }
+    const rendered = renderNode(n);
+    if (rendered) parts.push(rendered);
+  }
+  return parts.join('');
 }
 
 function forceGridCellMediaToFill(html: string): string {

@@ -639,8 +639,63 @@ function parseBlocks(latex: string): Block[] {
   };
 
   const splitAuthorContent = (raw: string): string[] => {
-    const s = String(raw ?? '');
+    const stripCmdWithArg = (input: string, cmd: string): string => {
+      const s = String(input ?? '');
+      let out = '';
+      let i = 0;
+      while (i < s.length) {
+        const ch = s[i]!;
+        if (ch !== '\\') {
+          out += ch;
+          i++;
+          continue;
+        }
+        // parse command name
+        let j = i + 1;
+        while (j < s.length && /[a-zA-Z*]/.test(s[j]!)) j++;
+        const name = s.slice(i + 1, j);
+        if (name !== cmd) {
+          out += ch;
+          i++;
+          continue;
+        }
+        // skip optional [..]
+        i = j;
+        if (s[i] === '[') {
+          let depth = 1;
+          i++;
+          while (i < s.length && depth > 0) {
+            const c = s[i]!;
+            if (c === '[') depth++;
+            else if (c === ']') depth--;
+            i++;
+          }
+        }
+        // skip {..}
+        if (s[i] === '{') {
+          let depth = 1;
+          i++;
+          while (i < s.length && depth > 0) {
+            const c = s[i]!;
+            if (c === '{') depth++;
+            else if (c === '}') depth--;
+            i++;
+          }
+        }
+        // command stripped
+      }
+      return out;
+    };
+
+    let s = String(raw ?? '');
+    // NeurIPS-style author blocks often contain \thanks{...} and similar footnote macros.
+    // Strip them so author names remain clean.
+    for (const cmd of ['thanks', 'samethanks', 'footnotemark', 'footnotetext']) {
+      s = stripCmdWithArg(s, cmd);
+    }
+
     const normalized = s
+      .replace(/\\AND\b/g, '\n')
       .replace(/\\and\b/g, '\n')
       .replace(/\\\\/g, '\n')
       .replace(/\\newline\b/g, '\n');

@@ -154,6 +154,25 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     expect(xmd).toContain('@^ Bob');
   });
 
+  it('NeurIPS-style author separators (\\AND) and \\thanks{...} are cleaned for authors', () => {
+    const latex = [
+      '\\documentclass{article}',
+      '\\title{T}',
+      '\\author{Alice\\thanks{Equal contribution.} \\AND Bob}',
+      '\\begin{document}',
+      '\\maketitle',
+      'Hello.',
+      '\\end{document}',
+    ].join('\n');
+
+    const ir = parseLatexToIr({ docId: 'doc-auth-ml-2', latex });
+    const xmd = irToXmd(ir);
+    expect(xmd).toContain('@^ Alice');
+    expect(xmd).toContain('@^ Bob');
+    expect(xmd).not.toContain('Equal contribution');
+    expect(xmd).not.toContain('\\AND');
+  });
+
   it('LaTeX abstract environment becomes an "Abstract" section in IR', () => {
     const latex = [
       '\\documentclass{article}',
