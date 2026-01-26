@@ -566,6 +566,19 @@ function parseBlocks(latex: string): Block[] {
     return s;
   };
 
+  const stripFormattingOnlyMacros = (input: string): string => {
+    let s = String(input ?? '');
+    // Remove simple formatting-only commands that often appear in boilerplate/legal notices.
+    s = s.replace(/\\color\{[^}]*\}/g, ' ');
+    // Common font size switches (no braces).
+    s = s.replace(/\\(tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge)\b/g, ' ');
+    // Spacing helpers.
+    s = s.replace(/\\hspace\*?\{[^}]*\}/g, ' ');
+    s = s.replace(/\\vspace\*?\{[^}]*\}/g, ' ');
+    s = s.replace(/\\hfill\b/g, ' ');
+    return s.replace(/\s+/g, ' ').trim();
+  };
+
   const parseBracedCommand = (
     startLineIndex: number,
     cmd: 'title' | 'author' | 'date'
@@ -876,6 +889,67 @@ function parseBlocks(latex: string): Block[] {
 
         i = j + 1;
         blockIndex += 2;
+        continue;
+      }
+      // Unclosed => raw
+      const raw = lines.slice(i).map((l) => l.line).join('\n');
+      blocks.push({ kind: 'raw', latex: raw, raw, blockIndex, startOffset, endOffset: lines[lines.length - 1]?.end ?? end });
+      break;
+    }
+
+    // center environment (often used for boilerplate notes / centered callouts)
+    // We do NOT preserve centering semantics in IR yet; we just extract the text.
+    if (trimmed.startsWith('\\begin{center}')) {
+      const startOffset = start;
+      let j = i;
+      const body: string[] = [];
+
+      // Extract any inline content that appears on the same line as \begin{center}
+      const afterBeginFull = stripInlineComment(line).replace(/^.*?\\begin\{center\}/, '').trim();
+      const inlineEndIdx = afterBeginFull.indexOf('\\end{center}');
+      if (inlineEndIdx >= 0) {
+        const inlineBody = afterBeginFull.slice(0, inlineEndIdx).trim();
+        const raw = line;
+        const cleaned = stripFormattingOnlyMacros(inlineBody);
+        const text = latexInlineToMarkdown(cleaned);
+        if (text.trim().length > 0) {
+          blocks.push({ kind: 'paragraph', text, raw, blockIndex, startOffset, endOffset: end });
+        }
+        i = i + 1;
+        blockIndex++;
+        continue;
+      }
+      if (afterBeginFull) body.push(afterBeginFull);
+
+      j = i + 1;
+      while (j < lines.length) {
+        const rawLine = lines[j]!.line;
+        const t = rawLine.trim();
+        if (t === '\\end{center}') break;
+        if (t.startsWith('%') && !isZxMarkerLine(t)) {
+          j++;
+          continue;
+        }
+        const noComment = stripInlineComment(rawLine);
+        const endIdx = noComment.indexOf('\\end{center}');
+        if (endIdx >= 0) {
+          const beforeEnd = noComment.slice(0, endIdx).trim();
+          if (beforeEnd) body.push(beforeEnd);
+          break;
+        }
+        body.push(noComment);
+        j++;
+      }
+      if (j < lines.length && (lines[j]!.line.trim() === '\\end{center}' || stripInlineComment(lines[j]!.line).includes('\\end{center}'))) {
+        const endOffset = lines[j]!.end;
+        const raw = lines.slice(i, j + 1).map((l) => l.line).join('\n');
+        const cleaned = stripFormattingOnlyMacros(body.join('\n'));
+        const text = latexInlineToMarkdown(cleaned);
+        if (text.trim().length > 0) {
+          blocks.push({ kind: 'paragraph', text, raw, blockIndex, startOffset, endOffset });
+        }
+        i = j + 1;
+        blockIndex++;
         continue;
       }
       // Unclosed => raw

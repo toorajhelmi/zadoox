@@ -192,6 +192,22 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     expect(xmd).not.toContain('hspace');
   });
 
+  it('center environment text is extracted and formatting macros are stripped', () => {
+    const latex = [
+      '\\documentclass{article}',
+      '\\begin{document}',
+      '\\begin{center} \\color{red} \\large Provided proper attribution is provided.\\end{center}',
+      '\\end{document}',
+    ].join('\n');
+
+    const ir = parseLatexToIr({ docId: 'doc-center-1', latex });
+    const xmd = irToXmd(ir);
+    expect(xmd).toContain('Provided proper attribution is provided.');
+    expect(xmd).not.toContain('\\begin{center}');
+    expect(xmd).not.toContain('\\color');
+    expect(xmd).not.toContain('\\large');
+  });
+
   it('LaTeX abstract environment becomes an "Abstract" section in IR', () => {
     const latex = [
       '\\documentclass{article}',
