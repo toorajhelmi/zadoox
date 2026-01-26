@@ -629,15 +629,6 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
       tex = tex.replace(/−/g, '-').replace(/⋅/g, '\\cdot ');
       return tex;
     };
-
-    // Common math macros seen in imported academic LaTeX (e.g. arXiv sources).
-    // TODO: extract \newcommand/\def from the LaTeX bundle/preamble and merge here.
-    const macros: Record<string, string> = {
-      '\\dmodel': 'd_{\\text{model}}',
-      '\\dff': 'd_{\\text{ff}}',
-      '\\dk': 'd_k',
-      '\\dv': 'd_v',
-    };
     void (async () => {
       const k = await loadKatex();
       if (!k) return;
@@ -651,9 +642,9 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
         const tex = normalizeTex(raw, displayMode);
         try {
           if (render) {
-            render(tex, el, { throwOnError: false, displayMode, strict: 'ignore', macros });
+            render(tex, el, { throwOnError: false, displayMode, strict: 'ignore' });
           } else if (renderToString) {
-            el.innerHTML = renderToString(tex, { throwOnError: false, displayMode, strict: 'ignore', macros });
+            el.innerHTML = renderToString(tex, { throwOnError: false, displayMode, strict: 'ignore' });
           }
           if (!el.getAttribute('data-zx-math-raw')) {
             el.setAttribute('data-zx-math-raw', String(raw));
