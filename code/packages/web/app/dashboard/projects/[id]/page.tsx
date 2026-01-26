@@ -34,6 +34,12 @@ export default function ProjectDetailPage() {
   const [editingModeSaving, setEditingModeSaving] = useState(false);
   const editingModeMenuRef = useRef<HTMLDivElement | null>(null);
 
+  const [importOpen, setImportOpen] = useState(false);
+  const [importSource, setImportSource] = useState<'arxiv' | 'google-docs'>('arxiv');
+  const [arxivInput, setArxivInput] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+
   useEffect(() => {
     const loadProject = async () => {
       try {
@@ -120,6 +126,32 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const onStartImport = async () => {
+    if (!project) return;
+    if (importing) return;
+    setImportError(null);
+
+    if (importSource === 'arxiv') {
+      const v = arxivInput.trim();
+      if (!v) {
+        setImportError('Enter an arXiv URL or ID');
+        return;
+      }
+      try {
+        setImporting(true);
+        const doc = await api.imports.arxiv({ projectId, arxiv: v });
+        setImportOpen(false);
+        router.push(`/dashboard/projects/${projectId}/documents/${doc.id}`);
+      } catch (err: unknown) {
+        setImportError(err instanceof Error ? err.message : 'Import failed');
+      } finally {
+        setImporting(false);
+      }
+    } else {
+      setImportError('Google Docs import is coming soon');
+    }
+  };
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -191,6 +223,15 @@ export default function ProjectDetailPage() {
                 className="px-4 py-2 bg-[#3e3e42] hover:bg-[#464647] text-white rounded text-sm font-medium transition-colors"
               >
                 Settings
+              </button>
+              <button
+                onClick={() => {
+                  setImportError(null);
+                  setImportOpen(true);
+                }}
+                className="px-4 py-2 bg-[#3e3e42] hover:bg-[#464647] text-white rounded text-sm font-medium transition-colors"
+              >
+                Import
               </button>
               <button
                 onClick={() => router.push(`/dashboard/projects/${projectId}/publish`)}
@@ -282,6 +323,79 @@ export default function ProjectDetailPage() {
           </div>
         </div>
       </div>
+
+      {importOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-[640px] rounded border border-[#3e3e42] bg-[#1e1e1e] shadow-xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#3e3e42]">
+              <div>
+                <div className="text-sm font-semibold text-white">Import Document</div>
+                <div className="text-xs text-[#969696] mt-0.5">Import from external sources (more coming soon)</div>
+              </div>
+              <button
+                type="button"
+                className="px-2 py-1 rounded hover:bg-[#2d2d30] text-[#cccccc] hover:text-white"
+                onClick={() => setImportOpen(false)}
+                aria-label="Close import"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-4">
+              <div>
+                <label className="block text-xs text-[#969696] mb-1">Source</label>
+                <select
+                  value={importSource}
+                  onChange={(e) => setImportSource(e.target.value as any)}
+                  className="w-full px-3 py-2 rounded bg-[#252526] border border-[#3e3e42] text-white text-sm"
+                  disabled={importing}
+                >
+                  <option value="arxiv">arXiv (LaTeX source)</option>
+                  <option value="google-docs">Google Docs (coming soon)</option>
+                </select>
+              </div>
+
+              {importSource === 'arxiv' && (
+                <div>
+                  <label className="block text-xs text-[#969696] mb-1">arXiv URL or ID</label>
+                  <input
+                    value={arxivInput}
+                    onChange={(e) => setArxivInput(e.target.value)}
+                    placeholder="e.g. https://arxiv.org/abs/2301.01234 or 2301.01234v2"
+                    className="w-full px-3 py-2 rounded bg-[#252526] border border-[#3e3e42] text-white text-sm"
+                    disabled={importing}
+                  />
+                  <div className="text-[11px] text-[#969696] mt-2">
+                    We’ll fetch the arXiv source and store it as the document’s LaTeX draft.
+                  </div>
+                </div>
+              )}
+
+              {importError && <div className="text-sm text-red-300">{importError}</div>}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-[#3e3e42]">
+              <button
+                type="button"
+                className="px-4 py-2 bg-[#3e3e42] hover:bg-[#464647] text-white rounded text-sm font-medium transition-colors"
+                onClick={() => setImportOpen(false)}
+                disabled={importing}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 bg-[#007acc] hover:bg-[#1a8cd8] disabled:opacity-60 text-white rounded text-sm font-medium transition-colors"
+                onClick={() => void onStartImport()}
+                disabled={importing}
+              >
+                {importing ? 'Importing…' : 'Import'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 }

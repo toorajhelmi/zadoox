@@ -94,15 +94,7 @@ export function useCanonicalIrState(params: {
         didInitFromLatexDocKeyRef.current = docKey;
         lastParsedLatexNonceRef.current = latexEditNonce;
 
-        // Persist latexIrHash to indicate this LaTeX surface maps to this canonical IR.
-        const nextHash = computeDocIrHash(nextIr);
-        if (nextHash) {
-          setDocumentMetadata((prev) => {
-            const p = (prev || {}) as any;
-            if (p.latexIrHash === nextHash) return prev;
-            return { ...p, latexIrHash: nextHash };
-          });
-        }
+        // Phase 17: LaTeX is stored separately (storage-backed) and we no longer persist latexIrHash in metadata.
       } catch {
         // keep last good IR
       }

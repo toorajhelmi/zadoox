@@ -9,4 +9,5 @@ export * from './api';
 export * from './version';
 export * from './editor';
 export * from './semantic-graph';
+export * from './sg-template';
 export * from './block-graph';

@@ -345,6 +345,33 @@ export const api = {
       }
       return response.data;
     },
+
+    delete: async (id: string): Promise<void> => {
+      await fetchApi<void>(`/documents/${id}`, { method: 'DELETE' });
+    },
+
+    duplicate: async (id: string): Promise<Document> => {
+      const response = await fetchApi<Document>(`/documents/${id}/duplicate`, { method: 'POST' });
+      if (!response.data) {
+        throw new ApiError('Failed to duplicate document', 'DUPLICATE_FAILED', 500);
+      }
+      return response.data;
+    },
+
+    latexEntryGet: async (id: string): Promise<{ text: string; latex: any }> => {
+      const response = await fetchApi<{ text: string; latex: any }>(`/documents/${id}/latex/entry`);
+      if (!response.data) throw new ApiError('Failed to load LaTeX entry', 'LATEX_ENTRY_GET_FAILED', 500);
+      return response.data;
+    },
+
+    latexEntryPut: async (id: string, params: { text: string; entryPath?: string }): Promise<{ latex: any }> => {
+      const response = await fetchApi<{ latex: any }>(`/documents/${id}/latex/entry`, {
+        method: 'PUT',
+        body: JSON.stringify(params),
+      });
+      if (!response.data) throw new ApiError('Failed to save LaTeX entry', 'LATEX_ENTRY_PUT_FAILED', 500);
+      return response.data;
+    },
   },
 
   ai: {
@@ -562,6 +589,19 @@ export const api = {
       }>(`/sg/bootstrap/status/${encodeURIComponent(jobId)}`);
       if (!response.data) {
         throw new ApiError('Failed to load SG bootstrap status', 'SG_BOOTSTRAP_STATUS_FAILED', 500);
+      }
+      return response.data;
+    },
+  },
+
+  imports: {
+    arxiv: async (params: { projectId: string; arxiv: string; title?: string }): Promise<Document> => {
+      const response = await fetchApi<Document>('/import/arxiv', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
+      if (!response.data) {
+        throw new ApiError('Failed to import arXiv paper', 'IMPORT_ARXIV_FAILED', 500);
       }
       return response.data;
     },

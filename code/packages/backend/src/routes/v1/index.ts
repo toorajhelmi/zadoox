@@ -10,6 +10,7 @@ import { sgRoutes } from './sg.js';
 import { versionRoutes } from './versions.js';
 import { assetRoutes } from './assets.js';
 import { publishRoutes } from './publish.js';
+import { importRoutes } from './import.js';
 
 export async function v1Routes(fastify: FastifyInstance) {
   // Register all v1 route modules
@@ -20,5 +21,6 @@ export async function v1Routes(fastify: FastifyInstance) {
   await fastify.register(versionRoutes, { prefix: '/api/v1' });
   await fastify.register(assetRoutes, { prefix: '/api/v1' });
   await fastify.register(publishRoutes, { prefix: '/api/v1' });
+  await fastify.register(importRoutes, { prefix: '/api/v1' });
 }
 

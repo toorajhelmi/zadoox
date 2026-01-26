@@ -9,17 +9,24 @@ import {
   PhotoIcon,
   FolderIcon,
   Squares2X2Icon,
+  TrashIcon,
+  Square2StackIcon,
   ArrowsPointingInIcon,
   ArrowsPointingOutIcon,
 } from '@heroicons/react/24/outline';
 import type { OutlineItem } from '@zadoox/shared';
 import { createClient } from '@/lib/supabase/client';
+import { api } from '@/lib/api/client';
 import Image from 'next/image';
+import { useParams, useRouter } from 'next/navigation';
+import type { Document as ZadooxDocument } from '@zadoox/shared';
 
 interface DocumentOutlineProps {
   content: string;
   ir?: DocumentNode | null;
   projectName?: string;
+  projectId?: string;
+  currentDocumentId?: string;
 }
 
 type HeadingItem = Extract<OutlineItem, { kind: 'heading' }>;
@@ -38,6 +45,8 @@ type HoveredAsset = {
   anchorRect: DOMRect;
 };
 
+const projectDocsCache = new Map<string, ZadooxDocument[]>();
+
 function toFileNameFromTitle(title: string): string {
   const t = String(title ?? '').trim() || 'Untitled Document';
   const safe = t
@@ -48,6 +57,24 @@ function toFileNameFromTitle(title: string): string {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
   return `${safe || 'untitled-document'}.md`;
+}
+
+function mergeDocsPreserveOrder(prev: ZadooxDocument[], next: ZadooxDocument[]): ZadooxDocument[] {
+  // Preserve the existing order as much as possible (prevents "tree reorders" on navigation).
+  // Update doc objects for existing ids; append truly new docs at the end; drop missing docs.
+  const nextById = new Map(next.map((d) => [d.id, d]));
+  const nextIds = new Set(next.map((d) => d.id));
+
+  const out: ZadooxDocument[] = [];
+  for (const d of prev) {
+    if (!nextIds.has(d.id)) continue;
+    out.push(nextById.get(d.id) ?? d);
+  }
+  for (const d of next) {
+    if (prev.some((p) => p.id === d.id)) continue;
+    out.push(d);
+  }
+  return out;
 }
 
 function collectAssetFilesFromIr(ir: DocumentNode): AssetFile[] {
@@ -156,10 +183,12 @@ function collectCollapsibleHeadingIds(nodes: OutlineNode[]): string[] {
   return ids;
 }
 
-export function DocumentOutline({ content, ir, projectName }: DocumentOutlineProps) {
+export function DocumentOutline({ content, ir, projectName, projectId, currentDocumentId }: DocumentOutlineProps) {
   // IMPORTANT: Outline must be driven from the canonical IR provided by the editor pipeline.
   // Do not parse content here; that would create a second IR and can diverge across edit modes.
   const derivedIr = ir ?? null;
+  const router = useRouter();
+  const params = useParams<{ id?: string; documentId?: string }>();
 
   const items = useMemo(() => {
     // Phase 11: outline is IR-driven.
@@ -174,18 +203,163 @@ export function DocumentOutline({ content, ir, projectName }: DocumentOutlinePro
   const outlineItems = useMemo(() => items.filter((i) => !(i.kind === 'heading' && i.id === 'doc-title')), [items]);
 
   const tree = useMemo(() => buildOutlineTree(outlineItems), [outlineItems]);
-  const storageKey = useMemo(() => `zadoox:outline:collapsed:${derivedIr?.docId ?? 'unknown'}`, [derivedIr?.docId]);
+  // Use the route-param document id (passed from EditorLayout) as the stable key.
+  // Falling back to IR docId is allowed for unit tests / standalone usage.
+  const docKey = currentDocumentId ?? derivedIr?.docId ?? 'unknown';
+  const storageKey = useMemo(() => `zadoox:outline:collapsed:${docKey}`, [docKey]);
   const collapsibleIds = useMemo(() => collectCollapsibleHeadingIds(tree), [tree]);
   const assets = useMemo(() => (derivedIr ? collectAssetFilesFromIr(derivedIr) : []), [derivedIr]);
 
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
-  const [projectCollapsed, setProjectCollapsed] = useState(false);
   const [fileCollapsed, setFileCollapsed] = useState(false);
   const [assetsCollapsed, setAssetsCollapsed] = useState(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [hoveredAsset, setHoveredAsset] = useState<HoveredAsset | null>(null);
   const [assetUrlByKey, setAssetUrlByKey] = useState<Record<string, string>>({});
   const [assetLoadingByKey, setAssetLoadingByKey] = useState<Record<string, boolean>>({});
+
+  const [projectDocs, setProjectDocs] = useState<ZadooxDocument[]>(() => {
+    if (!projectId) return [];
+    return projectDocsCache.get(projectId) ?? [];
+  });
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
+  const [duplicatingDocId, setDuplicatingDocId] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null);
+
+  // Load project documents so the outline can show which doc holds which sections (multi-doc projects).
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    const cached = projectDocsCache.get(projectId) ?? [];
+    // Do NOT refetch on navigation. Keep the list visually stable.
+    // We only fetch when there's no cache yet; create/delete/duplicate update the cache explicitly.
+    if (cached.length === 0) setDocsLoading(true);
+    (async () => {
+      try {
+        const docs = await api.documents.listByProject(projectId);
+        if (cancelled) return;
+        const prev = projectDocsCache.get(projectId) ?? [];
+        const merged = prev.length > 0 ? mergeDocsPreserveOrder(prev, docs) : docs;
+        projectDocsCache.set(projectId, merged);
+        setProjectDocs((cur) => {
+          // Avoid pointless state churn: if ids are identical and in the same order,
+          // keep the existing array reference.
+          if (cur.length === merged.length) {
+            let same = true;
+            for (let i = 0; i < cur.length; i++) {
+              if (cur[i]?.id !== merged[i]?.id) {
+                same = false;
+                break;
+              }
+            }
+            if (same) return cur;
+          }
+          return merged;
+        });
+      } catch {
+        if (!cancelled) setProjectDocs([]);
+      } finally {
+        if (!cancelled) setDocsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  const deleteDoc = async (docId: string) => {
+    if (!projectId) return;
+    setDeletingDocId(docId);
+    try {
+      await api.documents.delete(docId);
+      const activeId = currentDocumentId || derivedIr?.docId || null;
+      // Refresh list (ensures we always navigate based on the latest state).
+      const nextDocs = await api.documents.listByProject(projectId);
+      projectDocsCache.set(projectId, nextDocs);
+      setProjectDocs(nextDocs);
+      if (activeId && docId === activeId) {
+        // Navigate away from deleted doc.
+        const remaining = nextDocs.filter((d) => d.id !== docId);
+        const next = remaining[0]?.id || null;
+        if (next) router.push(`/dashboard/projects/${projectId}/documents/${next}`);
+        else router.push(`/dashboard/projects/${projectId}`);
+      }
+    } finally {
+      setDeletingDocId(null);
+    }
+  };
+
+  const openDeleteConfirm = (doc: { id: string; title?: string | null }) => {
+    const title = String(doc.title ?? '').trim() || 'Untitled Document';
+    setDeleteConfirm({ id: doc.id, title });
+  };
+
+  const renderDeleteConfirmModal = () => {
+    if (!deleteConfirm) return null;
+    return (
+      <div
+        className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 px-4"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Confirm delete document"
+        onMouseDown={(e) => {
+          // Click outside to close.
+          if (e.target === e.currentTarget) setDeleteConfirm(null);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') setDeleteConfirm(null);
+        }}
+      >
+        <div className="w-full max-w-[520px] rounded border border-[#3e3e42] bg-[#1e1e1e] shadow-xl">
+          <div className="px-5 py-4 border-b border-[#3e3e42]">
+            <div className="text-sm font-semibold text-white">Delete document</div>
+            <div className="text-xs text-[#969696] mt-1">
+              This will permanently delete <span className="text-[#cccccc] font-medium">“{deleteConfirm.title}”</span>.
+            </div>
+          </div>
+          <div className="px-5 py-4 border-t border-[#3e3e42] flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="px-3 py-2 rounded bg-[#3e3e42] hover:bg-[#464647] text-white text-sm transition-colors"
+              onClick={() => setDeleteConfirm(null)}
+              disabled={deletingDocId === deleteConfirm.id}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="px-3 py-2 rounded bg-[#b91c1c] hover:bg-[#dc2626] text-white text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-wait"
+              onClick={async () => {
+                const id = deleteConfirm.id;
+                setDeleteConfirm(null);
+                await deleteDoc(id);
+              }}
+              disabled={deletingDocId === deleteConfirm.id}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const duplicateDoc = async (docId: string) => {
+    if (!projectId) return;
+    setDuplicatingDocId(docId);
+    try {
+      const created = await api.documents.duplicate(docId);
+      setProjectDocs((prev) => {
+        const next = [...prev, created];
+        projectDocsCache.set(projectId, next);
+        return next;
+      });
+      router.push(`/dashboard/projects/${projectId}/documents/${created.id}`);
+    } finally {
+      setDuplicatingDocId(null);
+    }
+  };
 
   // Load persisted collapsed state (best-effort).
   useEffect(() => {
@@ -338,20 +512,17 @@ export function DocumentOutline({ content, ir, projectName }: DocumentOutlinePro
 
   const collapseAll = () => {
     // Collapse everything: file node, assets folder, and all collapsible headings.
-    setProjectCollapsed(true);
     setFileCollapsed(true);
     setAssetsCollapsed(true);
     setCollapsedIds(new Set(collapsibleIds));
   };
   const expandAll = () => {
-    setProjectCollapsed(false);
     setFileCollapsed(false);
     setAssetsCollapsed(false);
     setCollapsedIds(new Set());
   };
 
-  const isFullyCollapsed =
-    projectCollapsed && fileCollapsed && assetsCollapsed && collapsedIds.size === collapsibleIds.length;
+  const isFullyCollapsed = fileCollapsed && assetsCollapsed && collapsedIds.size === collapsibleIds.length;
 
   const renderNodes = (nodes: OutlineNode[], parentHeadingLevel: number | null = null, basePadRem = 0) => {
     return nodes.map((node, index) => {
@@ -360,7 +531,7 @@ export function DocumentOutline({ content, ir, projectName }: DocumentOutlinePro
         const item = node.item;
         return (
           <a
-            key={`figure-${item.id}-${index}`}
+            key={`figure-${item.id}`}
             href={`#${item.id}`}
             onClick={(e) => handleHeadingClick(e, item.id)}
             className="flex items-center gap-2 py-1 px-2 text-sm hover:bg-vscode-active rounded transition-colors text-vscode-text-secondary hover:text-vscode-text"
@@ -381,7 +552,7 @@ export function DocumentOutline({ content, ir, projectName }: DocumentOutlinePro
         const hasChildren = node.children.length > 0;
         const isCollapsed = collapsedIds.has(item.id);
         return (
-          <div key={`grid-${item.id}-${index}`}>
+          <div key={`grid-${item.id}`}>
             <div
               className="flex items-center gap-2 py-1 px-2 text-sm hover:bg-vscode-active rounded transition-colors text-vscode-text-secondary hover:text-vscode-text"
               style={{ paddingLeft: `${pad}rem` }}
@@ -425,7 +596,7 @@ export function DocumentOutline({ content, ir, projectName }: DocumentOutlinePro
       const pad = (item.level - 1) * 0.75 + 0.5 + basePadRem;
 
       return (
-        <div key={`heading-${item.id}-${index}`}>
+        <div key={`heading-${item.id}`}>
           <div
             className="flex items-center gap-2 py-1 px-2 text-sm hover:bg-vscode-active rounded transition-colors text-vscode-text-secondary hover:text-vscode-text"
             style={{ paddingLeft: `${pad}rem` }}
@@ -467,125 +638,290 @@ export function DocumentOutline({ content, ir, projectName }: DocumentOutlinePro
 
   return (
     <div className="p-4">
-      {/* Project root node */}
-      <div className="mb-2">
-        <div className="flex items-center justify-between gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
-          <button
-            type="button"
-            aria-label={projectCollapsed ? 'Expand project' : 'Collapse project'}
-            onClick={() => setProjectCollapsed((v) => !v)}
-            className="flex items-center gap-2 min-w-0"
-          >
-            <span className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100" aria-hidden="true">
-              <ChevronRightIcon className={`w-4 h-4 transition-transform ${projectCollapsed ? '' : 'rotate-90'}`} />
-            </span>
-            <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
-            <span className="text-sm text-vscode-text truncate">
-              {String(projectName ?? '').trim() || 'Project'}
-            </span>
-          </button>
+      {/* No project-root folder row: the outline starts directly with actual folders (e.g. documents/assets). */}
+      <div className="mb-2 flex items-center justify-end">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            isFullyCollapsed ? expandAll() : collapseAll();
+          }}
+          className="p-1 rounded hover:bg-vscode-active transition-colors text-vscode-text-secondary hover:text-vscode-text"
+          title={isFullyCollapsed ? 'Expand all' : 'Collapse all'}
+          aria-label={isFullyCollapsed ? 'Expand all' : 'Collapse all'}
+        >
+          {isFullyCollapsed ? <ArrowsPointingOutIcon className="w-4 h-4" /> : <ArrowsPointingInIcon className="w-4 h-4" />}
+        </button>
+      </div>
 
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              isFullyCollapsed ? expandAll() : collapseAll();
-            }}
-            className="p-1 rounded hover:bg-vscode-active transition-colors text-vscode-text-secondary hover:text-vscode-text flex-shrink-0"
-            title={isFullyCollapsed ? 'Expand all' : 'Collapse all'}
-            aria-label={isFullyCollapsed ? 'Expand all' : 'Collapse all'}
-          >
-            {isFullyCollapsed ? (
-              <ArrowsPointingOutIcon className="w-4 h-4" />
-            ) : (
-              <ArrowsPointingInIcon className="w-4 h-4" />
-            )}
-          </button>
-        </div>
+      {/* Documents shown at root level. */}
+      {projectId ? (
+        <div className="space-y-1">
+          {projectDocs.map((doc: any) => {
+            const activeDocId =
+              (typeof params?.documentId === 'string' ? params.documentId : null) ??
+              currentDocumentId ??
+              derivedIr?.docId ??
+              null;
+            const isCurrent = Boolean(activeDocId && doc.id === activeDocId);
+            const label = String(doc?.title ?? '').trim() || (isCurrent ? fileLabel : 'Untitled Document');
+            // Keep filename as tooltip-only (avoid noisy second line in the tree).
+            const name = toFileNameFromTitle(label);
 
-        {!projectCollapsed && (
-          <div className="mt-1">
-            {/* File wrapper (VSCode-like). */}
-            <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors" style={{ paddingLeft: '1.25rem' }}>
-              <button
-                type="button"
-                aria-label={fileCollapsed ? 'Expand file' : 'Collapse file'}
-                onClick={() => setFileCollapsed((v) => !v)}
-                className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
-              >
-                <ChevronRightIcon className={`w-4 h-4 transition-transform ${fileCollapsed ? '' : 'rotate-90'}`} />
-              </button>
-              <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
-              <div className="min-w-0">
-                <div className="text-sm text-vscode-text truncate">{fileLabel}</div>
-                <div className="text-xs text-vscode-text-secondary truncate">{fileName}</div>
-              </div>
-            </div>
+            if (!isCurrent) {
+              return (
+                <div key={doc.id} className="group flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
+                  <button
+                    type="button"
+                    className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
+                    aria-label="Open document"
+                    title="Open"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!projectId) return;
+                      router.push(`/dashboard/projects/${projectId}/documents/${doc.id}`);
+                    }}
+                  >
+                    <ChevronRightIcon className="w-4 h-4" />
+                  </button>
+                  <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
+                  <button
+                    type="button"
+                    className="min-w-0 text-left flex-1"
+                    title={`${label}\n${name}`}
+                    onClick={() => {
+                      if (!projectId) return;
+                      router.push(`/dashboard/projects/${projectId}/documents/${doc.id}`);
+                    }}
+                  >
+                    <div className="text-sm text-vscode-text truncate">{label}</div>
+                  </button>
+                  <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      type="button"
+                      className="p-1 rounded hover:bg-vscode-hover text-vscode-text-secondary hover:text-vscode-text"
+                      title="Duplicate"
+                      aria-label="Duplicate document"
+                      disabled={duplicatingDocId === doc.id || deletingDocId === doc.id}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        void duplicateDoc(doc.id);
+                      }}
+                    >
+                      <Square2StackIcon className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className="p-1 rounded hover:bg-vscode-hover text-vscode-text-secondary hover:text-vscode-text"
+                      title="Delete"
+                      aria-label="Delete document"
+                      disabled={deletingDocId === doc.id || duplicatingDocId === doc.id}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openDeleteConfirm(doc);
+                      }}
+                    >
+                      <TrashIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            }
 
-            {!fileCollapsed && (
-              <div>
-                {tree.length > 0 ? (
-                  <nav className="space-y-1">{renderNodes(tree, null, 1.0)}</nav>
-                ) : (
-                  <div className="px-2 py-2 text-sm text-vscode-text-secondary">No outline available</div>
-                )}
-
-                {/* Assets folder (only when the doc references zadoox-asset:// files) */}
-                {assets.length > 0 && (
-                  <div className="mt-3">
-                    <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
-                      <button
-                        type="button"
-                        aria-label={assetsCollapsed ? 'Expand assets' : 'Collapse assets'}
-                        onClick={() => setAssetsCollapsed((v) => !v)}
-                        className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
-                      >
-                        <ChevronRightIcon
-                          className={`w-4 h-4 transition-transform ${assetsCollapsed ? '' : 'rotate-90'}`}
-                        />
-                      </button>
-                      <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
-                      <span className="text-sm text-vscode-text-secondary truncate">assets</span>
+            return (
+              <div key={doc.id}>
+                <div
+                  className={
+                    'group flex items-center gap-2 px-2 py-1 rounded transition-colors ' +
+                    (isCurrent ? 'bg-vscode-active' : 'hover:bg-vscode-active')
+                  }
+                  aria-current={isCurrent ? 'true' : undefined}
+                >
+                  <button
+                    type="button"
+                    aria-label={fileCollapsed ? 'Expand file' : 'Collapse file'}
+                    onClick={() => setFileCollapsed((v) => !v)}
+                    className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
+                  >
+                    <ChevronRightIcon className={`w-4 h-4 transition-transform ${fileCollapsed ? '' : 'rotate-90'}`} />
+                  </button>
+                  <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
+                  <div className="min-w-0">
+                    <div className={'text-sm truncate ' + (isCurrent ? 'text-white font-medium' : 'text-vscode-text')}>
+                      {label}
                     </div>
+                  </div>
+                  <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      type="button"
+                      className="p-1 rounded hover:bg-vscode-hover text-vscode-text-secondary hover:text-vscode-text"
+                      title="Duplicate"
+                      aria-label="Duplicate document"
+                      disabled={duplicatingDocId === doc.id || deletingDocId === doc.id}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        void duplicateDoc(doc.id);
+                      }}
+                    >
+                      <Square2StackIcon className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className="p-1 rounded hover:bg-vscode-hover text-vscode-text-secondary hover:text-vscode-text"
+                      title="Delete"
+                      aria-label="Delete document"
+                      disabled={deletingDocId === doc.id || duplicatingDocId === doc.id}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openDeleteConfirm(doc);
+                      }}
+                    >
+                      <TrashIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
 
-                    {!assetsCollapsed && (
-                      <div className="mt-1 space-y-1">
-                        {assets.map((a) => (
-                          <div
-                            key={a.key}
-                            className="relative flex items-center gap-2 py-1 px-2 text-sm rounded hover:bg-vscode-active transition-colors text-vscode-text-secondary"
-                            style={{ paddingLeft: '2.25rem' }}
-                            onMouseEnter={() => {
-                              const el = document.querySelector(`[data-asset-row="${a.key}"]`);
-                              if (el && el instanceof HTMLElement) {
-                                setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: el.getBoundingClientRect() });
-                              } else {
-                                setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: new DOMRect(0, 0, 0, 0) });
-                              }
-                              void ensureAssetUrl(a.key);
-                            }}
-                            onMouseLeave={() => {
-                              setHoveredAsset((cur) => (cur?.key === a.key ? null : cur));
-                            }}
-                            data-asset-row={a.key}
+                {!fileCollapsed && (
+                  <div>
+                    {tree.length > 0 ? (
+                      <nav className="space-y-1">{renderNodes(tree, null, 0.75)}</nav>
+                    ) : (
+                      <div className="px-2 py-2 text-sm text-vscode-text-secondary">No outline available</div>
+                    )}
+
+                    {assets.length > 0 && (
+                      <div className="mt-3">
+                        <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
+                          <button
+                            type="button"
+                            aria-label={assetsCollapsed ? 'Expand assets' : 'Collapse assets'}
+                            onClick={() => setAssetsCollapsed((v) => !v)}
+                            className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
                           >
-                            <PhotoIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
-                            <span className="truncate">{a.key}</span>
+                            <ChevronRightIcon className={`w-4 h-4 transition-transform ${assetsCollapsed ? '' : 'rotate-90'}`} />
+                          </button>
+                          <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
+                          <span className="text-sm text-vscode-text-secondary truncate">assets</span>
+                        </div>
+
+                        {!assetsCollapsed && (
+                          <div className="mt-1 space-y-1">
+                            {assets.map((a) => (
+                              <div
+                                key={a.key}
+                                className="relative flex items-center gap-2 py-1 px-2 text-sm rounded hover:bg-vscode-active transition-colors text-vscode-text-secondary"
+                                style={{ paddingLeft: '1.25rem' }}
+                                onMouseEnter={() => {
+                                  const el = document.querySelector(`[data-asset-row="${a.key}"]`);
+                                  if (el && el instanceof HTMLElement) {
+                                    setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: el.getBoundingClientRect() });
+                                  } else {
+                                    setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: new DOMRect(0, 0, 0, 0) });
+                                  }
+                                  void ensureAssetUrl(a.key);
+                                }}
+                                onMouseLeave={() => {
+                                  setHoveredAsset((cur) => (cur?.key === a.key ? null : cur));
+                                }}
+                                data-asset-row={a.key}
+                              >
+                                <PhotoIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
+                                <span className="truncate">{a.key}</span>
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        )}
                       </div>
                     )}
                   </div>
                 )}
               </div>
-            )}
+            );
+          })}
+        </div>
+      ) : (
+        <div>
+          <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
+            <button
+              type="button"
+              aria-label={fileCollapsed ? 'Expand file' : 'Collapse file'}
+              onClick={() => setFileCollapsed((v) => !v)}
+              className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
+            >
+              <ChevronRightIcon className={`w-4 h-4 transition-transform ${fileCollapsed ? '' : 'rotate-90'}`} />
+            </button>
+            <DocumentTextIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
+            <div className="min-w-0" title={`${fileLabel}\n${fileName}`}>
+              <div className="text-sm text-vscode-text truncate">{fileLabel}</div>
+            </div>
           </div>
-        )}
-      </div>
+
+          {!fileCollapsed && (
+            <div>
+              {tree.length > 0 ? (
+                <nav className="space-y-1">{renderNodes(tree, null, 0.0)}</nav>
+              ) : (
+                <div className="px-2 py-2 text-sm text-vscode-text-secondary">No outline available</div>
+              )}
+
+              {assets.length > 0 && (
+                <div className="mt-3">
+                  <div className="flex items-center gap-2 px-2 py-1 rounded hover:bg-vscode-active transition-colors">
+                    <button
+                      type="button"
+                      aria-label={assetsCollapsed ? 'Expand assets' : 'Collapse assets'}
+                      onClick={() => setAssetsCollapsed((v) => !v)}
+                      className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70 hover:opacity-100"
+                    >
+                      <ChevronRightIcon className={`w-4 h-4 transition-transform ${assetsCollapsed ? '' : 'rotate-90'}`} />
+                    </button>
+                    <FolderIcon className="w-4 h-4 opacity-70 flex-shrink-0" aria-hidden="true" />
+                    <span className="text-sm text-vscode-text-secondary truncate">assets</span>
+                  </div>
+
+                  {!assetsCollapsed && (
+                    <div className="mt-1 space-y-1">
+                      {assets.map((a) => (
+                        <div
+                          key={a.key}
+                          className="relative flex items-center gap-2 py-1 px-2 text-sm rounded hover:bg-vscode-active transition-colors text-vscode-text-secondary"
+                          style={{ paddingLeft: '1.25rem' }}
+                          onMouseEnter={() => {
+                            const el = document.querySelector(`[data-asset-row="${a.key}"]`);
+                            if (el && el instanceof HTMLElement) {
+                              setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: el.getBoundingClientRect() });
+                            } else {
+                              setHoveredAsset({ key: a.key, relPath: a.relPath, anchorRect: new DOMRect(0, 0, 0, 0) });
+                            }
+                            void ensureAssetUrl(a.key);
+                          }}
+                          onMouseLeave={() => {
+                            setHoveredAsset((cur) => (cur?.key === a.key ? null : cur));
+                          }}
+                          data-asset-row={a.key}
+                        >
+                          <PhotoIcon className="w-4 h-4 opacity-60 flex-shrink-0" aria-hidden="true" />
+                          <span className="truncate">{a.key}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Render hover preview outside the sidebar scroll container so it isn't clipped */}
       {typeof document !== 'undefined' && typeof window !== 'undefined' ? renderAssetPreview() : null}
+      {typeof document !== 'undefined' && typeof window !== 'undefined' ? renderDeleteConfirmModal() : null}
     </div>
   );
 }

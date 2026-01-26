@@ -94,7 +94,7 @@ describe('EditorLayout (LaTeX) undo/redo', () => {
       api: {
         versions: { getMetadata: vi.fn(), list: vi.fn(), reconstruct: vi.fn() },
         projects: { get: vi.fn() },
-        documents: { update: vi.fn(), get: vi.fn() },
+        documents: { update: vi.fn(), get: vi.fn(), latexEntryGet: vi.fn(), latexEntryPut: vi.fn() },
       },
     }));
   });
@@ -111,13 +111,17 @@ describe('EditorLayout (LaTeX) undo/redo', () => {
       lastSaved: null,
       documentId: 'doc-1',
       saveDocument: vi.fn(),
+      saveLatexEntryPatch: vi.fn(),
       paragraphModes: {},
       handleModeToggle: vi.fn(),
-      documentMetadata: { lastEditedFormat: 'latex', latex: 'Hello' },
+      documentMetadata: { lastEditedFormat: 'latex' },
       setDocumentMetadata: vi.fn(),
+      documentLatex: { entryPath: 'main.tex', basePrefix: 'projects/p1/documents/doc-1/latex', bucket: 'project-files' },
+      setDocumentLatex: vi.fn(),
       saveMetadataPatch: vi.fn(),
       semanticGraph: null,
       saveSemanticGraphPatch: vi.fn(),
+      refreshSemanticGraph: vi.fn(),
     });
 
     const { api } = await import('@/lib/api/client');
@@ -128,6 +132,8 @@ describe('EditorLayout (LaTeX) undo/redo', () => {
       settings: { documentStyle: 'other', citationFormat: 'numbered' },
       type: 'other',
     });
+    (api.documents.latexEntryGet as any).mockResolvedValue({ text: 'Hello', latex: { entryPath: 'main.tex' } });
+    (api.documents.latexEntryPut as any).mockResolvedValue({ latex: { entryPath: 'main.tex' } });
 
     const { EditorLayout } = await import('../editor-layout');
     render(<EditorLayout projectId="p1" documentId="doc-1" />);

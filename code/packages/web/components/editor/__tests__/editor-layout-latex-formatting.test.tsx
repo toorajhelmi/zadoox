@@ -125,6 +125,8 @@ describe('EditorLayout (LaTeX) formatting', () => {
       settings: { documentStyle: 'other', citationFormat: 'numbered' },
       type: 'other',
     });
+    (api.documents as any).latexEntryGet = vi.fn().mockResolvedValue({ text: 'Hello world', latex: { entryPath: 'main.tex' } });
+    (api.documents as any).latexEntryPut = vi.fn().mockResolvedValue({ latex: { entryPath: 'main.tex' } });
 
     mockUseDocumentState.mockReturnValue({
       content: '',
@@ -135,17 +137,24 @@ describe('EditorLayout (LaTeX) formatting', () => {
       lastSaved: null,
       documentId: 'doc-1',
       saveDocument: vi.fn(),
+      saveMetadataPatch: vi.fn(),
+      saveLatexEntryPatch: vi.fn(),
+      semanticGraph: null,
+      saveSemanticGraphPatch: vi.fn(),
+      refreshSemanticGraph: vi.fn(),
       paragraphModes: {},
       handleModeToggle: vi.fn(),
-      documentMetadata: { lastEditedFormat: 'latex', latex: 'Hello world' },
+      documentMetadata: { lastEditedFormat: 'latex' },
       setDocumentMetadata: vi.fn(),
+      documentLatex: { entryPath: 'main.tex', basePrefix: 'projects/p1/documents/doc-1/latex', bucket: 'project-files' },
+      setDocumentLatex: vi.fn(),
     });
   });
 
   it('renders formatting toolbar and applies LaTeX bold wrapper in LaTeX mode', async () => {
     render(<EditorLayout projectId="p1" documentId="doc-1" />);
 
-    // Wait for latex draft adoption from metadata.
+    // Wait for latex draft adoption from storage-backed entry load.
     await waitFor(() => {
       const input = screen.getByTestId('latex-editor') as HTMLInputElement;
       expect(input.value).toBe('Hello world');

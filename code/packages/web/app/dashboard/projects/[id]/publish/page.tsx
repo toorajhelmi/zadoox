@@ -102,7 +102,8 @@ export default function ProjectPublishPage() {
     [documents, selectedDocumentId]
   );
 
-  const hasLatex = !!selectedDocument?.metadata?.latex;
+  // Phase 17: LaTeX is stored separately from metadata (as a manifest/ref).
+  const hasLatex = !!(selectedDocument as any)?.latex;
   const recommendedSource: PublishSource = useMemo(() => {
     if (!selectedDocument || !project) return 'markdown';
     const last = selectedDocument.metadata?.lastEditedFormat;

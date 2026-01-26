@@ -12,6 +12,11 @@ export interface Document {
   content: string; // Extended Markdown format
   metadata: DocumentMetadata;
   /**
+   * Phase 17: LaTeX is stored as a JSON manifest/reference (not raw text).
+   * The manifest points to a multi-file LaTeX bundle in Storage + identifies the entrypoint.
+   */
+  latex?: unknown | null;
+  /**
    * Phase 15: Semantic Graph (SG) stored separately from metadata to avoid mixing large payloads
    * with other metadata fields.
    */
@@ -33,17 +38,14 @@ export interface DocumentMetadata {
   researchSessions?: Record<string, ResearchSession>; // paragraphId -> session mapping
   insertedSources?: ResearchSource[]; // All sources that have been inserted into the document
   /**
-   * Phase 12: cached alternate representation + last edited format.
-   * Stored in metadata so it round-trips through the existing document update API.
+   * Last edited format for the editor surface.
    */
-  latex?: string;
   lastEditedFormat?: 'markdown' | 'latex';
   /**
    * IR hash values (computed from the canonical IR derived from XMD).
    * We store per-representation hashes so switching can decide reuse vs regenerate.
    */
   xmdIrHash?: string;
-  latexIrHash?: string;
   // Legacy/experimental field (kept for backward compatibility).
   irHashAtLastSync?: string;
 }
@@ -116,6 +118,7 @@ export interface CreateDocumentInput {
   title: string;
   content?: string;
   metadata?: Partial<DocumentMetadata>;
+  latex?: unknown | null;
   semanticGraph?: import('./semantic-graph').SemanticGraph | null;
 }
 
@@ -123,6 +126,7 @@ export interface UpdateDocumentInput {
   title?: string;
   content?: string;
   metadata?: Partial<DocumentMetadata>;
+  latex?: unknown | null;
   semanticGraph?: import('./semantic-graph').SemanticGraph | null;
   changeType?: 'manual-save' | 'auto-save' | 'ai-action' | 'milestone' | 'rollback';
   changeDescription?: string;

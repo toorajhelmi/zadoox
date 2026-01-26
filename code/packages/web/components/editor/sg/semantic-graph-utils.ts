@@ -1,6 +1,6 @@
 'use client';
 
-import type { SemanticGraph, SemanticNodeType } from '@zadoox/shared';
+import type { SemanticGraph } from '@zadoox/shared';
 
 export function createEmptySemanticGraph(nowIso = new Date().toISOString()): SemanticGraph {
   return {
@@ -21,12 +21,12 @@ export function makeSgId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export const SEMANTIC_NODE_TYPES: Array<{ value: SemanticNodeType; label: string }> = [
-  { value: 'goal', label: 'Goal' },
-  { value: 'claim', label: 'Claim' },
-  { value: 'evidence', label: 'Evidence' },
+// SG node types are interpreter-defined; we keep a small "common types" list for UI affordances only.
+export const COMMON_SG_NODE_TYPES: Array<{ value: string; label: string }> = [
   { value: 'definition', label: 'Definition' },
-  { value: 'gap', label: 'Gap' },
+  { value: 'proposition', label: 'Proposition' },
+  { value: 'support', label: 'Support' },
+  { value: 'intent', label: 'Intent' },
 ];
 
 

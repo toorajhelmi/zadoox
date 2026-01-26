@@ -45,17 +45,28 @@ export class DocumentService {
       throw new Error(`Invalid document type: ${docType}`);
     }
 
+    // Preserve extended metadata fields (latex, lastEditedFormat, importSource, etc.).
+    // We still normalize core fields to ensure they exist.
+    const inputMetadata = (input.metadata ?? {}) as Record<string, unknown>;
+
     const documentData = {
       id: generateId(),
       project_id: input.projectId,
       title: input.title,
       content: input.content || '',
       metadata: {
+        ...inputMetadata,
         type: docType,
-        chapterNumber: input.metadata?.chapterNumber || null,
-        order: input.metadata?.order || 0,
+        chapterNumber:
+          typeof inputMetadata.chapterNumber === 'number'
+            ? (inputMetadata.chapterNumber as number)
+            : inputMetadata.chapterNumber === null
+              ? null
+              : null,
+        order: typeof inputMetadata.order === 'number' ? (inputMetadata.order as number) : 0,
       },
       semantic_graph: input.semanticGraph ?? null,
+      latex: input.latex ?? null,
       version: 1,
       author_id: authorId,
     };
@@ -161,6 +172,10 @@ export class DocumentService {
       updateData.semantic_graph = input.semanticGraph;
     }
 
+    if (input.latex !== undefined) {
+      updateData.latex = input.latex;
+    }
+
     const { data, error } = await this.supabase
       .from('documents')
       .update(updateData)
@@ -200,7 +215,9 @@ export class DocumentService {
       .from('documents')
       .select()
       .eq('project_id', projectId)
-      .order('created_at', { ascending: true });
+      // Deterministic ordering: created_at can tie (same millisecond), so add a stable secondary key.
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true });
 
     if (error) {
       throw new Error(`Failed to list documents: ${error.message}`);
@@ -220,6 +237,7 @@ export class DocumentService {
       content: dbDocument.content as string,
       metadata: dbDocument.metadata as Document['metadata'],
       semanticGraph: (dbDocument.semantic_graph as Document['semanticGraph']) ?? null,
+      latex: (dbDocument.latex as unknown) ?? null,
       version: dbDocument.version as number,
       createdAt: new Date(dbDocument.created_at as string),
       updatedAt: new Date(dbDocument.updated_at as string),
