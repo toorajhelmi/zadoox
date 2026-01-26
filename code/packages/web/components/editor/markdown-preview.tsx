@@ -424,16 +424,20 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
 
     const imgs = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
     const latexImgs = imgs.filter((img) => {
-      const p = img.dataset.latexAssetPath;
+      const p = img.dataset.zxAssetPath;
+      const scope = img.dataset.zxAssetScope;
       if (!p) return false;
+      if (scope !== 'latex') return false;
       const src = img.getAttribute('src') || '';
       return src === TRANSPARENT_PIXEL || src.trim() === '';
     });
 
     const pdfObjects = Array.from(container.querySelectorAll('object.latex-figure-pdf')) as HTMLObjectElement[];
     const latexObjs = pdfObjects.filter((obj) => {
-      const p = obj.getAttribute('data-latex-asset-path') || '';
+      const p = obj.getAttribute('data-zx-asset-path') || '';
+      const scope = obj.getAttribute('data-zx-asset-scope') || '';
       if (!p) return false;
+      if (scope !== 'latex') return false;
       const data = obj.getAttribute('data') || '';
       return data === TRANSPARENT_PIXEL || data.trim() === '';
     });
@@ -443,7 +447,7 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
     await Promise.all(
       [...latexImgs.map((img) => ({ kind: 'img' as const, el: img })), ...latexObjs.map((obj) => ({ kind: 'obj' as const, el: obj }))].map(async (item) => {
         const p =
-          item.kind === 'img' ? (item.el as HTMLImageElement).dataset.latexAssetPath || '' : (item.el as HTMLObjectElement).getAttribute('data-latex-asset-path') || '';
+          item.kind === 'img' ? (item.el as HTMLImageElement).dataset.zxAssetPath || '' : (item.el as HTMLObjectElement).getAttribute('data-zx-asset-path') || '';
         if (!p) return;
 
         const cached = latexAssetUrlCacheRef.current.get(p);

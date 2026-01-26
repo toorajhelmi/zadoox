@@ -1036,8 +1036,37 @@ export async function documentRoutes(fastify: FastifyInstance) {
           return reply.status(500).send(response);
         }
         const files: Array<{ path: string }> = Array.isArray(manifest.files) ? (manifest.files as Array<{ path: string }>) : [];
-        const allowed = new Set(files.map((f) => String(f?.path || '').replace(/^\/+/, '')).filter(Boolean));
-        if (!allowed.has(rel)) {
+        const allowedList = files.map((f) => String(f?.path || '').replace(/^\/+/, '')).filter(Boolean);
+        const allowedLowerToActual = new Map<string, string>();
+        for (const p of allowedList) {
+          const lower = p.toLowerCase();
+          if (!allowedLowerToActual.has(lower)) allowedLowerToActual.set(lower, p);
+        }
+
+        const resolveAllowedPath = (requested: string): string | null => {
+          const req = requested.replace(/^\/+/, '');
+          const reqLower = req.toLowerCase();
+          if (allowedLowerToActual.has(reqLower)) return allowedLowerToActual.get(reqLower)!;
+
+          // If LaTeX omitted extension (common with \includegraphics{Figures/foo}),
+          // try to find a matching file with a known extension.
+          const hasExt = path.extname(req).trim().length > 0;
+          if (!hasExt) {
+            const preferredExts = ['.pdf', '.png', '.jpg', '.jpeg', '.svg', '.webp', '.gif', '.eps'];
+            const candidates = allowedList.filter((p) => p.toLowerCase().startsWith(`${reqLower}.`));
+            if (candidates.length === 0) return null;
+            for (const ext of preferredExts) {
+              const hit = candidates.find((p) => p.toLowerCase() === `${reqLower}${ext}`);
+              if (hit) return hit;
+            }
+            // Fall back to first candidate deterministically (sorted).
+            return candidates.sort((a, b) => a.localeCompare(b))[0]!;
+          }
+          return null;
+        };
+
+        const resolvedRel = resolveAllowedPath(rel);
+        if (!resolvedRel) {
           const response: ApiResponse<null> = {
             success: false,
             error: { code: 'NOT_FOUND', message: 'File not found in LaTeX manifest', details: { path: rel } },
@@ -1047,7 +1076,7 @@ export async function documentRoutes(fastify: FastifyInstance) {
 
         const admin = supabaseAdmin();
         await ensureLatexBucket();
-        const key = `${basePrefix.replace(/\/+$/g, '')}/${rel}`;
+        const key = `${basePrefix.replace(/\/+$/g, '')}/${resolvedRel}`;
         const { data, error } = await admin.storage.from(latexBucket).download(key);
         if (error || !data) {
           const response: ApiResponse<null> = {
@@ -1055,13 +1084,13 @@ export async function documentRoutes(fastify: FastifyInstance) {
             error: {
               code: 'NOT_FOUND',
               message: 'LaTeX bundle file not found in storage',
-              details: { bucket: latexBucket, key, path: rel, reason: error?.message ?? 'Download returned empty data' },
+              details: { bucket: latexBucket, key, path: resolvedRel, requestedPath: rel, reason: error?.message ?? 'Download returned empty data' },
             },
           };
           return reply.status(404).send(response);
         }
 
-        const ext = path.extname(rel).toLowerCase();
+        const ext = path.extname(resolvedRel).toLowerCase();
         const contentType =
           ext === '.png'
             ? 'image/png'
