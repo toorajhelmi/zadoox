@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api/client';
+import { ApiError } from '@/lib/api/client';
 import type { DocumentNode } from '@zadoox/shared';
 import { irToLatexDocument, irToXmd } from '@zadoox/shared';
 import { computeDocIrHash } from './ir-hash';
@@ -51,7 +52,13 @@ export function useEditorEditMode(params: {
       setEditMode(last);
       didInitModeRef.current = true;
     }
-  }, [actualDocumentId, documentId, documentMetadata]);
+    // Fallback: imported docs can be LaTeX-first (manifest exists) while XMD content is empty.
+    // If metadata doesn't specify a mode yet, prefer LaTeX when a manifest exists.
+    if (!didInitModeRef.current && !last && documentLatex) {
+      setEditMode('latex');
+      didInitModeRef.current = true;
+    }
+  }, [actualDocumentId, documentId, documentMetadata, documentLatex]);
 
   // If we have a LaTeX manifest, load the entry file via backend.
   useEffect(() => {
@@ -70,7 +77,19 @@ export function useEditorEditMode(params: {
         if (cancelled) return;
         if (typeof res.text === 'string') setLatexDraft(res.text);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
+        const baseMsg = e instanceof Error ? e.message : String(e);
+        const details =
+          e instanceof ApiError && e.details
+            ? (() => {
+                try {
+                  const s = JSON.stringify(e.details);
+                  return s.length > 900 ? `${s.slice(0, 900)}…` : s;
+                } catch {
+                  return null;
+                }
+              })()
+            : null;
+        const msg = details ? `${baseMsg}\n\n${details}` : baseMsg;
         console.error('Failed to load LaTeX entry:', e);
         if (!cancelled) setLatexEntryError(msg);
       } finally {

@@ -715,6 +715,22 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         {(inlineAIChatOpen || thinkPanelOpen) && (
           <div className="absolute inset-0 bg-black/30 pointer-events-auto" style={{ zIndex: 45 }} />
         )}
+
+        {/* Imported LaTeX docs have empty XMD content; make that obvious in Markdown mode. */}
+        {editMode === 'markdown' && !content.trim() && documentLatex && (
+          <div className="px-4 py-2 border-b border-vscode-border bg-vscode-sidebar flex items-center justify-between">
+            <div className="text-sm text-vscode-text-secondary">
+              This document was imported as <span className="text-white font-medium">LaTeX</span>. Switch to LaTeX to view/edit it.
+            </div>
+            <button
+              type="button"
+              className="px-3 py-1.5 rounded bg-vscode-button text-white hover:bg-vscode-buttonHover transition-colors"
+              onClick={() => void handleEditModeChangeStable('latex')}
+            >
+              Switch to LaTeX
+            </button>
+          </div>
+        )}
         
         {/* Toolbar */}
         <EditorToolbar
