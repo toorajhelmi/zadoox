@@ -536,7 +536,7 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
     };
   }, [html]);
 
-  if (!content.trim()) {
+  if (!content.trim() && !htmlOverride?.trim()) {
     return (
       <div className="h-full flex items-center justify-center text-vscode-text-secondary">
         <p>No content to preview</p>
