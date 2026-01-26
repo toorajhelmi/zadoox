@@ -26,9 +26,16 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [figureBgDefault] = useState<'dark' | 'light'>(() => {
-    if (typeof window === 'undefined') return 'dark';
+    // Default to light so black-on-transparent plots remain readable.
+    if (typeof window === 'undefined') return 'light';
     const v = window.localStorage.getItem('zx.preview.figureBg');
-    return v === 'light' ? 'light' : 'dark';
+    if (v === 'dark' || v === 'light') return v;
+    try {
+      window.localStorage.setItem('zx.preview.figureBg', 'light');
+    } catch {
+      // ignore
+    }
+    return 'light';
   });
   const assetUrlCacheRef = useRef<Map<string, string>>(new Map());
   const assetInFlightRef = useRef<Set<string>>(new Set());

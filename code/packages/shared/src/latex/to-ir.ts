@@ -1406,7 +1406,8 @@ function parseBlocks(latex: string): Block[] {
         }
 
         // Generic multi-image figure (common in arXiv: "(left)... (right)..."):
-        // if we saw multiple includegraphics calls, render them as a 1-row grid.
+        // If we saw multiple includegraphics calls, render them using our existing GridNode IR
+        // (same node type as the figure-grid wizard), as a 1-row grid.
         if (includegraphics.length > 1) {
           const cols = includegraphics.length;
           const row = includegraphics.map((ig) => ({
