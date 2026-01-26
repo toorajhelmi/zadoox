@@ -99,6 +99,40 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     expect(xmd).not.toContain('\\end{document}');
   });
 
+  it('LaTeX comment-only lines are ignored (do not show up in IR/XMD)', () => {
+    const latex = [
+      '\\documentclass{article}',
+      '\\begin{document}',
+      '% this is a comment that should not appear',
+      'Hello.',
+      '% another comment',
+      '\\end{document}',
+    ].join('\n');
+
+    const ir = parseLatexToIr({ docId: 'doc-c1', latex });
+    const xmd = irToXmd(ir);
+    expect(xmd).toContain('Hello.');
+    expect(xmd).not.toContain('this is a comment');
+  });
+
+  it('LaTeX abstract environment becomes an "Abstract" section in IR', () => {
+    const latex = [
+      '\\documentclass{article}',
+      '\\title{T}',
+      '\\begin{document}',
+      '\\begin{abstract}',
+      'We propose a method.',
+      '\\end{abstract}',
+      '\\section{Intro}',
+      'Hi.',
+      '\\end{document}',
+    ].join('\n');
+
+    const ir = parseLatexToIr({ docId: 'doc-abs-1', latex });
+    const titles = ir.children.filter((n) => n.type === 'section').map((n) => (n.type === 'section' ? n.title : ''));
+    expect(titles).toContain('Abstract');
+  });
+
   it('XMD table -> IR -> LaTeX emits tabularx with caption/label and border color/width (best-effort)', () => {
     const xmd = [
       '@ Title',

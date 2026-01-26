@@ -12,17 +12,23 @@ interface MarkdownPreviewProps {
    * (asset URL rewrite, citation linking, etc).
    */
   htmlOverride?: string;
+  /**
+   * Optional documentId for resolving LaTeX bundle assets when rendering IR previews.
+   */
+  latexDocId?: string;
 }
 
 const TRANSPARENT_PIXEL =
   // 1x1 transparent GIF
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
 
-export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps) {
+export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownPreviewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const assetUrlCacheRef = useRef<Map<string, string>>(new Map());
   const assetInFlightRef = useRef<Set<string>>(new Set());
+  const latexAssetUrlCacheRef = useRef<Map<string, string>>(new Map());
+  const latexAssetInFlightRef = useRef<Set<string>>(new Set());
   const abortRef = useRef<AbortController | null>(null);
   const html = useMemo(() => {
     if (!content.trim() && !htmlOverride?.trim()) {
@@ -382,9 +388,62 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
     );
   }, [accessToken, clampFigureCaptionsToImageWidth, applyGridIntrinsicPercentSizing]);
 
+  const resolveLatexAssetImages = useCallback(async () => {
+    const container = containerRef.current;
+    if (!container) return;
+    const token = accessToken;
+    if (!token) return;
+    if (!latexDocId) return;
+
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
+    if (!abortRef.current) abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
+
+    const imgs = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
+    const latexImgs = imgs.filter((img) => {
+      const p = img.dataset.latexAssetPath;
+      if (!p) return false;
+      const src = img.getAttribute('src') || '';
+      return src === TRANSPARENT_PIXEL || src.trim() === '';
+    });
+    if (latexImgs.length === 0) return;
+
+    await Promise.all(
+      latexImgs.map(async (img) => {
+        const p = img.dataset.latexAssetPath || '';
+        if (!p) return;
+
+        const cached = latexAssetUrlCacheRef.current.get(p);
+        if (cached) {
+          img.src = cached;
+          return;
+        }
+
+        if (latexAssetInFlightRef.current.has(p)) return;
+        latexAssetInFlightRef.current.add(p);
+        try {
+          const url = `${API_BASE}/documents/${encodeURIComponent(latexDocId)}/latex/file?path=${encodeURIComponent(p)}`;
+          const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal });
+          if (!res.ok) return;
+          const blob = await res.blob();
+          const objUrl = URL.createObjectURL(blob);
+          latexAssetUrlCacheRef.current.set(p, objUrl);
+          img.src = objUrl;
+          clampFigureCaptionsToImageWidth();
+          applyGridIntrinsicPercentSizing();
+        } catch {
+          // ignore
+        } finally {
+          latexAssetInFlightRef.current.delete(p);
+        }
+      })
+    );
+  }, [accessToken, latexDocId, clampFigureCaptionsToImageWidth, applyGridIntrinsicPercentSizing]);
+
   useEffect(() => {
     void resolveAssetImages();
-  }, [html, accessToken, resolveAssetImages]);
+    void resolveLatexAssetImages();
+  }, [html, accessToken, resolveAssetImages, resolveLatexAssetImages]);
 
   // If the preview DOM is replaced/reconciled (or images are inserted later),
   // keep resolving any placeholder asset images.
@@ -394,6 +453,7 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
 
     const obs = new MutationObserver(() => {
       void resolveAssetImages();
+      void resolveLatexAssetImages();
       clampFigureCaptionsToImageWidth();
       applyGridIntrinsicPercentSizing();
     });
@@ -402,7 +462,7 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
     return () => {
       obs.disconnect();
     };
-  }, [resolveAssetImages, clampFigureCaptionsToImageWidth, applyGridIntrinsicPercentSizing]);
+  }, [resolveAssetImages, resolveLatexAssetImages, clampFigureCaptionsToImageWidth, applyGridIntrinsicPercentSizing]);
 
   // Also clamp captions after each HTML change (non-asset images / already-loaded images).
   useEffect(() => {
@@ -413,7 +473,9 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
   // Cleanup blob URLs + in-flight fetch on unmount
   useEffect(() => {
     const cache = assetUrlCacheRef.current;
+    const latexCache = latexAssetUrlCacheRef.current;
     const inflight = assetInFlightRef.current;
+    const latexInflight = latexAssetInFlightRef.current;
     return () => {
       abortRef.current?.abort();
       abortRef.current = null;
@@ -422,6 +484,11 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
       }
       cache.clear();
       inflight.clear();
+      for (const url of latexCache.values()) {
+        URL.revokeObjectURL(url);
+      }
+      latexCache.clear();
+      latexInflight.clear();
     };
   }, []);
 
@@ -671,6 +738,23 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
           100% {
             background-color: rgba(78, 201, 176, 0);
           }
+        }
+        .markdown-content .math-block {
+          margin: 14px auto;
+          padding: 10px 12px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 8px;
+          background: rgba(255, 255, 255, 0.04);
+          max-width: 100%;
+          overflow-x: auto;
+          font-family: var(--font-vscode, Consolas, Monaco, "Courier New", monospace);
+        }
+        .markdown-content .math-block .math-latex {
+          white-space: pre;
+          color: #e6e6e6;
+        }
+        .markdown-content .raw-latex-block {
+          opacity: 0.75;
         }
       `}</style>
     </div>

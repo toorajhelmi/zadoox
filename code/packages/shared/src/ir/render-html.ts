@@ -2,6 +2,10 @@ import { renderMarkdownToHtml } from '../editor/markdown';
 import type { DocumentNode, GridNode, IrNode } from './types';
 import { getGridSpacingPreset } from './grid-spacing';
 
+const TRANSPARENT_PIXEL =
+  // 1x1 transparent GIF
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+
 /**
  * Render HTML from IR.
  *
@@ -194,8 +198,9 @@ function renderNode(node: IrNode): string {
     }
     case 'math_block': {
       // Render as a block; formatting/KaTeX is a later concern.
+      // We still render it in a dedicated wrapper so the UI can style it cleanly.
       const latex = escapeHtml(node.latex ?? '');
-      return `<div class="math-block">$$<br />${latex}<br />$$</div>`;
+      return `<div class="math-block"><code class="math-latex">${latex}</code></div>`;
     }
     case 'figure': {
       const figId = node.label ? `figure-${sanitizeDomId(node.label)}` : `figure-${sanitizeDomId(node.id)}`;
@@ -208,14 +213,20 @@ function renderNode(node: IrNode): string {
         return `<span id="${figId}">${renderMarkdownToHtml(raw.trimEnd())}</span>`;
       }
 
-      const src = escapeHtml(node.src ?? '');
+      const rawSrc = String(node.src ?? '').trim();
+      const isAlreadyResolvable = rawSrc.startsWith('zadoox-asset://') || /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(rawSrc) || rawSrc.startsWith('data:');
+      // For imported LaTeX bundles, figures often reference relative paths (e.g. figures/foo.pdf).
+      // Those should be resolved by the web preview layer via /documents/:id/latex/file.
+      const imgAttrs = isAlreadyResolvable
+        ? `src="${escapeHtml(rawSrc)}"`
+        : `src="${TRANSPARENT_PIXEL}" data-latex-asset-path="${escapeHtml(rawSrc.replace(/^\/+/, ''))}"`;
       const cap = escapeHtml(node.caption ?? '');
       const caption =
         cap.trim().length > 0
           ? `<em class="figure-caption" style="display:block;width:100%;text-align:center">${cap}</em>`
           : '';
       // Keep caption centered relative to the image width by using an inner inline-block wrapper.
-      return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;max-width:100%;margin-left:0;margin-right:auto"><img src="${src}" alt="${cap}" style="display:block;max-width:100%" />${caption}</span></span>`;
+      return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;max-width:100%;margin-left:0;margin-right:auto"><img ${imgAttrs} alt="${cap}" style="display:block;max-width:100%" />${caption}</span></span>`;
     }
     case 'table': {
       const cols = Math.max(0, (node.header ?? []).length);
@@ -366,8 +377,43 @@ function renderNode(node: IrNode): string {
     case 'raw_xmd_block':
       return renderMarkdownToHtml(node.xmd ?? '');
     case 'raw_latex_block': {
-      const raw = escapeHtml(node.latex ?? '');
-      return `<pre><code>${raw}</code></pre>`;
+      // Best-effort: remove comment-only lines and boilerplate so previews don't show LaTeX scaffolding.
+      const raw = String(node.latex ?? '');
+      const cleaned = raw
+        .split('\n')
+        .map((ln) => ln.replace(/^[\uFEFF\u200B\u200C\u200D]+/, ''))
+        .filter((ln) => {
+          const t = ln.trim();
+          if (!t) return false;
+          if (t.startsWith('%')) return false;
+          if (/^\\+documentclass\{[^}]+\}/.test(t)) return false;
+          if (/^\\+usepackage(\[[^\]]+\])?\{[^}]+\}/.test(t)) return false;
+          if (/^\\+begin\{document\}/.test(t)) return false;
+          if (/^\\+end\{document\}/.test(t)) return false;
+          if (/^\\+maketitle/.test(t)) return false;
+          return true;
+        })
+        .map((ln) => {
+          // strip trailing comment
+          let escaped = false;
+          for (let k = 0; k < ln.length; k++) {
+            const ch = ln[k]!;
+            if (escaped) {
+              escaped = false;
+              continue;
+            }
+            if (ch === '\\') {
+              escaped = true;
+              continue;
+            }
+            if (ch === '%') return ln.slice(0, k).trimEnd();
+          }
+          return ln;
+        })
+        .join('\n')
+        .trim();
+      if (!cleaned) return '';
+      return `<pre class="raw-latex-block"><code>${escapeHtml(cleaned)}</code></pre>`;
     }
     case 'document':
       return renderNodes(node.children ?? []);

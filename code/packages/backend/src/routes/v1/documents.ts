@@ -976,5 +976,117 @@ export async function documentRoutes(fastify: FastifyInstance) {
       }
     }
   );
+
+  /**
+   * GET /api/v1/documents/:id/latex/file?path=...
+   *
+   * Downloads a file from the LaTeX bundle listed in `documents.latex.files`.
+   * Intended for in-app preview of imported LaTeX assets (figures, etc).
+   */
+  fastify.get(
+    '/documents/:id/latex/file',
+    {
+      schema: {
+        description: 'Download a LaTeX bundle file for a document (must exist in documents.latex manifest)',
+        tags: ['Documents'],
+        security,
+        params: {
+          type: 'object',
+          properties: { id: { type: 'string', format: 'uuid' } },
+          required: ['id'],
+        },
+        querystring: {
+          type: 'object',
+          properties: { path: { type: 'string' } },
+          required: ['path'],
+        },
+        response: { 200: { type: 'string', format: 'binary' }, 400: schemas.ApiResponse, 404: schemas.ApiResponse, 500: schemas.ApiResponse },
+      },
+    },
+    async (request: AuthenticatedRequest, reply) => {
+      try {
+        const paramValidation = documentIdSchema.safeParse(request.params);
+        if (!paramValidation.success) {
+          const response: ApiResponse<null> = { success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid document ID' } };
+          return reply.status(400).send(response);
+        }
+        const { id } = paramValidation.data;
+        const rawPath = String((request.query as { path?: string } | undefined)?.path ?? '').trim();
+        if (!rawPath) {
+          const response: ApiResponse<null> = { success: false, error: { code: 'VALIDATION_ERROR', message: 'Missing path' } };
+          return reply.status(400).send(response);
+        }
+        // Basic path hygiene; we also validate membership in manifest.files.
+        const rel = rawPath.replace(/^\/+/, '');
+        if (rel.includes('..')) {
+          const response: ApiResponse<null> = { success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid path' } };
+          return reply.status(400).send(response);
+        }
+
+        const documentService = new DocumentService(request.supabase!);
+        const doc = await documentService.getDocumentById(id);
+        const manifest = (doc.latex as unknown as LatexManifest | null) ?? null;
+        if (!manifest || typeof manifest !== 'object') {
+          const response: ApiResponse<null> = { success: false, error: { code: 'NOT_FOUND', message: 'No LaTeX manifest for document' } };
+          return reply.status(404).send(response);
+        }
+        const basePrefix = String(manifest.basePrefix || '');
+        if (!basePrefix) {
+          const response: ApiResponse<null> = { success: false, error: { code: 'INVALID_STATE', message: 'Invalid LaTeX manifest (missing basePrefix)' } };
+          return reply.status(500).send(response);
+        }
+        const files: Array<{ path: string }> = Array.isArray(manifest.files) ? (manifest.files as Array<{ path: string }>) : [];
+        const allowed = new Set(files.map((f) => String(f?.path || '').replace(/^\/+/, '')).filter(Boolean));
+        if (!allowed.has(rel)) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: { code: 'NOT_FOUND', message: 'File not found in LaTeX manifest', details: { path: rel } },
+          };
+          return reply.status(404).send(response);
+        }
+
+        const admin = supabaseAdmin();
+        await ensureLatexBucket();
+        const key = `${basePrefix.replace(/\/+$/g, '')}/${rel}`;
+        const { data, error } = await admin.storage.from(latexBucket).download(key);
+        if (error || !data) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: {
+              code: 'NOT_FOUND',
+              message: 'LaTeX bundle file not found in storage',
+              details: { bucket: latexBucket, key, path: rel, reason: error?.message ?? 'Download returned empty data' },
+            },
+          };
+          return reply.status(404).send(response);
+        }
+
+        const ext = path.extname(rel).toLowerCase();
+        const contentType =
+          ext === '.png'
+            ? 'image/png'
+            : ext === '.jpg' || ext === '.jpeg'
+              ? 'image/jpeg'
+              : ext === '.gif'
+                ? 'image/gif'
+                : ext === '.webp'
+                  ? 'image/webp'
+                  : ext === '.svg'
+                    ? 'image/svg+xml'
+                    : ext === '.pdf'
+                      ? 'application/pdf'
+                      : 'application/octet-stream';
+        reply.header('Content-Type', contentType);
+        reply.header('Cache-Control', 'private, max-age=300');
+        // Fastify can send a ReadableStream-like object from Supabase download directly.
+        return reply.send(data);
+      } catch (error: unknown) {
+        fastify.log.error(error);
+        const msg = error instanceof Error ? error.message : 'Failed to download LaTeX file';
+        const response: ApiResponse<null> = { success: false, error: { code: 'INTERNAL_ERROR', message: msg } };
+        return reply.status(500).send(response);
+      }
+    }
+  );
 }
 

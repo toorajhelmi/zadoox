@@ -22,7 +22,7 @@ export function IrPreview({ docId, content, ir }: IrPreviewProps) {
     return html;
   }, [ir]);
 
-  return <MarkdownPreview content={content} htmlOverride={htmlOverride} />;
+  return <MarkdownPreview content={content} htmlOverride={htmlOverride} latexDocId={docId} />;
 }
 
 

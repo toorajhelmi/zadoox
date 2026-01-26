@@ -540,10 +540,43 @@ function parseBlocks(latex: string): Block[] {
   const lines = splitLinesWithOffsets(latex);
   const blocks: Block[] = [];
 
+  const isZxMarkerLine = (trimmed: string): boolean => /^%\s*ZX-(BEGIN|END):/i.test(trimmed);
+
+  const stripInlineComment = (line: string): string => {
+    // Remove LaTeX comments (best-effort) by stripping from the first unescaped %.
+    // We intentionally do not attempt to fully parse TeX; this is just to avoid previewing comment text.
+    const s = String(line ?? '');
+    let escaped = false;
+    for (let k = 0; k < s.length; k++) {
+      const ch = s[k]!;
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (ch === '%') {
+        return s.slice(0, k).trimEnd();
+      }
+    }
+    return s;
+  };
+
   const pushParagraph = (startIdx: number, endIdxExclusive: number, blockIndex: number) => {
     const seg = lines.slice(startIdx, endIdxExclusive);
     const raw = seg.map((l) => l.line).join('\n');
-    const text = latexInlineToMarkdown(raw.trimEnd());
+    const rawWithoutComments = seg
+      .map((l) => l.line)
+      .filter((ln) => {
+        const t = ln.trim();
+        if (t.startsWith('%') && !isZxMarkerLine(t)) return false;
+        return true;
+      })
+      .map(stripInlineComment)
+      .join('\n');
+    const text = latexInlineToMarkdown(rawWithoutComments.trimEnd());
     const startOffset = seg[0]?.start ?? 0;
     const endOffset = seg[seg.length - 1]?.end ?? startOffset;
     if (text.trim().length === 0) return;
@@ -589,6 +622,65 @@ function parseBlocks(latex: string): Block[] {
       i++;
       blockIndex++;
       continue;
+    }
+
+    // Pure comment lines: ignore (but keep ZX markers which are also comments).
+    if (trimmed.startsWith('%') && !isZxMarkerLine(trimmed)) {
+      i++;
+      blockIndex++;
+      continue;
+    }
+
+    // abstract environment -> emit a synthetic "Abstract" section + paragraph(s)
+    if (trimmed === '\\begin{abstract}') {
+      const startOffset = start;
+      let j = i + 1;
+      const bodyLines: Array<{ line: string; start: number; end: number }> = [];
+      while (j < lines.length && lines[j].line.trim() !== '\\end{abstract}') {
+        const rawLine = lines[j].line;
+        const t = rawLine.trim();
+        if (t.startsWith('%') && !isZxMarkerLine(t)) {
+          j++;
+          continue;
+        }
+        bodyLines.push({ line: stripInlineComment(rawLine), start: lines[j].start, end: lines[j].end });
+        j++;
+      }
+      if (j < lines.length && lines[j].line.trim() === '\\end{abstract}') {
+        const endOffset = lines[j].end;
+        const raw = lines.slice(i, j + 1).map((l) => l.line).join('\n');
+
+        blocks.push({
+          kind: 'section',
+          level: 1,
+          title: 'Abstract',
+          raw: '\\section*{Abstract}',
+          blockIndex,
+          startOffset,
+          endOffset,
+        });
+
+        // Split abstract into paragraph blocks (blank-line separated).
+        const text = latexInlineToMarkdown(bodyLines.map((l) => l.line).join('\n').trimEnd());
+        if (text.trim().length > 0) {
+          blocks.push({
+            kind: 'paragraph',
+            text,
+            raw,
+            blockIndex: blockIndex + 1,
+            startOffset,
+            endOffset,
+          });
+        }
+
+        i = j + 1;
+        blockIndex += 2;
+        continue;
+      }
+      // Unclosed => raw
+      const raw = lines.slice(i).map((l) => l.line).join('\n');
+      blocks.push({ kind: 'raw', latex: raw, raw, blockIndex, startOffset, endOffset: lines[lines.length - 1]?.end ?? end });
+      break;
     }
 
     // ZX markers: lossless block boundaries for generated content.
@@ -784,16 +876,24 @@ function parseBlocks(latex: string): Block[] {
       break;
     }
 
-    // equation environment
-    if (line.trim() === '\\begin{equation}') {
+    // math environments (best-effort)
+    const mathBegin = /^\\begin\{(equation\*?|align\*?|gather\*?|multline\*?)\}$/.exec(line.trim());
+    if (mathBegin) {
+      const env = mathBegin[1]!;
       const startOffset = start;
       let j = i + 1;
       const body: string[] = [];
-      while (j < lines.length && lines[j].line.trim() !== '\\end{equation}') {
-        body.push(lines[j].line);
+      while (j < lines.length && lines[j].line.trim() !== `\\end{${env}}`) {
+        const rawLine = lines[j].line;
+        const t = rawLine.trim();
+        if (t.startsWith('%') && !isZxMarkerLine(t)) {
+          j++;
+          continue;
+        }
+        body.push(stripInlineComment(rawLine));
         j++;
       }
-      if (j < lines.length && lines[j].line.trim() === '\\end{equation}') {
+      if (j < lines.length && lines[j].line.trim() === `\\end{${env}}`) {
         const endOffset = lines[j].end;
         const raw = lines.slice(i, j + 1).map((l) => l.line).join('\n');
         blocks.push({ kind: 'math', latex: body.join('\n').trim(), raw, blockIndex, startOffset, endOffset });
