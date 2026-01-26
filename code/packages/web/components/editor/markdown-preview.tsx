@@ -429,16 +429,27 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
       const src = img.getAttribute('src') || '';
       return src === TRANSPARENT_PIXEL || src.trim() === '';
     });
-    if (latexImgs.length === 0) return;
+
+    const pdfObjects = Array.from(container.querySelectorAll('object.latex-figure-pdf')) as HTMLObjectElement[];
+    const latexObjs = pdfObjects.filter((obj) => {
+      const p = obj.getAttribute('data-latex-asset-path') || '';
+      if (!p) return false;
+      const data = obj.getAttribute('data') || '';
+      return data === TRANSPARENT_PIXEL || data.trim() === '';
+    });
+
+    if (latexImgs.length === 0 && latexObjs.length === 0) return;
 
     await Promise.all(
-      latexImgs.map(async (img) => {
-        const p = img.dataset.latexAssetPath || '';
+      [...latexImgs.map((img) => ({ kind: 'img' as const, el: img })), ...latexObjs.map((obj) => ({ kind: 'obj' as const, el: obj }))].map(async (item) => {
+        const p =
+          item.kind === 'img' ? (item.el as HTMLImageElement).dataset.latexAssetPath || '' : (item.el as HTMLObjectElement).getAttribute('data-latex-asset-path') || '';
         if (!p) return;
 
         const cached = latexAssetUrlCacheRef.current.get(p);
         if (cached) {
-          img.src = cached;
+          if (item.kind === 'img') (item.el as HTMLImageElement).src = cached;
+          else (item.el as HTMLObjectElement).setAttribute('data', cached);
           return;
         }
 
@@ -451,7 +462,8 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
           const blob = await res.blob();
           const objUrl = URL.createObjectURL(blob);
           latexAssetUrlCacheRef.current.set(p, objUrl);
-          img.src = objUrl;
+          if (item.kind === 'img') (item.el as HTMLImageElement).src = objUrl;
+          else (item.el as HTMLObjectElement).setAttribute('data', objUrl);
           clampFigureCaptionsToImageWidth();
           applyGridIntrinsicPercentSizing();
         } catch {

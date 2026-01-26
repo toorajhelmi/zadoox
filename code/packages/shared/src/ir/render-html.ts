@@ -244,26 +244,43 @@ function renderNode(node: IrNode): string {
       // Important: preserve the existing figure attribute-block behavior (align/width/placement)
       // by reusing the original XMD source line when available.
       const raw = node.source?.raw;
-      if (raw && raw.trim().startsWith('![') && raw.includes('](')) {
+      const rawSrc = String(node.src ?? '').trim();
+      const isAlreadyResolvable =
+        rawSrc.startsWith('zadoox-asset://') || /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(rawSrc) || rawSrc.startsWith('data:');
+      // For LaTeX bundle figures we often have relative paths; prefer the native renderer
+      // (data-latex-asset-path) so the preview can fetch from storage. In that case, do NOT
+      // route through the markdown image renderer (it would emit <img src="relative"> which 404s).
+      if (raw && isAlreadyResolvable && raw.trim().startsWith('![') && raw.includes('](')) {
         // Wrap in an anchor span so the outline can reliably scroll even if the markdown renderer
         // doesn't include an id attribute.
         return `<span id="${figId}">${renderMarkdownToHtml(raw.trimEnd())}</span>`;
       }
 
-      const rawSrc = String(node.src ?? '').trim();
-      const isAlreadyResolvable = rawSrc.startsWith('zadoox-asset://') || /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(rawSrc) || rawSrc.startsWith('data:');
       // For imported LaTeX bundles, figures often reference relative paths (e.g. figures/foo.pdf).
       // Those should be resolved by the web preview layer via /documents/:id/latex/file.
-      const imgAttrs = isAlreadyResolvable
-        ? `src="${escapeHtml(rawSrc)}"`
-        : `src="${TRANSPARENT_PIXEL}" data-latex-asset-path="${escapeHtml(rawSrc.replace(/^\/+/, ''))}"`;
+      const relPath = escapeHtml(rawSrc.replace(/^\/+/, ''));
+      const ext = rawSrc.split('?')[0]!.split('#')[0]!.toLowerCase().trim().endsWith('.pdf') ? '.pdf' : '';
       const cap = escapeHtml(node.caption ?? '');
       const caption =
         cap.trim().length > 0
           ? `<em class="figure-caption" style="display:block;width:100%;text-align:center">${cap}</em>`
           : '';
       // Keep caption centered relative to the image width by using an inner inline-block wrapper.
-      return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;max-width:100%;margin-left:0;margin-right:auto"><img ${imgAttrs} alt="${cap}" style="display:block;max-width:100%" />${caption}</span></span>`;
+      if (isAlreadyResolvable) {
+        return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;max-width:100%;margin-left:0;margin-right:auto"><img src="${escapeHtml(
+          rawSrc
+        )}" alt="${cap}" style="display:block;max-width:100%" />${caption}</span></span>`;
+      }
+      if (ext === '.pdf') {
+        // Render PDFs via <object> so browsers can display them inline (or at least provide a fallback link).
+        return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;max-width:100%;margin-left:0;margin-right:auto">
+          <object class="latex-figure-pdf" data="${TRANSPARENT_PIXEL}" data-latex-asset-path="${relPath}" type="application/pdf" style="width:min(900px,100%);height:520px;display:block;border:1px solid rgba(255,255,255,0.12);border-radius:8px">
+            <a class="latex-figure-link" href="#" data-latex-asset-path="${relPath}">Open figure (PDF)</a>
+          </object>
+          ${caption}
+        </span></span>`;
+      }
+      return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;max-width:100%;margin-left:0;margin-right:auto"><img src="${TRANSPARENT_PIXEL}" data-latex-asset-path="${relPath}" alt="${cap}" style="display:block;max-width:100%" />${caption}</span></span>`;
     }
     case 'table': {
       const cols = Math.max(0, (node.header ?? []).length);
