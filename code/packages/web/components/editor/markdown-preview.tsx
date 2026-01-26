@@ -632,17 +632,24 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
     (async () => {
       try {
         const katexMod = await import('katex');
-        const katex = (katexMod as unknown as { renderToString: (tex: string, opts: any) => string }).renderToString;
-        if (!katex) return;
+        // CJS/ESM interop: sometimes KaTeX is under .default
+        const katexAny = (katexMod as any)?.default ?? (katexMod as any);
+        const render = (katexAny?.render as ((tex: string, el: HTMLElement, opts: any) => void) | undefined) ?? undefined;
+        const renderToString =
+          (katexAny?.renderToString as ((tex: string, opts: any) => string) | undefined) ?? undefined;
+        if (!render && !renderToString) return;
         for (const el of nodes) {
           if (cancelled) return;
-          if ((el as any).dataset?.zxMathRendered === '1') continue;
+          if (el.getAttribute('data-zx-math-rendered') === '1') continue;
           const tex = el.textContent ?? '';
           const displayMode = Boolean(el.closest('.math-block'));
-          const htmlOut = katex(tex, { throwOnError: false, displayMode });
-          // Replace code contents with KaTeX HTML
-          el.innerHTML = htmlOut;
-          (el as any).dataset.zxMathRendered = '1';
+          if (render) {
+            render(tex, el, { throwOnError: false, displayMode });
+          } else if (renderToString) {
+            const htmlOut = renderToString(tex, { throwOnError: false, displayMode });
+            el.innerHTML = htmlOut;
+          }
+          el.setAttribute('data-zx-math-rendered', '1');
         }
       } catch {
         // ignore (math will remain as raw LaTeX)
