@@ -527,11 +527,13 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
       if (figureBgDefault === 'light') f.classList.add('zx-figure-frame-light');
       else f.classList.remove('zx-figure-frame-light');
 
-      if (!f.querySelector(':scope > .zx-figure-bg-toggle')) {
+      // NOTE: Avoid :scope selector for broader browser compatibility (Safari can throw).
+      if (!f.querySelector('.zx-figure-bg-toggle')) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'zx-figure-bg-toggle';
         btn.textContent = 'Bg';
+        btn.setAttribute('aria-label', 'Toggle figure background');
         f.appendChild(btn);
       }
     }
@@ -749,6 +751,7 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
           position: absolute;
           top: 6px;
           right: 6px;
+          z-index: 5;
           font-size: 11px;
           line-height: 1;
           padding: 4px 6px;
