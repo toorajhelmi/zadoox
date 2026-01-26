@@ -1195,10 +1195,20 @@ function parseBlocks(latex: string): Block[] {
       continue;
     }
 
-    // Sections
-    const sec = /^\\+(section|subsection|subsubsection)\{([^}]*)\}([\s\S]*)$/.exec(trimmed);
+    // Sections (including paragraph/subparagraph)
+    // Note: \paragraph / \subparagraph are often "run-in" headings, but we render them as block headings.
+    const sec = /^\\+(section|subsection|subsubsection|paragraph|subparagraph)\*?\{([^}]*)\}([\s\S]*)$/.exec(trimmed);
     if (sec) {
-      const level = sec[1] === 'section' ? 1 : sec[1] === 'subsection' ? 2 : 3;
+      const level =
+        sec[1] === 'section'
+          ? 1
+          : sec[1] === 'subsection'
+            ? 2
+            : sec[1] === 'subsubsection'
+              ? 3
+              : sec[1] === 'paragraph'
+                ? 4
+                : 5;
       const title = latexInlineToMarkdown((sec[2] ?? '').trim());
       let tail = String(sec[3] ?? '').trim();
       // Allow "\subsection{X} \label{sec:x} Some text..." on the same line.
@@ -1581,6 +1591,51 @@ function buildXmdFigureLine(b: Extract<Block, { kind: 'figure' }>): string {
 
 function latexInlineToMarkdown(text: string): string {
   let s = text ?? '';
+
+  const inlineMathToken = (tex: string): string => `@@ZXMATHI{${encodeURIComponent(tex)}}@@`;
+
+  // Inline math:
+  // - \( ... \)
+  s = s.replace(/\\\(([\s\S]*?)\\\)/g, (_m, tex) => inlineMathToken(String(tex ?? '').trim()));
+  // - $ ... $ (single-dollar only; $$ ... $$ is handled elsewhere as block math)
+  // We do a small scan instead of a big regex to avoid edge cases with escaped \$.
+  s = (() => {
+    const src = String(s ?? '');
+    let out = '';
+    let i = 0;
+    while (i < src.length) {
+      const ch = src[i]!;
+      if (ch !== '$' || (i > 0 && src[i - 1] === '\\')) {
+        out += ch;
+        i++;
+        continue;
+      }
+      // Don't treat $$ as inline math.
+      if (src[i + 1] === '$') {
+        out += '$$';
+        i += 2;
+        continue;
+      }
+      // Find the closing unescaped single '$'
+      let j = i + 1;
+      while (j < src.length) {
+        if (src[j] === '$' && src[j - 1] !== '\\') break;
+        // Stop if we hit a double-dollar start (avoid eating display math)
+        if (src[j] === '$' && src[j + 1] === '$') break;
+        j++;
+      }
+      if (j >= src.length || src[j] !== '$') {
+        // No closing delimiter; treat as literal.
+        out += '$';
+        i++;
+        continue;
+      }
+      const tex = src.slice(i + 1, j);
+      out += inlineMathToken(tex.trim());
+      i = j + 1;
+    }
+    return out;
+  })();
 
   const sanitizeRef = (raw: string): string =>
     String(raw ?? '')

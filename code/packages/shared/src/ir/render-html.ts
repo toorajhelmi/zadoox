@@ -223,7 +223,17 @@ function renderNode(node: IrNode): string {
       return `${heading}${body}`;
     }
     case 'paragraph': {
-      const html = renderMarkdownToHtml(node.text ?? '');
+      const html0 = renderMarkdownToHtml(node.text ?? '');
+      // Inline math: replace @@ZXMATHI{...}@@ placeholders emitted by LaTeX inline conversion.
+      // We render them as <code.math-latex> so the web preview can KaTeX-typeset them.
+      const html = html0.replace(/@@ZXMATHI\{([^}]*)\}@@/g, (_m, enc) => {
+        try {
+          const tex = decodeURIComponent(String(enc ?? ''));
+          return `<span class="math-inline"><code class="math-latex">${escapeHtml(tex)}</code></span>`;
+        } catch {
+          return '';
+        }
+      });
       const css = styleToCss((node as unknown as { style?: TextStyle }).style);
       if (!css) return html;
       // Wrap so we can apply block-level styling without re-parsing the markdown HTML.
