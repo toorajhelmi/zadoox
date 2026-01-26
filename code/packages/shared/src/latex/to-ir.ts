@@ -1487,6 +1487,21 @@ function buildXmdFigureLine(b: Extract<Block, { kind: 'figure' }>): string {
 function latexInlineToMarkdown(text: string): string {
   let s = text ?? '';
 
+  // Citations:
+  // Convert \cite/\citep/\citet (+ optional star) into a stable inline token we can render later.
+  // We intentionally ignore optional args ([...]) for now.
+  const citeToToken = (mode: 'cite' | 'citep' | 'citet') => (_m: string, keysRaw: string) => {
+    const keys = String(keysRaw ?? '')
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean)
+      .join(', ');
+    return keys ? `[@${mode} ${keys}]` : '';
+  };
+  s = s.replace(/\\cite\*?(?:\[[^\]]*\])*\{([^}]+)\}/g, citeToToken('cite'));
+  s = s.replace(/\\citep\*?(?:\[[^\]]*\])*\{([^}]+)\}/g, citeToToken('citep'));
+  s = s.replace(/\\citet\*?(?:\[[^\]]*\])*\{([^}]+)\}/g, citeToToken('citet'));
+
   // \href{url}{text} -> [text](url)
   s = s.replace(/\\href\{([^}]+)\}\{([^}]+)\}/g, (_m, url, t) => `[${t}](${url})`);
   // \url{url} -> <url>

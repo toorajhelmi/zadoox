@@ -160,6 +160,21 @@ describe('Markdown Utilities', () => {
       expect(html).toContain('<p>');
       expect(html).toContain('Plain text');
     });
+
+    it('should render LaTeX cite tokens as links to refkey anchors', () => {
+      const markdown = 'See [@cite vaswani2017attention, bahdanau2014neural] for details.';
+      const html = renderMarkdownToHtml(markdown);
+      expect(html).toContain('class="citation-link');
+      expect(html).toContain('href="#refkey-vaswani2017attention"');
+      expect(html).toContain('href="#refkey-bahdanau2014neural"');
+    });
+
+    it('should render LaTeX citep tokens in parentheses', () => {
+      const markdown = 'Prior work [@citep vaswani2017attention].';
+      const html = renderMarkdownToHtml(markdown);
+      expect(html).toContain('latex-citep');
+      expect(html).toContain('href="#refkey-vaswani2017attention"');
+    });
   });
 });
 

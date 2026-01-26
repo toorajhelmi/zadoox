@@ -75,6 +75,36 @@ export function renderMarkdownToHtml(content: string): string {
   // Inline code
   html = html.replace(/`([^`]+)`/gim, '<code>$1</code>');
 
+  const sanitizeDomId = (raw: string): string =>
+    String(raw ?? '')
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+
+  // Inline citation tokens from LaTeX -> IR bridge:
+  //   [@cite key1, key2]  => [key1, key2]
+  //   [@citep key]        => (key)
+  //   [@citet key]        => [key]
+  // Render as links to reference entries with ids "refkey-<key>" when present.
+  const renderCiteToken = (mode: 'cite' | 'citep' | 'citet', keysRaw: string) => {
+    const keys = String(keysRaw ?? '')
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean);
+    if (keys.length === 0) return '';
+    const rendered = keys
+      .map((k) => {
+        const id = `refkey-${sanitizeDomId(k)}`;
+        const label = escapeHtml(k);
+        return `<a href="#${id}" class="citation-link citation-key" data-ref-key="${escapeHtml(k)}">[${label}]</a>`;
+      })
+      .join(' ');
+    if (mode === 'citep') return `<span class="latex-cite latex-citep">(${rendered})</span>`;
+    return `<span class="latex-cite latex-cite">${rendered}</span>`;
+  };
+  html = html.replace(/\[@(citep|citet|cite)\s+([^\]]+)\]/gim, (_m, mode, keys) => renderCiteToken(mode, keys));
+
   // Images (must come before links to avoid matching images as links)
   //
   // Also support Zadoox/Pandoc-style attribute blocks after images:

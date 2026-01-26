@@ -54,6 +54,12 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
     if (referencesSectionMatch) {
       let referencesContent = referencesSectionMatch[2];
       let refNumber = 1;
+      const sanitizeKey = (raw: string): string =>
+        String(raw ?? '')
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
       
       // First, handle numbered/IEEE format: [1] ..., [2] ...
       // References might be in separate paragraphs OR in the same paragraph separated by <br />
@@ -106,6 +112,23 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
           const id = `id="ref-${refNumber}"`;
           refNumber++;
           return `<p ${id} class="reference-entry"${attrs}>${content}</p>`;
+        }
+      );
+
+      // Finally, handle BibTeX-key style: [vaswani2017attention] ...
+      // Add id="refkey-<key>" so inline cite tokens can link to it.
+      referencesContent = referencesContent.replace(
+        /<p([^>]*)>\[([^\]]+)\]\s*/g,
+        (match, attrs, key) => {
+          const k = String(key ?? '').trim();
+          // Keep numeric refs handled above
+          if (/^\d+$/.test(k)) return match;
+          const id = `refkey-${sanitizeKey(k)}`;
+          const hasId = /id=/.test(attrs);
+          const hasClass = /class=/.test(attrs);
+          if (hasId) return match;
+          const cls = hasClass ? '' : 'class="reference-entry" ';
+          return `<p id="${id}" ${cls}${attrs}>[${k}] `;
         }
       );
       
