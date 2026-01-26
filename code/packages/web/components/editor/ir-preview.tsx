@@ -8,6 +8,7 @@ interface IrPreviewProps {
   docId: string;
   content: string;
   ir?: DocumentNode | null;
+  katexMacros?: Record<string, string>;
 }
 
 /**
@@ -15,14 +16,14 @@ interface IrPreviewProps {
  *
  * Phase 12+: render IR directly to HTML (IR -> HTML).
  */
-export function IrPreview({ docId, content, ir }: IrPreviewProps) {
+export function IrPreview({ docId, content, ir, katexMacros }: IrPreviewProps) {
   const htmlOverride = useMemo(() => {
     if (!ir) return '';
     const html = renderIrToHtml(ir);
     return html;
   }, [ir]);
 
-  return <MarkdownPreview content={content} htmlOverride={htmlOverride} latexDocId={docId} />;
+  return <MarkdownPreview content={content} htmlOverride={htmlOverride} latexDocId={docId} katexMacros={katexMacros} />;
 }
 
 

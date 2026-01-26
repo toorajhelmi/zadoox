@@ -8,6 +8,7 @@ import { EditorSidebar } from './editor-sidebar';
 import { EditorToolbar } from './editor-toolbar';
 import { EditorStatusBar } from './editor-status-bar';
 import { IrPreview } from './ir-preview';
+import { extractKatexMacrosFromLatex } from './latex-katex-macros';
 import { FormattingToolbar } from './formatting-toolbar';
 import { ThinkModePanel } from './think-mode-panel';
 import { InlineAIChat } from './inline-ai-chat';
@@ -202,6 +203,13 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     },
     [handleEditModeChange]
   );
+
+  const katexMacros = useMemo(() => {
+    if (editMode !== 'latex') return undefined;
+    if (!latexDraft || latexDraft.trim().length === 0) return undefined;
+    const macros = extractKatexMacrosFromLatex(latexDraft);
+    return Object.keys(macros).length > 0 ? macros : undefined;
+  }, [editMode, latexDraft]);
 
   const docKey = actualDocumentId || documentId || null;
   const { canonicalIr, getCurrentIr } = useCanonicalIrState({
@@ -1188,7 +1196,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               }
             >
               <div className="h-full">
-                <IrPreview docId={actualDocumentId || documentId} content={content} ir={sidebarIr} />
+                <IrPreview docId={actualDocumentId || documentId} content={content} ir={sidebarIr} katexMacros={katexMacros} />
               </div>
             </div>
           )}

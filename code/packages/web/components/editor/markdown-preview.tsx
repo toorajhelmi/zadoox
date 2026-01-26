@@ -17,13 +17,18 @@ interface MarkdownPreviewProps {
    * Optional documentId for resolving LaTeX bundle assets when rendering IR previews.
    */
   latexDocId?: string;
+  /**
+   * Optional KaTeX macros map (math-only), typically extracted from LaTeX preamble.
+   * Unknown macros remain red; this only helps for simple \newcommand/\def cases.
+   */
+  katexMacros?: Record<string, string>;
 }
 
 const TRANSPARENT_PIXEL =
   // 1x1 transparent GIF
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
 
-export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownPreviewProps) {
+export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros }: MarkdownPreviewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [figureBgDefault] = useState<'dark' | 'light'>(() => {
@@ -641,10 +646,11 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
         const raw = el.getAttribute('data-zx-math-raw') ?? el.textContent ?? '';
         const tex = normalizeTex(raw, displayMode);
         try {
+          const macros = katexMacros && Object.keys(katexMacros).length > 0 ? katexMacros : undefined;
           if (render) {
-            render(tex, el, { throwOnError: false, displayMode, strict: 'ignore' });
+            render(tex, el, { throwOnError: false, displayMode, strict: 'ignore', ...(macros ? { macros } : null) });
           } else if (renderToString) {
-            el.innerHTML = renderToString(tex, { throwOnError: false, displayMode, strict: 'ignore' });
+            el.innerHTML = renderToString(tex, { throwOnError: false, displayMode, strict: 'ignore', ...(macros ? { macros } : null) });
           }
           if (!el.getAttribute('data-zx-math-raw')) {
             el.setAttribute('data-zx-math-raw', String(raw));
@@ -655,7 +661,7 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
         }
       }
     })();
-  }, [loadKatex]);
+  }, [katexMacros, loadKatex]);
 
   // If the preview DOM is replaced/reconciled (or images are inserted later),
   // keep resolving any placeholder asset images.
