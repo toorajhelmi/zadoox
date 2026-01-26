@@ -604,8 +604,31 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
   const typesetMath = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
-    const nodes = Array.from(container.querySelectorAll('code.math-latex')) as HTMLElement[];
+    const codeNodes = Array.from(container.querySelectorAll('code.math-latex')) as HTMLElement[];
+    const blockNodes = Array.from(container.querySelectorAll('div.math-block')) as HTMLElement[];
+    const nodes: HTMLElement[] = [...codeNodes];
+    for (const b of blockNodes) {
+      // Some math blocks might not include the <code.math-latex> wrapper (e.g. legacy/alternate HTML).
+      // If so, typeset the whole block.
+      if (!b.querySelector('code.math-latex')) nodes.push(b);
+    }
     if (nodes.length === 0) return;
+
+    const normalizeTex = (raw: string, isDisplay: boolean): string => {
+      let tex = String(raw ?? '').trim();
+      if (!tex) return tex;
+      // Normalize common variants
+      tex = tex.replace(/\\newline\b/g, '\\\\');
+      // Trim trailing line breaks that often appear in extracted align blocks
+      tex = tex.replace(/\\\\\s*$/g, '');
+      // If this looks like an aligned block but isn't wrapped, wrap it so KaTeX can parse & and \\.
+      if (isDisplay && !/\\begin\{[a-zA-Z*]+\}/.test(tex) && (tex.includes('&') || tex.includes('\\\\'))) {
+        tex = `\\begin{aligned}\n${tex}\n\\end{aligned}`;
+      }
+      // Light unicode normalization (helps with some PDF-ish extractions)
+      tex = tex.replace(/−/g, '-').replace(/⋅/g, '\\cdot ');
+      return tex;
+    };
     void (async () => {
       const k = await loadKatex();
       if (!k) return;
@@ -614,13 +637,17 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
       if (!render && !renderToString) return;
       for (const el of nodes) {
         if (el.getAttribute('data-zx-math-rendered') === '1') continue;
-        const tex = el.textContent ?? '';
-        const displayMode = Boolean(el.closest('.math-block'));
+        const displayMode = el.classList.contains('math-block') || Boolean(el.closest('.math-block'));
+        const raw = el.getAttribute('data-zx-math-raw') ?? el.textContent ?? '';
+        const tex = normalizeTex(raw, displayMode);
         try {
           if (render) {
             render(tex, el, { throwOnError: false, displayMode, strict: 'ignore' });
           } else if (renderToString) {
             el.innerHTML = renderToString(tex, { throwOnError: false, displayMode, strict: 'ignore' });
+          }
+          if (!el.getAttribute('data-zx-math-raw')) {
+            el.setAttribute('data-zx-math-raw', String(raw));
           }
           el.setAttribute('data-zx-math-rendered', '1');
         } catch {
