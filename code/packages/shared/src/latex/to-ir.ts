@@ -344,7 +344,9 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
 }
 
 function latexGraphicPathToSrc(pathArg: string): string {
-  const p = String(pathArg ?? '').trim();
+  let p = String(pathArg ?? '').trim();
+  // Many LaTeX sources use "./figs/foo" style paths. Normalize to match storage manifest paths.
+  p = p.replace(/^(\.\/)+/, '');
   if (p.startsWith('assets/')) return `zadoox-asset://${p.slice('assets/'.length)}`;
   return p;
 }

@@ -1017,7 +1017,7 @@ export async function documentRoutes(fastify: FastifyInstance) {
           return reply.status(400).send(response);
         }
         // Basic path hygiene; we also validate membership in manifest.files.
-        const rel = rawPath.replace(/^\/+/, '');
+        const rel = rawPath.replace(/^\/+/, '').replace(/^(\.\/)+/, '');
         if (rel.includes('..')) {
           const response: ApiResponse<null> = { success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid path' } };
           return reply.status(400).send(response);

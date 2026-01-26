@@ -3,6 +3,7 @@
 import { renderMarkdownToHtml, extractHeadings } from '@zadoox/shared';
 import { useMemo, useEffect, useRef, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import * as katex from 'katex';
 
 interface MarkdownPreviewProps {
   content: string;
@@ -580,6 +581,24 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
     return () => container.removeEventListener('click', onClick);
   }, [html, figureBgDefault]);
 
+  const typesetMath = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const nodes = Array.from(container.querySelectorAll('code.math-latex')) as HTMLElement[];
+    if (nodes.length === 0) return;
+    for (const el of nodes) {
+      if (el.getAttribute('data-zx-math-rendered') === '1') continue;
+      const tex = el.textContent ?? '';
+      const displayMode = Boolean(el.closest('.math-block'));
+      try {
+        katex.render(tex, el, { throwOnError: false, displayMode });
+        el.setAttribute('data-zx-math-rendered', '1');
+      } catch {
+        // ignore (math will remain as raw LaTeX)
+      }
+    }
+  }, []);
+
   // If the preview DOM is replaced/reconciled (or images are inserted later),
   // keep resolving any placeholder asset images.
   useEffect(() => {
@@ -591,6 +610,7 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
       void resolveLatexAssetImages();
       clampFigureCaptionsToImageWidth();
       applyGridIntrinsicPercentSizing();
+      typesetMath();
       // If figures/media were inserted after initial HTML render, ensure per-figure Bg buttons exist.
       try {
         const frames = Array.from(container.querySelectorAll('.zx-figure-media-frame')) as HTMLElement[];
@@ -613,7 +633,7 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
     return () => {
       obs.disconnect();
     };
-  }, [resolveAssetImages, resolveLatexAssetImages, clampFigureCaptionsToImageWidth, applyGridIntrinsicPercentSizing]);
+  }, [resolveAssetImages, resolveLatexAssetImages, clampFigureCaptionsToImageWidth, applyGridIntrinsicPercentSizing, typesetMath]);
 
   // Also clamp captions after each HTML change (non-asset images / already-loaded images).
   useEffect(() => {
@@ -621,45 +641,10 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId }: MarkdownP
     applyGridIntrinsicPercentSizing();
   }, [html, clampFigureCaptionsToImageWidth, applyGridIntrinsicPercentSizing]);
 
-  // Typeset LaTeX math blocks using KaTeX.
+  // Typeset LaTeX math blocks after each HTML update.
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const nodes = Array.from(container.querySelectorAll('code.math-latex')) as HTMLElement[];
-    if (nodes.length === 0) return;
-
-    let cancelled = false;
-    (async () => {
-      try {
-        const katexMod = await import('katex');
-        // CJS/ESM interop: sometimes KaTeX is under .default
-        const katexAny = (katexMod as any)?.default ?? (katexMod as any);
-        const render = (katexAny?.render as ((tex: string, el: HTMLElement, opts: any) => void) | undefined) ?? undefined;
-        const renderToString =
-          (katexAny?.renderToString as ((tex: string, opts: any) => string) | undefined) ?? undefined;
-        if (!render && !renderToString) return;
-        for (const el of nodes) {
-          if (cancelled) return;
-          if (el.getAttribute('data-zx-math-rendered') === '1') continue;
-          const tex = el.textContent ?? '';
-          const displayMode = Boolean(el.closest('.math-block'));
-          if (render) {
-            render(tex, el, { throwOnError: false, displayMode });
-          } else if (renderToString) {
-            const htmlOut = renderToString(tex, { throwOnError: false, displayMode });
-            el.innerHTML = htmlOut;
-          }
-          el.setAttribute('data-zx-math-rendered', '1');
-        }
-      } catch {
-        // ignore (math will remain as raw LaTeX)
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [html]);
+    typesetMath();
+  }, [html, typesetMath]);
 
   // Cleanup blob URLs + in-flight fetch on unmount
   useEffect(() => {
