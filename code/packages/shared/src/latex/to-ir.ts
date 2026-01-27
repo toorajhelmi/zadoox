@@ -1731,6 +1731,23 @@ function latexInlineToMarkdown(text: string): string {
 
   const inlineMathToken = (tex: string): string => `@@ZXMATHI{${encodeURIComponent(tex)}}@@`;
 
+  // Bibliography formatting (common in arXiv sources / thebibliography):
+  // - \bibitem{key} / \bibitem[short]{key} => [key]
+  // - \newblock => separator (space)
+  // - {\em ...} => *...*
+  // - ~ => space
+  // Keep these early so later escaping/citation logic doesn't preserve raw commands.
+  s = s.replace(/\\bibitem(?:\[[^\]]*\])?\{([^}]+)\}\s*/g, (_m, key) => {
+    const k = String(key ?? '').trim();
+    return k ? `[${k}] ` : '';
+  });
+  s = s.replace(/\\newblock\b/g, ' ');
+  s = s.replace(/\{\\em\s+([^}]*)\}/g, (_m, inner) => `*${String(inner ?? '').trim()}*`);
+  // Non-breaking space in LaTeX sources; in markdown/HTML preview we want a normal space.
+  s = s.replace(/~/g, ' ');
+  // Treat explicit LaTeX line breaks in bib entries as spaces.
+  s = s.replace(/\\\\/g, ' ');
+
   // Inline math:
   // - \( ... \)
   s = s.replace(/\\\(([\s\S]*?)\\\)/g, (_m, tex) => inlineMathToken(String(tex ?? '').trim()));
