@@ -157,8 +157,25 @@ export interface TableNode extends BaseNode {
   type: 'table';
   caption?: string;
   label?: string;
-  header: string[];
-  rows: string[][];
+
+  /**
+   * Semantic table model (preferred).
+   * This is what downstream reasoning/SG should consume.
+   */
+  schema?: TableSemanticSchema;
+  data?: TableSemanticData;
+  /**
+   * Optional layout model (presentation-only).
+   * Used for spans/rules in renderers and LaTeX round-trips.
+   */
+  layout?: TableLayout;
+
+  /**
+   * Legacy table model (kept for backward compatibility while we migrate).
+   * Prefer `schema` + `data`.
+   */
+  header?: string[];
+  rows?: string[][];
   /**
    * Optional per-column alignment, derived from the table colSpec line (L/C/R).
    * If absent, consumers should treat columns as left-aligned.
@@ -179,6 +196,57 @@ export interface TableNode extends BaseNode {
    */
   style?: TableStyle;
 }
+
+export interface TableSemanticSchema {
+  columns: Array<{
+    id: string;
+    name?: string;
+    kind?: 'text' | 'number' | 'percent' | 'score' | 'bool' | 'id' | 'other';
+    unit?: string;
+    role?: 'key' | 'metric' | 'group' | 'note' | 'other';
+  }>;
+}
+
+export interface TableSemanticData {
+  rows: Array<{
+    id: string;
+    /**
+     * Cell text by column id. Values are raw strings (may contain inline math tokens).
+     */
+    cells: Record<string, string>;
+  }>;
+}
+
+export interface TableLayout {
+  /**
+   * Optional layout header rows (supports multi-row headers / column spanners).
+   */
+  header?: TableLayoutRow[];
+  /**
+   * Optional layout body rows (supports multirow/multicolumn at render time).
+   */
+  body?: TableLayoutRow[];
+}
+
+export interface TableLayoutRow {
+  cells: TableLayoutCell[];
+}
+
+export type TableLayoutCell =
+  | {
+      kind: 'ref';
+      columnIds: string[];
+      colSpan?: number;
+      rowSpan?: number;
+      ref: { rowId: string; columnId: string };
+    }
+  | {
+      kind: 'synthetic';
+      columnIds: string[];
+      colSpan?: number;
+      rowSpan?: number;
+      text: string;
+    };
 
 export interface GridCell {
   children: IrNode[];

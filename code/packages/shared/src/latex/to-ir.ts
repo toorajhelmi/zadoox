@@ -17,6 +17,8 @@ import type {
   TableStyle,
   TableRule,
   TableColumnAlign,
+  TableLayoutCell,
+  TableLayoutRow,
 } from '../ir/types';
 import type { TextStyle } from '../ir/types';
 
@@ -300,11 +302,108 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
         const idx = counters.table ?? 0;
         counters.table = idx + 1;
         const path = fullPath(`table[${idx}]`);
+        const slug = (s: string) =>
+          String(s ?? '')
+            .toLowerCase()
+            .replace(/[^a-z0-9_-]+/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '');
+        const colIds = (b.header ?? []).map((h, i) => {
+          const base = slug(String(h ?? '').trim());
+          return base ? `c:${base}:${i}` : `c:${i}`;
+        });
+        const schema = { columns: colIds.map((id, i) => ({ id, name: String((b.header ?? [])[i] ?? '') })) };
+        const data = {
+          rows: (b.rows ?? []).map((r, rIdx) => {
+            const rowId = `r:${rIdx}`;
+            const cells: Record<string, string> = {};
+            for (let c = 0; c < colIds.length; c++) {
+              cells[colIds[c]!] = String((r ?? [])[c] ?? '');
+            }
+            return { id: rowId, cells };
+          }),
+        };
+
+        const layout = (() => {
+          const headerSpans = (b.headerColSpans ?? []).filter((s) => s.colSpan > 1);
+          const bodySpans = (b.bodyColSpans ?? []).filter((s) => s.colSpan > 1);
+          const bodyRowSpans = (b.bodyRowSpans ?? []).filter((s) => s.rowSpan > 1);
+          const hasAny = headerSpans.length > 0 || bodySpans.length > 0 || bodyRowSpans.length > 0;
+          if (!hasAny) return undefined;
+
+          const headerCells: TableLayoutCell[] = [];
+          {
+            const spanByStart = new Map<number, number>();
+            for (const s of headerSpans) spanByStart.set(s.colStart, s.colSpan);
+            let c = 0;
+            while (c < colIds.length) {
+              const span = spanByStart.get(c);
+              if (span && span > 1) {
+                const s = Math.min(span, colIds.length - c);
+                headerCells.push({
+                  kind: 'synthetic',
+                  columnIds: colIds.slice(c, c + s),
+                  colSpan: s,
+                  text: String((b.header ?? [])[c] ?? ''),
+                });
+                c += s;
+                continue;
+              }
+              headerCells.push({ kind: 'synthetic', columnIds: [colIds[c]!], text: String((b.header ?? [])[c] ?? '') });
+              c += 1;
+            }
+          }
+
+          const bodyRows: TableLayoutRow[] = [];
+          const bodySpanByRow = new Map<number, Map<number, number>>();
+          for (const s of bodySpans) {
+            if (!bodySpanByRow.has(s.row)) bodySpanByRow.set(s.row, new Map());
+            bodySpanByRow.get(s.row)!.set(s.colStart, s.colSpan);
+          }
+          const bodyRowSpanByRow = new Map<number, Map<number, number>>();
+          for (const s of bodyRowSpans) {
+            if (!bodyRowSpanByRow.has(s.row)) bodyRowSpanByRow.set(s.row, new Map());
+            bodyRowSpanByRow.get(s.row)!.set(s.col, s.rowSpan);
+          }
+
+          for (let r = 0; r < (data.rows ?? []).length; r++) {
+            const rowId = data.rows[r]!.id;
+            const spans = bodySpanByRow.get(r) ?? new Map();
+            const rSpans = bodyRowSpanByRow.get(r) ?? new Map();
+            const covered = new Set<number>();
+            const cells: TableLayoutCell[] = [];
+            for (let c = 0; c < colIds.length; c++) {
+              if (covered.has(c)) continue;
+              const span = spans.get(c);
+              const colSpan = span && span > 1 ? Math.min(span, colIds.length - c) : 1;
+              for (let k = 1; k < colSpan; k++) covered.add(c + k);
+              const rowSpan = rSpans.get(c);
+              const colId = colIds[c]!;
+              cells.push({
+                kind: 'ref',
+                columnIds: colIds.slice(c, c + colSpan),
+                ...(colSpan > 1 ? { colSpan } : null),
+                ...(rowSpan && rowSpan > 1 ? { rowSpan } : null),
+                ref: { rowId, columnId: colId },
+              });
+            }
+            bodyRows.push({ cells });
+          }
+
+          return {
+            header: [{ cells: headerCells }],
+            body: bodyRows,
+          };
+        })();
+
         const node: TableNode = {
           type: 'table',
           id: b.id || stableNodeId({ docId, nodeType: 'table', path }),
           ...(b.caption ? { caption: b.caption } : null),
           ...(b.label ? { label: b.label } : null),
+          schema,
+          data,
+          ...(layout ? { layout } : null),
           header: b.header,
           rows: b.rows,
           ...(b.colAlign ? { colAlign: b.colAlign } : null),
@@ -531,6 +630,9 @@ type Block =
       label?: string;
       header: string[];
       rows: string[][];
+      headerColSpans?: Array<{ colStart: number; colSpan: number }>;
+      bodyColSpans?: Array<{ row: number; colStart: number; colSpan: number }>;
+      bodyRowSpans?: Array<{ row: number; col: number; rowSpan: number }>;
       colAlign?: TableColumnAlign[];
       vRules?: TableRule[];
       hRules?: TableRule[];
@@ -2161,12 +2263,15 @@ function parseAnyTabularxToTable(textRaw: string): Extract<Block, { kind: 'table
   if (cols <= 0) return null;
   const { colAlign, vRules } = parseGenericColSpecToAlignAndVRules(colSpec, cols);
   const style = parseTabularRuleStyleFromRaw(textRaw) ?? undefined;
-  const { header, rows, hRules } = parseTabularBodyToRows(body, cols);
+  const { header, rows, hRules, headerColSpans, bodyColSpans, bodyRowSpans } = parseTabularBodyToRows(body, cols);
 
   return {
     kind: 'table',
     header,
     rows,
+    ...(headerColSpans ? { headerColSpans } : null),
+    ...(bodyColSpans ? { bodyColSpans } : null),
+    ...(bodyRowSpans ? { bodyRowSpans } : null),
     colAlign,
     vRules,
     hRules,
@@ -2205,12 +2310,15 @@ function parseAnyTabularToTable(textRaw: string): Extract<Block, { kind: 'table'
   if (cols <= 0) return null;
   const { colAlign, vRules } = parseGenericColSpecToAlignAndVRules(colSpec, cols);
   const style = parseTabularRuleStyleFromRaw(textRaw) ?? undefined;
-  const { header, rows, hRules } = parseTabularBodyToRows(body, cols);
+  const { header, rows, hRules, headerColSpans, bodyColSpans, bodyRowSpans } = parseTabularBodyToRows(body, cols);
 
   return {
     kind: 'table',
     header,
     rows,
+    ...(headerColSpans ? { headerColSpans } : null),
+    ...(bodyColSpans ? { bodyColSpans } : null),
+    ...(bodyRowSpans ? { bodyRowSpans } : null),
     colAlign,
     vRules,
     hRules,
@@ -2315,53 +2423,156 @@ function parseGenericColSpecToAlignAndVRules(colSpecRaw: string, cols: number): 
   return { colAlign, vRules };
 }
 
-function parseTabularBodyToRows(bodyRaw: string, cols: number): { header: string[]; rows: string[][]; hRules: TableRule[] } {
-  let body = String(bodyRaw ?? '');
-  // Imported LaTeX sometimes has tabular content on a single line.
-  // Normalize common row/rule separators into line breaks so we can parse deterministically.
-  // - Insert a newline after each row terminator "\\".
-  // - Force booktabs rules onto their own lines.
-  body = body.replace(/\\\\/g, '\\\\\n');
-  body = body.replace(/\\toprule\b/g, '\\toprule\n');
-  body = body.replace(/\\midrule\b/g, '\\midrule\n');
-  body = body.replace(/\\bottomrule\b/g, '\\bottomrule\n');
-  body = body.replace(/\\cmidrule\b/g, '\\cmidrule\n');
+function parseTabularBodyToRows(bodyRaw: string, cols: number): {
+  header: string[];
+  rows: string[][];
+  hRules: TableRule[];
+  headerColSpans?: Array<{ colStart: number; colSpan: number }>;
+  bodyColSpans?: Array<{ row: number; colStart: number; colSpan: number }>;
+  bodyRowSpans?: Array<{ row: number; col: number; rowSpan: number }>;
+} {
+  const body = String(bodyRaw ?? '');
+  // Split into "statements" more safely than a global "\\\\" replace.
+  // IMPORTANT: "\\\\" can appear inside cell content (e.g. nested tabular inside \multirow),
+  // so we only treat it as a row terminator at brace-depth 0.
+  const splitTabularStatements = (src: string): string[] => {
+    const s = normalizeLineEndings(String(src ?? ''));
+    const out: string[] = [];
+    let cur = '';
+    let depth = 0;
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i]!;
+      if (ch === '{') depth++;
+      else if (ch === '}') depth = Math.max(0, depth - 1);
+      if (ch === '\n') {
+        const t = cur.trim();
+        if (t) out.push(t);
+        cur = '';
+        continue;
+      }
+      // Row terminator at top level.
+      if (depth === 0 && ch === '\\' && s[i + 1] === '\\') {
+        cur += '\\\\';
+        const t = cur.trim();
+        if (t) out.push(t);
+        cur = '';
+        i++;
+        continue;
+      }
+      cur += ch;
+    }
+    const t = cur.trim();
+    if (t) out.push(t);
+    return out;
+  };
 
-  const lines = body
-    .split('\n')
+  const splitCombinedRuleLine = (ln: string): string[] => {
+    const t = String(ln ?? '').trim();
+    if (!t) return [];
+    // Common arXiv pattern: \hline\rule{0pt}{2.0ex}
+    if (/^\\hline\b/.test(t) && /\\rule\{0pt\}\{[^}]+\}/.test(t)) return ['\\hline'];
+    return [t];
+  };
+
+  const lines = splitTabularStatements(body)
+    .flatMap(splitCombinedRuleLine)
     .map((l) => l.trim())
     .filter((l) => l.length > 0)
-    .filter((l) => !/^\\arrayrulecolor\{[^}]+\}(?:\s*%.*)?$/.test(l));
+    // Rule/color setup lines are emitted before hlines/rows; skip them so they don't become table content.
+    .filter((l) => !/^\\arrayrulecolor\{[^}]+\}(?:\s*%.*)?$/.test(l))
+    // Spacer rules: ignore vertical spacing hacks entirely.
+    .filter((l) => !/^\\rule\{0pt\}\{[^}]+\}(?:\s*%.*)?$/.test(l));
 
   const toRule = (n: number): TableRule => (n >= 2 ? 'double' : n === 1 ? 'single' : 'none');
-  const toCellText = (s: string): string => latexInlineToMarkdown(String(s ?? '').trim());
+  const toCellText = (s: string): string =>
+    latexInlineToMarkdown(String(s ?? '').trim())
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const readBraceGroup = (s: string, startIdx: number): { value: string; nextIdx: number } | null => {
+    if (s[startIdx] !== '{') return null;
+    let depth = 1;
+    let i = startIdx + 1;
+    const start = i;
+    while (i < s.length && depth > 0) {
+      const ch = s[i]!;
+      if (ch === '{') depth++;
+      else if (ch === '}') depth--;
+      i++;
+    }
+    if (depth !== 0) return null;
+    return { value: s.slice(start, i - 1), nextIdx: i };
+  };
+
+  const parseMulticolumn = (rawCell: string): { colSpan: number; text: string } | null => {
+    const t = String(rawCell ?? '').trim();
+    if (!t.startsWith('\\multicolumn')) return null;
+    let i = '\\multicolumn'.length;
+    while (i < t.length && /\s/.test(t[i]!)) i++;
+    const g1 = readBraceGroup(t, i);
+    if (!g1) return null;
+    const n = Number(String(g1.value ?? '').trim());
+    if (!Number.isFinite(n) || n <= 1) return null;
+    i = g1.nextIdx;
+    while (i < t.length && /\s/.test(t[i]!)) i++;
+    const _g2 = readBraceGroup(t, i);
+    if (!_g2) return null;
+    i = _g2.nextIdx;
+    while (i < t.length && /\s/.test(t[i]!)) i++;
+    const g3 = readBraceGroup(t, i);
+    if (!g3) return null;
+    return { colSpan: Math.floor(n), text: toCellText(g3.value) };
+  };
+
+  const parseMultirow = (rawCell: string): { rowSpan: number; text: string } | null => {
+    const t = String(rawCell ?? '').trim();
+    if (!t.startsWith('\\multirow')) return null;
+    let i = '\\multirow'.length;
+    while (i < t.length && /\s/.test(t[i]!)) i++;
+    const g1 = readBraceGroup(t, i);
+    if (!g1) return null;
+    const n = Number(String(g1.value ?? '').trim());
+    if (!Number.isFinite(n) || n <= 1) return null;
+    i = g1.nextIdx;
+    while (i < t.length && /\s/.test(t[i]!)) i++;
+    const _g2 = readBraceGroup(t, i);
+    if (!_g2) return null;
+    i = _g2.nextIdx;
+    while (i < t.length && /\s/.test(t[i]!)) i++;
+    const g3 = readBraceGroup(t, i);
+    if (!g3) return null;
+    return { rowSpan: Math.floor(n), text: toCellText(g3.value) };
+  };
 
   const hRules: TableRule[] = [];
   const rows: string[][] = [];
   const header: string[] = [];
+  const headerColSpans: Array<{ colStart: number; colSpan: number }> = [];
+  const bodyColSpans: Array<{ row: number; colStart: number; colSpan: number }> = [];
+  const bodyRowSpans: Array<{ row: number; col: number; rowSpan: number }> = [];
   let i = 0;
 
   const readHLines = () => {
     let n = 0;
     while (i < lines.length) {
       const t = lines[i] ?? '';
-      if (t === '\\hline') {
+      if (t === '\\hline' || /^\\hline\b/.test(t)) {
         n += 1;
         i++;
         continue;
       }
       // booktabs: treat top/bottom as "double" boundaries, mid as single
-      if (t === '\\toprule') {
+      if (t === '\\toprule' || /^\\toprule\b/.test(t)) {
         n += 2;
         i++;
         continue;
       }
-      if (t === '\\midrule') {
+      if (t === '\\midrule' || /^\\midrule\b/.test(t)) {
         n += 1;
         i++;
         continue;
       }
-      if (t === '\\bottomrule') {
+      if (t === '\\bottomrule' || /^\\bottomrule\b/.test(t)) {
         n += 2;
         i++;
         continue;
@@ -2377,27 +2588,51 @@ function parseTabularBodyToRows(bodyRaw: string, cols: number): { header: string
     return n;
   };
 
-  const readRow = (): string[] | null => {
+  const readRow = (rowKind: 'header' | 'body', bodyRowIndex: number): string[] | null => {
     if (i >= lines.length) return null;
     const rowLine = lines[i] ?? '';
     i++;
     const m = /^(.*)\\\\\s*$/.exec(rowLine);
     const core = String((m ? m[1] : rowLine) ?? '').trim();
     if (!core) return Array.from({ length: cols }).map(() => '');
-    const parts = core.split(/&(?![^{}]*\})/).map((p) => toCellText(p));
+    const rawParts = core.split(/&(?![^{}]*\})/).map((p) => String(p ?? '').trim());
+    const parts: string[] = [];
+    let c = 0;
+    for (const rp of rawParts) {
+      if (c >= cols) break;
+      const mc = parseMulticolumn(rp);
+      if (mc) {
+        const span = Math.min(cols - c, mc.colSpan);
+        parts.push(mc.text);
+        for (let k = 1; k < span; k++) parts.push('');
+        if (rowKind === 'header') headerColSpans.push({ colStart: c, colSpan: span });
+        else bodyColSpans.push({ row: bodyRowIndex, colStart: c, colSpan: span });
+        c += span;
+        continue;
+      }
+      const mr = parseMultirow(rp);
+      if (mr) {
+        parts.push(mr.text);
+        if (rowKind === 'body') bodyRowSpans.push({ row: bodyRowIndex, col: c, rowSpan: Math.min(mr.rowSpan, 999) });
+        c += 1;
+        continue;
+      }
+      parts.push(toCellText(rp));
+      c += 1;
+    }
     while (parts.length < cols) parts.push('');
     if (parts.length > cols) parts.length = cols;
     return parts;
   };
 
   hRules.push(toRule(readHLines()));
-  const h = readRow();
+  const h = readRow('header', -1);
   if (!h) return { header: [], rows: [], hRules: [] };
   header.push(...h);
   hRules.push(toRule(readHLines()));
 
   while (i < lines.length) {
-    const r = readRow();
+    const r = readRow('body', rows.length);
     if (!r) break;
     rows.push(r);
     hRules.push(toRule(readHLines()));
@@ -2406,7 +2641,14 @@ function parseTabularBodyToRows(bodyRaw: string, cols: number): { header: string
   const totalRows = 1 + rows.length;
   while (hRules.length < totalRows + 1) hRules.push('none');
   if (hRules.length > totalRows + 1) hRules.length = totalRows + 1;
-  return { header, rows, hRules };
+  return {
+    header,
+    rows,
+    hRules,
+    ...(headerColSpans.length ? { headerColSpans } : null),
+    ...(bodyColSpans.length ? { bodyColSpans } : null),
+    ...(bodyRowSpans.length ? { bodyRowSpans } : null),
+  };
 }
 
 function parseFigureGridFromSubfigureRaw(raw: string): {

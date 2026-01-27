@@ -373,8 +373,9 @@ export const api = {
       return response.data;
     },
 
-    latexIrGet: async (id: string): Promise<{ ir: any }> => {
-      const response = await fetchApi<{ ir: any }>(`/documents/${id}/latex/ir`);
+    latexIrGet: async (id: string, opts?: { cacheBust?: string }): Promise<{ ir: any }> => {
+      const qs = opts?.cacheBust ? `?v=${encodeURIComponent(opts.cacheBust)}` : '';
+      const response = await fetchApi<{ ir: any }>(`/documents/${id}/latex/ir${qs}`);
       if (!response.data) throw new ApiError('Failed to build LaTeX IR', 'LATEX_IR_GET_FAILED', 500);
       return response.data;
     },

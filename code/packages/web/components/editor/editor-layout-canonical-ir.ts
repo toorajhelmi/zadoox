@@ -95,18 +95,23 @@ export function useCanonicalIrState(params: {
       (async () => {
         // On initial load for LaTeX docs, prefer backend-expanded IR so multi-file imports (\input/\include)
         // produce a complete outline. On user edits, fall back to local parse (fast).
-        if (shouldInitFromLatexOnLoad && documentLatex) {
+        // IMPORTANT: For LaTeX-first docs with a manifest, we MUST prefer the backend-expanded IR.
+        // Local parsing cannot expand includes, which breaks tables/figures in real arXiv sources.
+        if ((shouldInitFromLatexOnLoad || shouldParseFromLatexEdit) && documentLatex) {
           try {
-            const built = await api.documents.latexIrGet(docKey);
+            const built = await api.documents.latexIrGet(docKey, { cacheBust: String(Date.now()) });
             const nextIr = (built as any)?.ir as DocumentNode | null;
             if (nextIr) {
               setCanonicalIr(nextIr);
               didInitFromLatexDocKeyRef.current = docKey;
-              // Do NOT touch lastParsedLatexNonceRef here: user hasn't edited latex yet.
+              // Mark the edit nonce as handled so we don't immediately re-run.
+              if (shouldParseFromLatexEdit) lastParsedLatexNonceRef.current = latexEditNonce;
               return;
             }
           } catch {
-            // fall through to local parse
+            // If backend expansion fails, keep last good IR.
+            // (Local parse is not reliable for LaTeX bundle docs.)
+            return;
           }
         }
 

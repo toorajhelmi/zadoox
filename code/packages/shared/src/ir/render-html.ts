@@ -1,5 +1,5 @@
 import { renderMarkdownToHtml } from '../editor/markdown';
-import type { DocumentNode, GridNode, IrNode, TextStyle } from './types';
+import type { DocumentNode, GridNode, IrNode, TableLayoutCell, TableLayoutRow, TableNode, TextStyle } from './types';
 import { getGridSpacingPreset } from './grid-spacing';
 
 const TRANSPARENT_PIXEL =
@@ -346,7 +346,78 @@ function renderNode(node: IrNode): string {
       return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;${innerWidth};${innerMargin}"><span class="zx-figure-media-frame"><img src="${TRANSPARENT_PIXEL}" data-zx-asset-path="${relPath}" alt="${cap}" style="display:block;max-width:100%;width:100%;height:auto" /></span>${caption}</span></span>`;
     }
     case 'table': {
-      const cols = Math.max(0, (node.header ?? []).length);
+      const t = node as unknown as TableNode;
+      const schemaCols = (t.schema?.columns ?? []).map((c) => ({ id: String(c.id ?? ''), name: String(c.name ?? '') }));
+      const dataRows = t.data?.rows ?? [];
+
+      // Fallback to legacy tables if semantic model is absent.
+      if (schemaCols.length === 0) {
+        const cols = Math.max(0, (t.header ?? []).length);
+        const align = (t.colAlign && t.colAlign.length === cols ? t.colAlign : Array.from({ length: cols }).map(() => 'left')) as Array<
+          'left' | 'center' | 'right'
+        >;
+        const vRules =
+          t.vRules && t.vRules.length === cols + 1 ? t.vRules : Array.from({ length: cols + 1 }).map(() => 'none' as const);
+        const totalRows = 1 + (t.rows?.length ?? 0);
+        const hRules =
+          t.hRules && t.hRules.length === totalRows + 1 ? t.hRules : Array.from({ length: totalRows + 1 }).map(() => 'none' as const);
+
+        const borderColor = (t.style?.borderColor ?? '').trim() || 'rgba(255,255,255,0.16)';
+        const borderWidth = Number.isFinite(t.style?.borderWidthPx) && (t.style?.borderWidthPx ?? 0) > 0 ? Math.round(t.style!.borderWidthPx!) : 1;
+        const singleStyle = (t.style?.borderStyle ?? 'solid') as 'solid' | 'dotted' | 'dashed';
+
+        const cssAlign = (a: 'left' | 'center' | 'right') => (a === 'center' ? 'center' : a === 'right' ? 'right' : 'left');
+        const cssBorder = (rule: 'none' | 'single' | 'double') => {
+          if (rule === 'none') return 'none';
+          const style = rule === 'double' ? 'double' : singleStyle;
+          // Double borders look better with a slightly thicker width; keep deterministic.
+          const w = rule === 'double' ? Math.max(3, borderWidth) : borderWidth;
+          return `${w}px ${style} ${borderColor}`;
+        };
+
+        const cellStyle = (params: { rowIndex: number; colIndex: number; isHeader: boolean }): string => {
+          const { rowIndex, colIndex } = params;
+          const styles: string[] = [];
+          styles.push(`text-align:${cssAlign(align[colIndex] ?? 'left')}`);
+          if (colIndex === 0) styles.push(`border-left:${cssBorder(vRules[0] ?? 'none')}`);
+          if (colIndex > 0) styles.push(`border-left:${cssBorder(vRules[colIndex] ?? 'none')}`);
+          if (colIndex === cols - 1) styles.push(`border-right:${cssBorder(vRules[cols] ?? 'none')}`);
+          if (rowIndex === 0) styles.push(`border-top:${cssBorder(hRules[0] ?? 'none')}`);
+          if (rowIndex > 0) styles.push(`border-top:${cssBorder(hRules[rowIndex] ?? 'none')}`);
+          if (rowIndex === totalRows - 1) styles.push(`border-bottom:${cssBorder(hRules[totalRows] ?? 'none')}`);
+          styles.push('padding:6px 10px');
+          return styles.join(';');
+        };
+
+        const headerCells = (t.header ?? [])
+          .map((h, c) => `<th style="${cellStyle({ rowIndex: 0, colIndex: c, isHeader: true })}">${renderInlineTextWithMathTokens(escapeHtml(String(h)))}</th>`)
+          .join('');
+        const header = `<tr>${headerCells}</tr>`;
+
+        const bodyRows = (t.rows ?? [])
+          .map((r, rIdx) => {
+            const rowIndex = 1 + rIdx;
+            const tds = Array.from({ length: cols }).map((_, c) => {
+              const cell = (r ?? [])[c] ?? '';
+              return `<td style="${cellStyle({ rowIndex, colIndex: c, isHeader: false })}">${renderInlineTextWithMathTokens(escapeHtml(String(cell)))}</td>`;
+            });
+            return `<tr>${tds.join('')}</tr>`;
+          })
+          .join('');
+
+        const caption = String(t.caption ?? '').trim();
+        const capHtml =
+          caption.length > 0
+            ? `<caption style="caption-side:top;text-align:left;margin-bottom:6px;color:#9aa0a6;font-style:italic">${renderInlineTextWithMathTokens(
+                escapeHtml(caption)
+              )}</caption>`
+            : '';
+        const label = String((t as unknown as { label?: string }).label ?? '').trim();
+        const idAttr = label ? ` id="${latexLabelToDomId(label, 'table')}"` : '';
+        return `<table${idAttr} style="border-collapse:collapse;width:100%">${capHtml}<thead>${header}</thead><tbody>${bodyRows}</tbody></table>`;
+      }
+
+      const cols = schemaCols.length;
       const align = (node.colAlign && node.colAlign.length === cols ? node.colAlign : Array.from({ length: cols }).map(() => 'left')) as Array<
         'left' | 'center' | 'right'
       >;
@@ -393,21 +464,68 @@ function renderNode(node: IrNode): string {
         return styles.join(';');
       };
 
-      const headerCells = (node.header ?? [])
-        .map((h, c) => `<th style="${cellStyle({ rowIndex: 0, colIndex: c, isHeader: true })}">${renderInlineTextWithMathTokens(escapeHtml(String(h)))}</th>`)
-        .join('');
-      const header = `<tr>${headerCells}</tr>`;
+      const defaultHeaderLayout = (): TableLayoutRow[] => [
+        {
+          cells: schemaCols.map((c) => ({
+            kind: 'synthetic' as const,
+            columnIds: [c.id],
+            text: c.name || c.id,
+          })),
+        },
+      ];
+      const defaultBodyLayout = (): TableLayoutRow[] =>
+        (dataRows ?? []).map((r) => ({
+          cells: schemaCols.map((c) => ({
+            kind: 'ref' as const,
+            columnIds: [c.id],
+            ref: { rowId: r.id, columnId: c.id },
+          })),
+        }));
 
-      const bodyRows = (node.rows ?? [])
-        .map((r, rIdx) => {
-          const rowIndex = 1 + rIdx;
-          const tds = Array.from({ length: cols }).map((_, c) => {
-            const cell = (r ?? [])[c] ?? '';
-            return `<td style="${cellStyle({ rowIndex, colIndex: c, isHeader: false })}">${renderInlineTextWithMathTokens(escapeHtml(String(cell)))}</td>`;
-          });
-          return `<tr>${tds.join('')}</tr>`;
-        })
-        .join('');
+      const layoutHeader = (t.layout?.header && t.layout.header.length > 0 ? t.layout.header : defaultHeaderLayout()) as TableLayoutRow[];
+      const layoutBody = (t.layout?.body && t.layout.body.length > 0 ? t.layout.body : defaultBodyLayout()) as TableLayoutRow[];
+
+      const rowById = new Map<string, { id: string; cells: Record<string, string> }>();
+      for (const r of dataRows) rowById.set(r.id, r);
+
+      const renderCellInner = (cell: TableLayoutCell): string => {
+        if (cell.kind === 'synthetic') return renderInlineTextWithMathTokens(escapeHtml(cell.text ?? ''));
+        const row = rowById.get(cell.ref.rowId);
+        const raw = row?.cells?.[cell.ref.columnId] ?? '';
+        return renderInlineTextWithMathTokens(escapeHtml(String(raw)));
+      };
+
+      const renderLayoutSection = (rows: TableLayoutRow[], isHeaderRow: boolean): string => {
+        // Track occupied positions due to rowSpans so we don't render overlapping cells.
+        const occupied: Record<string, boolean> = {};
+        const out: string[] = [];
+        for (let r = 0; r < rows.length; r++) {
+          const row = rows[r]!;
+          let cIndex = 0;
+          const parts: string[] = [];
+          for (const cell of row.cells ?? []) {
+            while (occupied[`${r}:${cIndex}`]) cIndex++;
+            const colSpan = Math.max(1, Number(cell.colSpan ?? cell.columnIds?.length ?? 1) || 1);
+            const rowSpan = Math.max(1, Number(cell.rowSpan ?? 1) || 1);
+            // Mark occupied slots.
+            for (let rr = r; rr < r + rowSpan; rr++) {
+              for (let cc = cIndex; cc < cIndex + colSpan; cc++) {
+                if (rr === r && cc === cIndex) continue;
+                occupied[`${rr}:${cc}`] = true;
+              }
+            }
+            const spanAttrs = `${colSpan > 1 ? ` colspan="${colSpan}"` : ''}${rowSpan > 1 ? ` rowspan="${rowSpan}"` : ''}`;
+            const tag = isHeaderRow ? 'th' : 'td';
+            parts.push(`<${tag}${spanAttrs} style="${cellStyle({ rowIndex: r, colIndex: cIndex, isHeader: isHeaderRow })}">${renderCellInner(cell)}</${tag}>`);
+            cIndex += colSpan;
+          }
+          out.push(`<tr>${parts.join('')}</tr>`);
+        }
+        return out.join('');
+      };
+
+      const header = renderLayoutSection(layoutHeader, true);
+      const bodyRows = renderLayoutSection(layoutBody, false);
 
       const caption = String(node.caption ?? '').trim();
       const capHtml =

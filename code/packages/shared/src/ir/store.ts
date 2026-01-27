@@ -42,9 +42,27 @@ function nodeContentForHash(node: IrNode): string {
       return `fig:${normalizeWhitespace(node.src)}:${normalizeWhitespace(node.caption)}:${normalizeWhitespace(node.label ?? '')}`;
     case 'table': {
       const t = node as TableNode;
-      const header = t.header.map(normalizeTableCell).join('|');
-      const rows = t.rows.map((r) => r.map(normalizeTableCell).join('|')).join('\n');
-      return `table:${normalizeWhitespace(t.caption ?? '')}:${normalizeWhitespace(t.label ?? '')}:${header}\n${rows}`;
+      const caption = normalizeWhitespace(t.caption ?? '');
+      const label = normalizeWhitespace(t.label ?? '');
+
+      const schemaCols = (t.schema?.columns ?? []).map((c) => ({
+        id: String(c.id ?? ''),
+        name: normalizeWhitespace(c.name ?? ''),
+      }));
+      const dataRows = t.data?.rows ?? [];
+
+      // Prefer semantic model if present; otherwise fall back to legacy fields.
+      if (schemaCols.length > 0) {
+        const header = schemaCols.map((c) => normalizeTableCell(c.name || c.id)).join('|');
+        const rows = dataRows
+          .map((r) => schemaCols.map((c) => normalizeTableCell(String(r.cells?.[c.id] ?? ''))).join('|'))
+          .join('\n');
+        return `table:${caption}:${label}:${header}\n${rows}`;
+      }
+
+      const legacyHeader = (t.header ?? []).map(normalizeTableCell).join('|');
+      const legacyRows = (t.rows ?? []).map((r) => (r ?? []).map(normalizeTableCell).join('|')).join('\n');
+      return `table:${caption}:${label}:${legacyHeader}\n${legacyRows}`;
     }
     case 'grid': {
       const g = node as GridNode;
