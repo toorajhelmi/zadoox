@@ -760,6 +760,32 @@ function parseBlocks(latex: string): Block[] {
     return s;
   };
 
+  const stripLeadingLayoutCommands = (input: string): string => {
+    let s = String(input ?? '');
+    // Keep trimming leading whitespace as we remove tokens.
+    s = s.trimStart();
+    // Remove repeated layout-only commands that sometimes prefix real structure on the same line.
+    // Example from arXiv sources: "\pagebreak \section*{...}"
+    // Also tolerate spacing helpers like \vspace{...}.
+    let changed = true;
+    while (changed) {
+      changed = false;
+      const m1 = /^\\(pagebreak|newpage|clearpage|cleardoublepage|vfill|smallskip|medskip|bigskip)\b\s*/.exec(s);
+      if (m1) {
+        s = s.slice(m1[0].length).trimStart();
+        changed = true;
+        continue;
+      }
+      const m2 = /^\\(vspace|hspace)\*?\{[^}]*\}\s*/.exec(s);
+      if (m2) {
+        s = s.slice(m2[0].length).trimStart();
+        changed = true;
+        continue;
+      }
+    }
+    return s;
+  };
+
   const stripFormattingOnlyMacros = (input: string): string => {
     let s = String(input ?? '');
     // Remove simple formatting-only commands that often appear in boilerplate/legal notices.
@@ -992,7 +1018,15 @@ function parseBlocks(latex: string): Block[] {
     // Also tolerate trailing comments like: \end{document} % comment
     // Some environments may introduce a BOM/zero-width chars (e.g. from copy/paste or server transforms).
     // Strip them so boilerplate lines like \end{document} never leak into IR/XMD.
-    const trimmed = line.trim().replace(/^[\uFEFF\u200B\u200C\u200D]+/, '');
+    const trimmed0 = line.trim().replace(/^[\uFEFF\u200B\u200C\u200D]+/, '');
+    // Strip leading layout-only commands so structure like "\pagebreak \section{...}" is detected.
+    const trimmed = stripLeadingLayoutCommands(trimmed0);
+    // Standalone layout-only lines should not become paragraphs.
+    if (!trimmed) {
+      i++;
+      blockIndex++;
+      continue;
+    }
     // If this doc has an explicit \begin{document}, treat everything before it as "preamble":
     // - ignore macro/package/setup lines (e.g. \PassOptionsToPackage, \newcommand, \def, etc.)
     // - but still extract \title/\author/\date so the document renders nicely.
