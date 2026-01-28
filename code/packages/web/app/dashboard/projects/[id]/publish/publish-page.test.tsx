@@ -53,7 +53,9 @@ describe('Publish page', () => {
         projectId: 'proj-1',
         title: 'Doc One',
         content: 'Hello',
-        metadata: { type: 'standalone', lastEditedFormat: 'markdown', latex: '\\\\section{Hi}' },
+        // Phase 17+: LaTeX is stored separately from metadata on the document.
+        latex: { entryPath: 'main.tex', basePrefix: 'projects/proj-1/documents/doc-1/latex', bucket: 'latex' },
+        metadata: { type: 'standalone', lastEditedFormat: 'markdown' },
         version: 1,
         createdAt: new Date(),
         updatedAt: new Date(),

@@ -830,122 +830,138 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
     const container = containerRef.current;
     if (!container) return;
 
-    const cssEscape = (raw: string): string => {
-      const cssObj = (globalThis as any).CSS;
-      if (cssObj && typeof cssObj.escape === 'function') return cssObj.escape(raw);
-      // Minimal escape fallback (good enough for our generated ids which are already sanitized).
-      return String(raw ?? '').replace(/[^a-zA-Z0-9_-]/g, (m) => `\\${m}`);
-    };
+    // IMPORTANT: This pass must never break preview rendering (figures/math).
+    // Any unexpected DOM edge cases must be swallowed.
+    try {
+      const getById = (id: string): HTMLElement | null => {
+        // Use DOM id lookup to avoid CSS selector escaping pitfalls.
+        return document.getElementById(id);
+      };
 
-    const buildIdIndex = (selector: string, prefix: string): Map<string, number> => {
-      const map = new Map<string, number>();
-      const els = Array.from(container.querySelectorAll(selector)) as HTMLElement[];
-      let n = 1;
-      for (const el of els) {
-        const id = el.getAttribute('id') || '';
-        if (!id || !id.startsWith(prefix)) continue;
-        // Only number each id once.
-        if (!map.has(id)) {
-          map.set(id, n);
-          n++;
+      const buildIdIndex = (selector: string, prefix: string): Map<string, number> => {
+        const map = new Map<string, number>();
+        const els = Array.from(container.querySelectorAll(selector)) as HTMLElement[];
+        let n = 1;
+        for (const el of els) {
+          const id = el.getAttribute('id') || '';
+          if (!id || !id.startsWith(prefix)) continue;
+          // Only number each id once.
+          if (!map.has(id)) {
+            map.set(id, n);
+            n++;
+          }
         }
-      }
-      return map;
-    };
+        return map;
+      };
 
-    // Targets are created by shared IR renderers:
-    // - tables: <table id="table-...">
-    // - figures: <span id="figure-...">...</span>
-    // - equations: element with id="eq-..."
-    // - sections: heading tags with id="sec-..."
-    const tableNums = buildIdIndex('table[id]', 'table-');
-    const figNums = buildIdIndex('[id^="figure-"]', 'figure-');
-    const eqNums = buildIdIndex('[id^="eq-"]', 'eq-');
+      // Targets are created by shared IR renderers:
+      // - tables: <table id="table-...">
+      // - figures: <span id="figure-...">...</span>
+      // - equations: element with id="eq-..."
+      // - sections: heading tags with id="sec-..."
+      const tableNums = buildIdIndex('table[id]', 'table-');
+      const figNums = buildIdIndex('[id^="figure-"]', 'figure-');
+      const eqNums = buildIdIndex('[id^="eq-"]', 'eq-');
 
     // Hierarchical section numbering (1, 1.1, 1.1.1...) for non-starred sections only.
-    const secNums = new Map<string, string>();
-    {
-      const headings = Array.from(container.querySelectorAll('h1[id],h2[id],h3[id],h4[id],h5[id],h6[id]')) as HTMLElement[];
-      const counters = [0, 0, 0, 0, 0, 0]; // by logical section level (1..6)
-      for (const h of headings) {
+    // Store the computed number on the element so links can look it up reliably.
+      const secNums = new Map<string, string>();
+      const sectionHeadings = Array.from(container.querySelectorAll('h1[id],h2[id],h3[id],h4[id],h5[id],h6[id]')) as HTMLElement[];
+      const secCounters = [0, 0, 0, 0, 0, 0];
+      for (const h of sectionHeadings) {
         const id = h.getAttribute('id') || '';
         if (!id.startsWith('sec-')) continue;
         if (h.getAttribute('data-zx-starred') === '1') continue;
         const tag = (h.tagName || '').toUpperCase();
-        // Our IR uses h2 for level 1, h3 for level 2, etc.
         const depth = tag === 'H1' ? 0 : tag === 'H2' ? 1 : tag === 'H3' ? 2 : tag === 'H4' ? 3 : tag === 'H5' ? 4 : 5;
-        counters[depth] += 1;
-        for (let d = depth + 1; d < counters.length; d++) counters[d] = 0;
-        const parts = counters.slice(0, depth + 1).filter((n) => n > 0);
+        secCounters[depth] += 1;
+        for (let d = depth + 1; d < secCounters.length; d++) secCounters[d] = 0;
+        const parts = secCounters.slice(0, depth + 1).filter((n) => n > 0);
         if (parts.length === 0) continue;
-        secNums.set(id, parts.join('.'));
+        const num = parts.join('.');
+        secNums.set(id, num);
+        h.setAttribute('data-zx-secnum', num);
       }
-    }
 
-    const labelForId = (id: string): string | null => {
-      const t = tableNums.get(id);
-      if (t) return `Table ${t}`;
-      const f = figNums.get(id);
-      if (f) return `Figure ${f}`;
-      const s = secNums.get(id);
-      if (s) return `Section ${s}`;
-      const e = eqNums.get(id);
-      if (e) return `Eq. (${e})`;
-      return null;
-    };
+    // Also store computed numbers on table/figure targets so links can look them up.
+      for (const [id, n] of tableNums.entries()) {
+        const el = getById(id);
+        if (el) el.setAttribute('data-zx-tabnum', String(n));
+      }
+      for (const [id, n] of figNums.entries()) {
+        const el = getById(id);
+        if (el) el.setAttribute('data-zx-fignum', String(n));
+      }
+      for (const [id, n] of eqNums.entries()) {
+        const el = getById(id);
+        if (el) el.setAttribute('data-zx-eqnum', String(n));
+      }
+
+      const labelForId = (id: string): string | null => {
+        const el = getById(id);
+        const t = el?.getAttribute('data-zx-tabnum') || (tableNums.get(id) ? String(tableNums.get(id)) : '');
+        if (t) return `Table ${t}`;
+        const f = el?.getAttribute('data-zx-fignum') || (figNums.get(id) ? String(figNums.get(id)) : '');
+        if (f) return `Figure ${f}`;
+        const s = el?.getAttribute('data-zx-secnum') || (secNums.get(id) ?? '');
+        if (s) return `Section ${s}`;
+        const e = el?.getAttribute('data-zx-eqnum') || (eqNums.get(id) ? String(eqNums.get(id)) : '');
+        if (e) return `Eq. (${e})`;
+        return null;
+      };
 
     const alreadyPretty = (raw: string): boolean => /^(Table|Figure|Section)\s+\d+\b|^Eq\.\s*\(\d+\)\b/.test(String(raw ?? '').trim());
 
-    const links = Array.from(container.querySelectorAll('a[href^="#"]')) as HTMLAnchorElement[];
-    for (const a of links) {
-      // Never touch citations (they are handled separately and can be numeric or key-based).
-      if (a.classList.contains('citation-link')) continue;
-      const href = a.getAttribute('href') || '';
-      if (!href.startsWith('#') || href.length < 2) continue;
-      const id = href.slice(1);
-      const friendly = labelForId(id);
-      if (!friendly) continue;
+      const links = Array.from(container.querySelectorAll('a[href^="#"]')) as HTMLAnchorElement[];
+      for (const a of links) {
+        // Never touch citations (they are handled separately and can be numeric or key-based).
+        if (a.classList.contains('citation-link')) continue;
+        const href = a.getAttribute('href') || '';
+        if (!href.startsWith('#') || href.length < 2) continue;
+        const id = href.slice(1);
+        const friendly = labelForId(id);
+        if (!friendly) continue;
 
-      const raw = (a.textContent || '').trim();
-      // Avoid clobbering already-pretty refs (e.g. user content that already says "Figure 3").
-      if (alreadyPretty(raw)) continue;
-      a.setAttribute('title', raw);
-      a.textContent = friendly;
-      a.setAttribute('data-zx-ref-pretty', '1');
-    }
+        const raw = (a.textContent || '').trim();
+        // Avoid clobbering already-pretty refs (e.g. user content that already says "Figure 3").
+        if (alreadyPretty(raw)) continue;
+        a.setAttribute('title', raw);
+        // For ref links, plain text is correct and avoids any weird DOM issues.
+        a.textContent = friendly;
+        a.setAttribute('data-zx-ref-pretty', '1');
+      }
 
     // Also prefix captions so they match the same numbering used by refs.
     // Tables: <table id="table-..."><caption>...</caption>...
-    for (const [id, n] of tableNums.entries()) {
-      const table = container.querySelector(`table#${cssEscape(id)}`) as HTMLTableElement | null;
-      const cap = table?.querySelector('caption') as HTMLTableCaptionElement | null;
-      if (!cap) continue;
-      const t = (cap.textContent || '').trim();
-      if (!t) continue;
-      if (/^Table\s+\d+\b/i.test(t)) continue;
-      cap.textContent = `Table ${n}. ${t}`;
-    }
+      for (const [id, n] of tableNums.entries()) {
+        const table = getById(id) as HTMLTableElement | null;
+        const cap = table?.querySelector('caption') as HTMLTableCaptionElement | null;
+        if (!cap) continue;
+        if (cap.getAttribute('data-zx-numbered') === '1') continue;
+        const currentText = (cap.textContent || '').trim();
+        if (!currentText) continue;
+        if (/^Table\s+\d+\b/i.test(currentText)) continue;
+        cap.insertBefore(document.createTextNode(`Table ${n}. `), cap.firstChild);
+        cap.setAttribute('data-zx-numbered', '1');
+      }
 
     // Figures: markdown renderer uses <em class="figure-caption">...</em> inside a wrapper.
-    for (const [id, n] of figNums.entries()) {
-      const fig = container.querySelector(`#${cssEscape(id)}`) as HTMLElement | null;
-      if (!fig) continue;
-      const cap = fig.querySelector('.figure-caption') as HTMLElement | null;
-      if (!cap) continue;
-      const t = (cap.textContent || '').trim();
-      if (!t) continue;
-      if (/^Figure\s+\d+\b/i.test(t)) continue;
-      cap.textContent = `Figure ${n}. ${t}`;
-    }
-
-    // Also number section headings in-place (prefix "1.2 ").
-    for (const [id, num] of secNums.entries()) {
-      const h = container.querySelector(`#${cssEscape(id)}`) as HTMLElement | null;
-      if (!h) continue;
-      const t = (h.textContent || '').trim();
-      if (!t) continue;
-      if (/^\d+(\.\d+)*\s+/.test(t)) continue;
-      h.textContent = `${num} ${t}`;
+      for (const [id, n] of figNums.entries()) {
+        const fig = getById(id) as HTMLElement | null;
+        if (!fig) continue;
+        const cap = fig.querySelector('.figure-caption') as HTMLElement | null;
+        if (!cap) continue;
+        if (cap.getAttribute('data-zx-numbered') === '1') continue;
+        const currentText = (cap.textContent || '').trim();
+        if (!currentText) continue;
+        if (/^Figure\s+\d+\b/i.test(currentText)) continue;
+        cap.insertBefore(document.createTextNode(`Figure ${n}. `), cap.firstChild);
+        cap.setAttribute('data-zx-numbered', '1');
+      }
+    } catch (err) {
+      // Never allow ref-numbering failures to break preview rendering (figures/math).
+      // eslint-disable-next-line no-console
+      console.error('[zx-preview] ref numbering failed', err);
     }
   }, [html]);
 
