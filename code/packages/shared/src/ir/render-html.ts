@@ -232,7 +232,9 @@ function renderNode(node: IrNode): string {
       const tag = `h${tagLevel}`;
       const label = String((node as unknown as { label?: string }).label ?? '').trim();
       const idAttr = label ? ` id="${latexLabelToDomId(label, 'sec')}"` : '';
-      const heading = `<${tag}${idAttr}>${escapeHtml(node.title ?? '')}</${tag}>`;
+      const starred = Boolean((node as unknown as { starred?: boolean }).starred);
+      const starAttr = starred ? ` data-zx-starred="1"` : '';
+      const heading = `<${tag}${idAttr}${starAttr}>${escapeHtml(node.title ?? '')}</${tag}>`;
       const body = node.children?.length ? renderNodes(node.children) : '';
       return `${heading}${body}`;
     }

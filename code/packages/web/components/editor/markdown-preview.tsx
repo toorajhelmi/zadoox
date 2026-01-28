@@ -830,6 +830,13 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
     const container = containerRef.current;
     if (!container) return;
 
+    const cssEscape = (raw: string): string => {
+      const cssObj = (globalThis as any).CSS;
+      if (cssObj && typeof cssObj.escape === 'function') return cssObj.escape(raw);
+      // Minimal escape fallback (good enough for our generated ids which are already sanitized).
+      return String(raw ?? '').replace(/[^a-zA-Z0-9_-]/g, (m) => `\\${m}`);
+    };
+
     const buildIdIndex = (selector: string, prefix: string): Map<string, number> => {
       const map = new Map<string, number>();
       const els = Array.from(container.querySelectorAll(selector)) as HTMLElement[];
@@ -854,7 +861,26 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
     const tableNums = buildIdIndex('table[id]', 'table-');
     const figNums = buildIdIndex('[id^="figure-"]', 'figure-');
     const eqNums = buildIdIndex('[id^="eq-"]', 'eq-');
-    const secNums = buildIdIndex('h1[id],h2[id],h3[id],h4[id],h5[id],h6[id]', 'sec-');
+
+    // Hierarchical section numbering (1, 1.1, 1.1.1...) for non-starred sections only.
+    const secNums = new Map<string, string>();
+    {
+      const headings = Array.from(container.querySelectorAll('h1[id],h2[id],h3[id],h4[id],h5[id],h6[id]')) as HTMLElement[];
+      const counters = [0, 0, 0, 0, 0, 0]; // by logical section level (1..6)
+      for (const h of headings) {
+        const id = h.getAttribute('id') || '';
+        if (!id.startsWith('sec-')) continue;
+        if (h.getAttribute('data-zx-starred') === '1') continue;
+        const tag = (h.tagName || '').toUpperCase();
+        // Our IR uses h2 for level 1, h3 for level 2, etc.
+        const depth = tag === 'H1' ? 0 : tag === 'H2' ? 1 : tag === 'H3' ? 2 : tag === 'H4' ? 3 : tag === 'H5' ? 4 : 5;
+        counters[depth] += 1;
+        for (let d = depth + 1; d < counters.length; d++) counters[d] = 0;
+        const parts = counters.slice(0, depth + 1).filter((n) => n > 0);
+        if (parts.length === 0) continue;
+        secNums.set(id, parts.join('.'));
+      }
+    }
 
     const labelForId = (id: string): string | null => {
       const t = tableNums.get(id);
@@ -891,7 +917,7 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
     // Also prefix captions so they match the same numbering used by refs.
     // Tables: <table id="table-..."><caption>...</caption>...
     for (const [id, n] of tableNums.entries()) {
-      const table = container.querySelector(`table#${CSS.escape(id)}`) as HTMLTableElement | null;
+      const table = container.querySelector(`table#${cssEscape(id)}`) as HTMLTableElement | null;
       const cap = table?.querySelector('caption') as HTMLTableCaptionElement | null;
       if (!cap) continue;
       const t = (cap.textContent || '').trim();
@@ -902,7 +928,7 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
 
     // Figures: markdown renderer uses <em class="figure-caption">...</em> inside a wrapper.
     for (const [id, n] of figNums.entries()) {
-      const fig = container.querySelector(`#${CSS.escape(id)}`) as HTMLElement | null;
+      const fig = container.querySelector(`#${cssEscape(id)}`) as HTMLElement | null;
       if (!fig) continue;
       const cap = fig.querySelector('.figure-caption') as HTMLElement | null;
       if (!cap) continue;
@@ -910,6 +936,16 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
       if (!t) continue;
       if (/^Figure\s+\d+\b/i.test(t)) continue;
       cap.textContent = `Figure ${n}. ${t}`;
+    }
+
+    // Also number section headings in-place (prefix "1.2 ").
+    for (const [id, num] of secNums.entries()) {
+      const h = container.querySelector(`#${cssEscape(id)}`) as HTMLElement | null;
+      if (!h) continue;
+      const t = (h.textContent || '').trim();
+      if (!t) continue;
+      if (/^\d+(\.\d+)*\s+/.test(t)) continue;
+      h.textContent = `${num} ${t}`;
     }
   }, [html]);
 

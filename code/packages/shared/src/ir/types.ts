@@ -76,6 +76,11 @@ export interface SectionNode extends BaseNode {
    * Renderers may use this to set a stable DOM id.
    */
   label?: string;
+  /**
+   * True when this section originated from a starred LaTeX sectioning command
+   * (e.g. \section*{...}). Starred sections should be treated as unnumbered by preview renderers.
+   */
+  starred?: boolean;
   children: IrNode[];
 }
 

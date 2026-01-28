@@ -129,6 +129,7 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
           level: b.level,
           title: b.title,
           ...(b.label ? { label: b.label } : null),
+          ...(b.starred ? { starred: true } : null),
           children: [],
           source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
         };
@@ -597,6 +598,7 @@ type Block =
       level: number;
       title: string;
       label?: string;
+      starred?: boolean;
       raw: string;
       blockIndex: number;
       startOffset: number;
@@ -1453,7 +1455,7 @@ function parseBlocks(latex: string): Block[] {
 
     // Sections (including paragraph/subparagraph)
     // Note: \paragraph / \subparagraph are often "run-in" headings, but we render them as block headings.
-    const sec = /^\\+(section|subsection|subsubsection|paragraph|subparagraph)\*?\{([^}]*)\}([\s\S]*)$/.exec(trimmed);
+    const sec = /^\\+(section|subsection|subsubsection|paragraph|subparagraph)(\*)?\{([^}]*)\}([\s\S]*)$/.exec(trimmed);
     if (sec) {
       const level =
         sec[1] === 'section'
@@ -1465,8 +1467,9 @@ function parseBlocks(latex: string): Block[] {
               : sec[1] === 'paragraph'
                 ? 4
                 : 5;
-      const title = latexInlineToMarkdown((sec[2] ?? '').trim());
-      let tail = String(sec[3] ?? '').trim();
+      const starred = Boolean(sec[2]);
+      const title = latexInlineToMarkdown((sec[3] ?? '').trim());
+      let tail = String(sec[4] ?? '').trim();
       // Allow "\subsection{X} \label{sec:x} Some text..." on the same line.
       let label: string | undefined;
       const lm = /\\label\{([^}]+)\}/.exec(tail);
@@ -1479,6 +1482,7 @@ function parseBlocks(latex: string): Block[] {
         level,
         title,
         ...(label ? { label } : null),
+        ...(starred ? { starred: true } : null),
         raw: line,
         blockIndex,
         startOffset: start,
@@ -1494,6 +1498,40 @@ function parseBlocks(latex: string): Block[] {
           endOffset: end,
         });
         blockIndex++;
+      }
+      i++;
+      blockIndex++;
+      continue;
+    }
+
+    // Standalone \label{...} lines should attach to the previous structural block.
+    // This is extremely common in LaTeX sources (\section{...}\n\label{sec:...}).
+    const onlyLabel = /^\\label\{([^}]+)\}(?:\s*%.*)?$/.exec(trimmed);
+    if (onlyLabel) {
+      const lbl = String(onlyLabel[1] ?? '').trim();
+      if (lbl && blocks.length > 0) {
+        // Attach to the most recent section/math/figure/table.
+        for (let k = blocks.length - 1; k >= 0; k--) {
+          const prev = blocks[k]!;
+          if (prev.kind === 'section') {
+            prev.label = prev.label || lbl;
+            break;
+          }
+          if (prev.kind === 'math') {
+            prev.label = prev.label || lbl;
+            break;
+          }
+          if (prev.kind === 'figure') {
+            prev.label = prev.label || lbl;
+            break;
+          }
+          if (prev.kind === 'table') {
+            prev.label = prev.label || lbl;
+            break;
+          }
+          // Stop scanning if we hit a section boundary (don't attach across big gaps).
+          if (prev.kind === 'raw') break;
+        }
       }
       i++;
       blockIndex++;
