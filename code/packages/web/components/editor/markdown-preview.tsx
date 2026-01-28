@@ -72,6 +72,8 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
     if (referencesSectionMatch) {
       let referencesContent = referencesSectionMatch[2];
       let refNumber = 1;
+      let bibKeyNumber = 1;
+      const bibKeyToNumber = new Map<string, number>();
       const sanitizeKey = (raw: string): string =>
         String(raw ?? '')
           .toLowerCase()
@@ -134,7 +136,8 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
       );
 
       // Finally, handle BibTeX-key style: [vaswani2017attention] ...
-      // Add id="refkey-<key>" so inline cite tokens can link to it.
+      // Add id="refkey-<key>" so inline cite tokens can link to it, and also assign a stable numeric
+      // index so citations can render as [n] instead of the raw key.
       referencesContent = referencesContent.replace(
         /<p([^>]*)>\[([^\]]+)\]\s*/g,
         (match, attrs, key) => {
@@ -142,15 +145,45 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
           // Keep numeric refs handled above
           if (/^\d+$/.test(k)) return match;
           const id = `refkey-${sanitizeKey(k)}`;
+          const n = (() => {
+            const existing = bibKeyToNumber.get(k);
+            if (existing) return existing;
+            const next = bibKeyNumber++;
+            bibKeyToNumber.set(k, next);
+            return next;
+          })();
           const hasId = /id=/.test(attrs);
           const hasClass = /class=/.test(attrs);
           if (hasId) return match;
           const cls = hasClass ? '' : 'class="reference-entry" ';
-          return `<p id="${id}" ${cls}${attrs}>[${k}] `;
+          // Store raw key + assigned number for later citation normalization.
+          return `<p id="${id}" data-ref-key="${sanitizeKey(k)}" data-ref-number="${n}" ${cls}${attrs}>[${n}] `;
         }
       );
+
+      // Normalize any remaining raw "[key]" markers at the start of a bibkey reference entry
+      // to match the numeric mapping above.
+      for (const [rawKey, n] of bibKeyToNumber.entries()) {
+        const safeKey = rawKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        referencesContent = referencesContent.replace(new RegExp(`(id="refkey-${sanitizeKey(rawKey)}"[^>]*>)(\\[)${safeKey}(\\])`, 'g'), `$1[${n}]`);
+      }
       
       htmlContent = htmlContent.replace(referencesSectionMatch[0], referencesSectionMatch[1] + referencesContent);
+
+      // If we assigned bib-key reference numbers, rewrite in-text citation links to display [n]
+      // and carry data-ref-number so the click handler can reliably scroll/highlight.
+      if (bibKeyToNumber.size > 0) {
+        for (const [rawKey, n] of bibKeyToNumber.entries()) {
+          const safeKey = rawKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          // renderMarkdownToHtml emits: <a ... class="citation-link citation-key" data-ref-key="RAW">[RAW]</a>
+          htmlContent = htmlContent.replace(
+            new RegExp(`(<a[^>]*class="[^"]*citation-key[^"]*"[^>]*data-ref-key="${safeKey}"[^>]*>)(\\[)${safeKey}(\\])(<\\/a>)`, 'g'),
+            `$1[${n}]$4`
+          );
+          // Ensure any bibkey cites that weren't rendered as links (edge cases) still become numeric.
+          htmlContent = htmlContent.replace(new RegExp(`\\[@cite\\s+${safeKey}\\]`, 'g'), `[${n}]`);
+        }
+      }
     }
     
     // Convert citation markers [1], [2], etc. to clickable anchors
@@ -741,19 +774,43 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
       if (citationLink) {
         e.preventDefault();
         const refNumber = citationLink.getAttribute('data-ref-number');
-        if (refNumber) {
-          const refId = `ref-${refNumber}`;
-          const refElement = document.getElementById(refId);
-          if (refElement) {
-            // Scroll to the reference
-            refElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            
-            // Highlight the reference temporarily
-            refElement.classList.add('reference-highlight');
-            setTimeout(() => {
-              refElement.classList.remove('reference-highlight');
-            }, 2000);
+        const refKeyRaw = citationLink.getAttribute('data-ref-key') || '';
+
+        const findRefEl = (): HTMLElement | null => {
+          if (refNumber) {
+            const el = document.getElementById(`ref-${refNumber}`);
+            if (el) return el;
           }
+          // Prefer hash href if present.
+          const href = citationLink.getAttribute('href') || '';
+          if (href.startsWith('#') && href.length > 1) {
+            const id = href.slice(1);
+            const el = document.getElementById(id);
+            if (el) return el;
+          }
+          if (refKeyRaw) {
+            // data-ref-key in citation links is raw (unsanitized). Our reference ids are sanitized.
+            const sanitize = (raw: string) =>
+              String(raw ?? '')
+                .toLowerCase()
+                .replace(/[^a-z0-9_-]+/g, '-')
+                .replace(/-+/g, '-')
+                .replace(/^-|-$/g, '');
+            const el = document.getElementById(`refkey-${sanitize(refKeyRaw)}`);
+            if (el) return el;
+          }
+          return null;
+        };
+
+        const refElement = findRefEl();
+        if (refElement) {
+          // Scroll to the reference
+          refElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Highlight the reference temporarily
+          refElement.classList.add('reference-highlight');
+          setTimeout(() => {
+            refElement.classList.remove('reference-highlight');
+          }, 2000);
         }
       }
     };
