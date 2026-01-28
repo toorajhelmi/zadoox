@@ -868,6 +868,8 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
       return null;
     };
 
+    const alreadyPretty = (raw: string): boolean => /^(Table|Figure|Section)\s+\d+\b|^Eq\.\s*\(\d+\)\b/.test(String(raw ?? '').trim());
+
     const links = Array.from(container.querySelectorAll('a[href^="#"]')) as HTMLAnchorElement[];
     for (const a of links) {
       // Never touch citations (they are handled separately and can be numeric or key-based).
@@ -879,10 +881,35 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
       if (!friendly) continue;
 
       const raw = (a.textContent || '').trim();
-      // Only replace label-ish link text (avoid clobbering normal in-page links).
-      if (!/^(tab|tbl|fig|sec|eq):/i.test(raw)) continue;
+      // Avoid clobbering already-pretty refs (e.g. user content that already says "Figure 3").
+      if (alreadyPretty(raw)) continue;
       a.setAttribute('title', raw);
       a.textContent = friendly;
+      a.setAttribute('data-zx-ref-pretty', '1');
+    }
+
+    // Also prefix captions so they match the same numbering used by refs.
+    // Tables: <table id="table-..."><caption>...</caption>...
+    for (const [id, n] of tableNums.entries()) {
+      const table = container.querySelector(`table#${CSS.escape(id)}`) as HTMLTableElement | null;
+      const cap = table?.querySelector('caption') as HTMLTableCaptionElement | null;
+      if (!cap) continue;
+      const t = (cap.textContent || '').trim();
+      if (!t) continue;
+      if (/^Table\s+\d+\b/i.test(t)) continue;
+      cap.textContent = `Table ${n}. ${t}`;
+    }
+
+    // Figures: markdown renderer uses <em class="figure-caption">...</em> inside a wrapper.
+    for (const [id, n] of figNums.entries()) {
+      const fig = container.querySelector(`#${CSS.escape(id)}`) as HTMLElement | null;
+      if (!fig) continue;
+      const cap = fig.querySelector('.figure-caption') as HTMLElement | null;
+      if (!cap) continue;
+      const t = (cap.textContent || '').trim();
+      if (!t) continue;
+      if (/^Figure\s+\d+\b/i.test(t)) continue;
+      cap.textContent = `Figure ${n}. ${t}`;
     }
   }, [html]);
 
