@@ -138,6 +138,49 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
 
       const counters = currentCounters();
 
+      if (b.kind === 'bibliography') {
+        // Emit a synthetic "References" section with one paragraph per entry, keyed by [bibkey].
+        const parent = currentCounters();
+        const secIdx = parent.section ?? 0;
+        parent.section = secIdx + 1;
+
+        const leaf = `sec[${secIdx}]`;
+        sectionPathStack.push(leaf);
+        const path = sectionPathStack.join('/');
+
+        const refs: SectionNode = {
+          type: 'section',
+          id: stableNodeId({ docId, nodeType: 'section', path }),
+          level: 1,
+          title: 'References',
+          children: [],
+          source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
+        };
+        openSection(refs);
+
+        const refsCounters = currentCounters();
+        for (const it of b.items ?? []) {
+          const idx = refsCounters.paragraph ?? 0;
+          refsCounters.paragraph = idx + 1;
+          const pPath = fullPath(`p[${idx}]`);
+          const key = String(it.key ?? '').trim();
+          const text = String(it.text ?? '').trim();
+          const para: ParagraphNode = {
+            type: 'paragraph',
+            id: stableNodeId({ docId, nodeType: 'paragraph', path: pPath }),
+            text: key ? `[${key}] ${text}`.trim() : text,
+            source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
+          };
+          appendToCurrentContainer(para);
+        }
+
+        // Close the synthetic section so subsequent content (if any) doesn't get swallowed.
+        sectionStack.pop();
+        countersStack.pop();
+        sectionPathStack.pop();
+        return;
+      }
+
       if (b.kind === 'author') {
         const idx = authorCount++;
         const path = `author[${idx}]`;
@@ -644,6 +687,18 @@ type Block =
       endOffset: number;
     }
   | {
+      /**
+       * Bibliography environment (thebibliography).
+       * We parse this into a "References" section in IR so raw LaTeX commands don't leak into preview.
+       */
+      kind: 'bibliography';
+      items: Array<{ key: string; text: string }>;
+      raw: string;
+      blockIndex: number;
+      startOffset: number;
+      endOffset: number;
+    }
+  | {
       kind: 'raw';
       latex: string;
       raw: string;
@@ -1015,6 +1070,71 @@ function parseBlocks(latex: string): Block[] {
       i++;
       blockIndex++;
       continue;
+    }
+
+    // Bibliography style declaration is formatting-only; ignore in IR preview.
+    if (/^\\+bibliographystyle\{[^}]+\}(?:\s*%.*)?$/.test(trimmed)) {
+      i++;
+      blockIndex++;
+      continue;
+    }
+
+    // thebibliography environment -> emit a synthetic References section (one entry per \bibitem).
+    if (/^\\+begin\{thebibliography\}/.test(trimmed)) {
+      const startOffset = start;
+      let j = i + 1;
+      const entryLines: string[] = [];
+      while (j < lines.length && !/^\\+end\{thebibliography\}/.test(lines[j]!.line.trim())) {
+        const rawLine = lines[j]!.line;
+        const t = rawLine.trim();
+        if (t.startsWith('%') && !isZxMarkerLine(t)) {
+          j++;
+          continue;
+        }
+        entryLines.push(stripInlineComment(rawLine).trim());
+        j++;
+      }
+      if (j < lines.length && /^\\+end\{thebibliography\}/.test(lines[j]!.line.trim())) {
+        const endOffset = lines[j]!.end;
+        const raw = lines.slice(i, j + 1).map((l) => l.line).join('\n');
+
+        const items: Array<{ key: string; text: string }> = [];
+        let curKey = '';
+        let curParts: string[] = [];
+        const flush = () => {
+          const k = String(curKey ?? '').trim();
+          const joined = curParts.join(' ').replace(/\s+/g, ' ').trim();
+          if (k && joined) items.push({ key: k, text: latexInlineToMarkdown(joined).replace(/\s+/g, ' ').trim() });
+          curKey = '';
+          curParts = [];
+        };
+
+        for (const ln of entryLines) {
+          const m = /^\\bibitem(?:\[[^\]]*\])?\{([^}]+)\}\s*(.*)$/.exec(String(ln ?? '').trim());
+          if (m) {
+            flush();
+            curKey = String(m[1] ?? '').trim();
+            const rest = String(m[2] ?? '').trim();
+            if (rest) curParts.push(rest);
+            continue;
+          }
+          if (!curKey) continue;
+          if (ln.trim().length > 0) curParts.push(ln.trim());
+        }
+        flush();
+
+        if (items.length > 0) {
+          blocks.push({ kind: 'bibliography', items, raw, blockIndex, startOffset, endOffset });
+        }
+
+        i = j + 1;
+        blockIndex++;
+        continue;
+      }
+      // Unclosed => raw
+      const raw = lines.slice(i).map((l) => l.line).join('\n');
+      blocks.push({ kind: 'raw', latex: raw, raw, blockIndex, startOffset, endOffset: lines[lines.length - 1]?.end ?? end });
+      break;
     }
 
     // abstract environment -> emit a synthetic "Abstract" section + paragraph(s)
