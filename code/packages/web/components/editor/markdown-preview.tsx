@@ -824,6 +824,68 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
     };
   }, [html]);
 
+  // Normalize LaTeX-style cross-reference links (tab:..., fig:..., sec:..., eq:...) into nicer labels
+  // like "Table 1", "Figure 2", "Section 3", "Eq. (4)" while preserving href/id navigation.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const buildIdIndex = (selector: string, prefix: string): Map<string, number> => {
+      const map = new Map<string, number>();
+      const els = Array.from(container.querySelectorAll(selector)) as HTMLElement[];
+      let n = 1;
+      for (const el of els) {
+        const id = el.getAttribute('id') || '';
+        if (!id || !id.startsWith(prefix)) continue;
+        // Only number each id once.
+        if (!map.has(id)) {
+          map.set(id, n);
+          n++;
+        }
+      }
+      return map;
+    };
+
+    // Targets are created by shared IR renderers:
+    // - tables: <table id="table-...">
+    // - figures: <span id="figure-...">...</span>
+    // - equations: element with id="eq-..."
+    // - sections: heading tags with id="sec-..."
+    const tableNums = buildIdIndex('table[id]', 'table-');
+    const figNums = buildIdIndex('[id^="figure-"]', 'figure-');
+    const eqNums = buildIdIndex('[id^="eq-"]', 'eq-');
+    const secNums = buildIdIndex('h1[id],h2[id],h3[id],h4[id],h5[id],h6[id]', 'sec-');
+
+    const labelForId = (id: string): string | null => {
+      const t = tableNums.get(id);
+      if (t) return `Table ${t}`;
+      const f = figNums.get(id);
+      if (f) return `Figure ${f}`;
+      const s = secNums.get(id);
+      if (s) return `Section ${s}`;
+      const e = eqNums.get(id);
+      if (e) return `Eq. (${e})`;
+      return null;
+    };
+
+    const links = Array.from(container.querySelectorAll('a[href^="#"]')) as HTMLAnchorElement[];
+    for (const a of links) {
+      // Never touch citations (they are handled separately and can be numeric or key-based).
+      if (a.classList.contains('citation-link')) continue;
+      const href = a.getAttribute('href') || '';
+      if (!href.startsWith('#') || href.length < 2) continue;
+      const id = href.slice(1);
+      const friendly = labelForId(id);
+      if (!friendly) continue;
+
+      const raw = (a.textContent || '').trim();
+      // Only replace label-ish link text (avoid clobbering normal in-page links).
+      if (!/^(tab|tbl|fig|sec|eq):/i.test(raw)) continue;
+      a.setAttribute('title', raw);
+      a.textContent = friendly;
+    }
+  }, [html]);
+
   // Prevent normal markdown links from navigating away from the editor.
   // Instead, open external/relative links in a new tab; handle hash links as in-page scroll.
   useEffect(() => {
