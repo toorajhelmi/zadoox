@@ -211,6 +211,20 @@ function renderInlineTextWithMathTokens(textRaw: string): string {
   });
 }
 
+function replaceInlineMathTokensInHtml(htmlRaw: string): string {
+  const html = String(htmlRaw ?? '');
+  if (html.indexOf('@@ZXMATHI{') === -1) return html;
+  // Replace tokens without escaping the rest of the HTML (caller is responsible for safety).
+  return html.replace(/@@ZXMATHI\{([^}]*)\}@@/g, (_m, enc) => {
+    try {
+      const tex = decodeURIComponent(String(enc ?? ''));
+      return `<span class="math-inline"><span class="math-latex">${escapeHtml(tex)}</span></span>`;
+    } catch {
+      return '';
+    }
+  });
+}
+
 function renderNode(node: IrNode): string {
   switch (node.type) {
     case 'document_title': {
@@ -242,14 +256,7 @@ function renderNode(node: IrNode): string {
       const html0 = renderMarkdownToHtml(node.text ?? '');
       // Inline math: replace @@ZXMATHI{...}@@ placeholders emitted by LaTeX inline conversion.
       // We render them as .math-latex so the web preview can KaTeX-typeset them.
-      const html = html0.replace(/@@ZXMATHI\{([^}]*)\}@@/g, (_m, enc) => {
-        try {
-          const tex = decodeURIComponent(String(enc ?? ''));
-          return `<span class="math-inline"><span class="math-latex">${escapeHtml(tex)}</span></span>`;
-        } catch {
-          return '';
-        }
-      });
+      const html = replaceInlineMathTokensInHtml(html0);
       const css = styleToCss((node as unknown as { style?: TextStyle }).style);
       if (!css) return html;
       // Wrap so we can apply block-level styling without re-parsing the markdown HTML.
@@ -258,7 +265,7 @@ function renderNode(node: IrNode): string {
     case 'list': {
       const tag = node.ordered ? 'ol' : 'ul';
       const items = (node.items ?? [])
-        .map((it) => stripOuterPTags(renderMarkdownToHtml(String(it ?? ''))))
+        .map((it) => replaceInlineMathTokensInHtml(stripOuterPTags(renderMarkdownToHtml(String(it ?? '')))))
         .map((inner) => `<li>${inner}</li>`)
         .join('');
       return `<${tag}>${items}</${tag}>`;
@@ -297,7 +304,7 @@ function renderNode(node: IrNode): string {
       // Use generic "zx asset" attributes (scope + path) so this isn't LaTeX-specific in naming.
       const relPath = escapeHtml(rawSrc.replace(/^\/+/, ''));
       const ext = rawSrc.split('?')[0]!.split('#')[0]!.toLowerCase().trim().endsWith('.pdf') ? '.pdf' : '';
-      const cap = escapeHtml(node.caption ?? '');
+      const cap = replaceInlineMathTokensInHtml(escapeHtml(node.caption ?? ''));
       const parseXmdFigureAttrs = (rawLine: string | undefined): { width?: string; align?: string } => {
         const s = String(rawLine ?? '').trim();
         // XMD figure attr-block: ![cap](src){align="center" width="60%" ...}

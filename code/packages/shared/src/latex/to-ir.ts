@@ -1923,6 +1923,28 @@ function latexInlineToMarkdown(text: string): string {
 
   const inlineMathToken = (tex: string): string => `@@ZXMATHI{${encodeURIComponent(tex)}}@@`;
 
+  // Common TeX "layout-only" macros that should not render as text (best-effort).
+  // These appear frequently in arXiv sources and especially inside tables.
+  s = s.replace(/\\(pagebreak|newpage|clearpage|cleardoublepage)\b/g, ' ');
+  s = s.replace(/\\(vspace|hspace)\*?\{[^}]*\}/g, ' ');
+  // Row-height hacks inside cells (common prefix like \rule{0pt}{2.0ex})
+  s = s.replace(/\\rule\{0pt\}\{[^}]+\}/g, ' ');
+  // booktabs rule commands should not show as literal cell text
+  s = s.replace(/\\(toprule|midrule|bottomrule|cmidrule)\b/g, ' ');
+  s = s.replace(/\\specialrule\{[^}]*\}\{[^}]*\}\{[^}]*\}/g, ' ');
+
+  // Common font switches in braces used in older LaTeX sources
+  // {\bf Text} -> **Text**
+  s = s.replace(/\{\\bf\s+([^}]*)\}/g, (_m, inner) => `**${String(inner ?? '').trim()}**`);
+  // {\it Text} / {\em Text} -> *Text*
+  s = s.replace(/\{\\it\s+([^}]*)\}/g, (_m, inner) => `*${String(inner ?? '').trim()}*`);
+  s = s.replace(/\{\\em\s+([^}]*)\}/g, (_m, inner) => `*${String(inner ?? '').trim()}*`);
+
+  // Special letters frequently seen in author names
+  // {\L}ukasz -> Łukasz
+  s = s.replace(/\{\\L\}/g, 'Ł');
+  s = s.replace(/\{\\l\}/g, 'ł');
+
   // Bibliography formatting (common in arXiv sources / thebibliography):
   // - \bibitem{key} / \bibitem[short]{key} => [key]
   // - \newblock => separator (space)
@@ -2041,6 +2063,8 @@ function latexInlineToMarkdown(text: string): string {
   // Unescape common escaped characters
   s = s.replace(/\\([%&#_{}])/g, '$1');
 
+  // Collapse excess whitespace created by macro stripping.
+  s = s.replace(/\s+/g, ' ').trim();
   return s;
 }
 
@@ -2687,6 +2711,9 @@ function parseTabularBodyToRows(bodyRaw: string, cols: number): {
     .flatMap(splitCombinedRuleLine)
     .map((l) => l.trim())
     .filter((l) => l.length > 0)
+    // Standalone TeX comment lines sometimes appear inside tabular bodies (e.g. "%\\cmidrule")
+    // and should never become literal table cells.
+    .filter((l) => !l.startsWith('%'))
     // Rule/color setup lines are emitted before hlines/rows; skip them so they don't become table content.
     .filter((l) => !/^\\arrayrulecolor\{[^}]+\}(?:\s*%.*)?$/.test(l))
     // Spacer rules: ignore vertical spacing hacks entirely.
@@ -2770,6 +2797,11 @@ function parseTabularBodyToRows(bodyRaw: string, cols: number): {
         i++;
         continue;
       }
+      if (t === '\\cline' || /^\\cline\b/.test(t)) {
+        n += 1;
+        i++;
+        continue;
+      }
       // booktabs: treat top/bottom as "double" boundaries, mid as single
       if (t === '\\toprule' || /^\\toprule\b/.test(t)) {
         n += 2;
@@ -2788,6 +2820,12 @@ function parseTabularBodyToRows(bodyRaw: string, cols: number): {
       }
       // cmidrule spans columns; we don't model spans yet, but treat it as a single rule boundary.
       if (/^\\cmidrule/.test(t)) {
+        n += 1;
+        i++;
+        continue;
+      }
+      // booktabs: explicit thickness rule (commonly used in arXiv tables)
+      if (t === '\\specialrule' || /^\\specialrule\b/.test(t)) {
         n += 1;
         i++;
         continue;
