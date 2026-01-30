@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DocumentNode } from '@zadoox/shared';
 import { parseLatexToIr, parseXmdToIr } from '@zadoox/shared';
 import { computeDocIrHash } from './ir-hash';
+import { api } from '@/lib/api/client';
 
 export function useCanonicalIrState(params: {
   docKey: string | null;
@@ -12,8 +13,9 @@ export function useCanonicalIrState(params: {
   documentMetadata: Record<string, any> | undefined;
   setDocumentMetadata: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   latexEditNonce: number;
+  documentLatex: unknown | null | undefined;
 }) {
-  const { docKey, editMode, content, latexDraft, mdIr, documentMetadata, setDocumentMetadata, latexEditNonce } = params;
+  const { docKey, editMode, content, latexDraft, mdIr, documentMetadata, setDocumentMetadata, latexEditNonce, documentLatex } = params;
 
   const [canonicalIr, setCanonicalIr] = useState<DocumentNode | null>(null);
   const canonicalIrRef = useRef<DocumentNode | null>(null);
@@ -68,11 +70,13 @@ export function useCanonicalIrState(params: {
     }
 
     // editMode === 'latex'
-    // Rule: IR changes only on user edits. Mode switches do not parse.
-    // We treat `latexEditNonce` as the single source of truth for “user edited LaTeX”.
+    // Rule:
+    // - On initial load for LaTeX-first docs, we MUST build canonical IR once so preview/outline work.
+    // - After that, we only re-parse on user edits (latexEditNonce).
     const meta = (documentMetadata || {}) as any;
-    const lastEdited = meta.lastEditedFormat;
-    const shouldInitFromLatexOnLoad = lastEdited === 'latex' && didInitFromLatexDocKeyRef.current !== docKey;
+    // We no longer rely on metadata.lastEditedFormat here (it's not guaranteed/persisted).
+    // If the document has a LaTeX manifest, treat it as LaTeX-first and bootstrap IR once.
+    const shouldInitFromLatexOnLoad = Boolean(documentLatex) && didInitFromLatexDocKeyRef.current !== docKey;
     const shouldParseFromLatexEdit = latexEditNonce !== lastParsedLatexNonceRef.current;
 
     if (!shouldInitFromLatexOnLoad && !shouldParseFromLatexEdit) {
@@ -88,16 +92,40 @@ export function useCanonicalIrState(params: {
     }
 
     latexIrParseTimeoutRef.current = setTimeout(() => {
-      try {
-        const nextIr = parseLatexToIr({ docId: docKey, latex: latexDraft });
-        setCanonicalIr(nextIr);
-        didInitFromLatexDocKeyRef.current = docKey;
-        lastParsedLatexNonceRef.current = latexEditNonce;
+      (async () => {
+        // On initial load for LaTeX docs, prefer backend-expanded IR so multi-file imports (\input/\include)
+        // produce a complete outline. On user edits, fall back to local parse (fast).
+        // IMPORTANT: For LaTeX-first docs with a manifest, we MUST prefer the backend-expanded IR.
+        // Local parsing cannot expand includes, which breaks tables/figures in real arXiv sources.
+        if ((shouldInitFromLatexOnLoad || shouldParseFromLatexEdit) && documentLatex) {
+          try {
+            const built = await api.documents.latexIrGet(docKey, { cacheBust: String(Date.now()) });
+            const nextIr = (built as any)?.ir as DocumentNode | null;
+            if (nextIr) {
+              setCanonicalIr(nextIr);
+              didInitFromLatexDocKeyRef.current = docKey;
+              // Mark the edit nonce as handled so we don't immediately re-run.
+              if (shouldParseFromLatexEdit) lastParsedLatexNonceRef.current = latexEditNonce;
+              return;
+            }
+          } catch {
+            // If backend expansion fails, keep last good IR.
+            // (Local parse is not reliable for LaTeX bundle docs.)
+            return;
+          }
+        }
 
-        // Phase 17: LaTeX is stored separately (storage-backed) and we no longer persist latexIrHash in metadata.
-      } catch {
-        // keep last good IR
-      }
+        try {
+          const nextIr = parseLatexToIr({ docId: docKey, latex: latexDraft });
+          setCanonicalIr(nextIr);
+          didInitFromLatexDocKeyRef.current = docKey;
+          lastParsedLatexNonceRef.current = latexEditNonce;
+        } catch {
+          // keep last good IR
+        }
+      })().catch(() => {
+        // ignore
+      });
     }, 250);
 
     return () => {
@@ -106,7 +134,7 @@ export function useCanonicalIrState(params: {
         latexIrParseTimeoutRef.current = null;
       }
     };
-  }, [content, docKey, documentMetadata, editMode, latexDraft, latexEditNonce, mdIr, setDocumentMetadata]);
+  }, [content, docKey, documentMetadata, documentLatex, editMode, latexDraft, latexEditNonce, mdIr, setDocumentMetadata]);
 
   return { canonicalIr, getCurrentIr };
 }

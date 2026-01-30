@@ -19,6 +19,7 @@ interface EditorSidebarProps {
    * Do NOT use the asynchronously-loaded actual doc id here (it can lag during navigation).
    */
   currentDocumentId?: string;
+  documentLatex?: unknown | null;
   documentId?: string;
   onRollback?: (versionNumber: number) => Promise<void>;
   onVersionSelect?: (versionNumber: number) => Promise<void>;
@@ -27,7 +28,7 @@ interface EditorSidebarProps {
   onTabChange?: (tab: SidebarTab) => void;
 }
 
-export function EditorSidebar({ isOpen, onToggle, content, ir, projectName, projectId, currentDocumentId, documentId, onRollback, onVersionSelect, lastSaved, activeTab: externalActiveTab, onTabChange }: EditorSidebarProps) {
+export function EditorSidebar({ isOpen, onToggle, content, ir, projectName, projectId, currentDocumentId, documentLatex, documentId, onRollback, onVersionSelect, lastSaved, activeTab: externalActiveTab, onTabChange }: EditorSidebarProps) {
   const [internalActiveTab, setInternalActiveTab] = useState<SidebarTab>('outline');
   const activeTab = externalActiveTab ?? internalActiveTab;
   const resolvedDocumentId = documentId;
@@ -82,6 +83,7 @@ export function EditorSidebar({ isOpen, onToggle, content, ir, projectName, proj
                 projectName={projectName}
                 projectId={projectId}
                 currentDocumentId={currentDocumentId ?? resolvedDocumentId}
+                documentLatex={documentLatex ?? null}
               />
             )}
             {activeTab === 'history' && resolvedDocumentId && onRollback && (

@@ -18,6 +18,7 @@ import type {
   TableColumnAlign,
   TableRule,
   TableStyle,
+  TableLayoutCell,
 } from '../ir/types';
 
 type Block =
@@ -34,6 +35,7 @@ type Block =
       rows: string[][];
       caption?: string;
       label?: string;
+      headerSpans?: Array<{ colStart: number; colSpan: number; text: string }>;
       colAlign?: TableColumnAlign[];
       vRules?: TableRule[];
       hRules?: TableRule[];
@@ -476,6 +478,7 @@ function parseBlocks(xmd: string): Block[] {
           let pendingRule: TableRule = 'none';
           let topRule: TableRule = 'none';
           const beforeRowRules: Record<number, TableRule> = {};
+          const headerSpans: Array<{ colStart: number; colSpan: number; text: string }> = [];
           let header: string[] | null = null;
             const rows: string[][] = [];
           let sawSep = false;
@@ -490,6 +493,21 @@ function parseBlocks(xmd: string): Block[] {
           for (; idx < bodyTrimmed.length; idx++) {
             const ln = bodyTrimmed[idx]!;
             if (ln.trim().length === 0) continue;
+
+            // Optional header spanners (XMD extension):
+            // @span header c=0 span=2 text="Results"
+            {
+              const m = /^@span\s+header\s+c=(\d+)\s+span=(\d+)\s+text="([^"]*)"\s*$/.exec(ln.trim());
+              if (m) {
+                const c = Number(m[1]);
+                const span = Number(m[2]);
+                const text = String(m[3] ?? '');
+                if (Number.isFinite(c) && Number.isFinite(span) && span > 1) {
+                  headerSpans.push({ colStart: Math.max(0, Math.floor(c)), colSpan: Math.floor(span), text });
+                }
+                continue;
+              }
+            }
 
             const rule = parseTableRuleLine(ln);
             if (rule) {
@@ -535,6 +553,7 @@ function parseBlocks(xmd: string): Block[] {
               ...(label ? { label } : null),
               header,
               rows,
+              ...(headerSpans.length > 0 ? { headerSpans } : null),
               ...(colSpec ? { colAlign: colSpec.colAlign, vRules: colSpec.vRules } : null),
               ...(style ? { style } : null),
               ...(hRules.some((r) => r !== 'none') ? { hRules } : null),
@@ -928,11 +947,73 @@ export function parseXmdToIr(params: { docId: string; xmd: string }): DocumentNo
         const idx = counters.table ?? 0;
         counters.table = idx + 1;
         const path = fullPath(`table[${idx}]`);
+        const slug = (s: string) =>
+          String(s ?? '')
+            .toLowerCase()
+            .replace(/[^a-z0-9_-]+/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '');
+        const colIds = (b.header ?? []).map((h, i) => {
+          const base = slug(String(h ?? '').trim());
+          return base ? `c:${base}:${i}` : `c:${i}`;
+        });
+        const schema = { columns: colIds.map((id, i) => ({ id, name: String((b.header ?? [])[i] ?? '') })) };
+        const data = {
+          rows: (b.rows ?? []).map((r, rIdx) => {
+            const rowId = `r:${rIdx}`;
+            const cells: Record<string, string> = {};
+            for (let c = 0; c < colIds.length; c++) {
+              cells[colIds[c]!] = String((r ?? [])[c] ?? '');
+            }
+            return { id: rowId, cells };
+          }),
+        };
+
+      const layout = (() => {
+        const spans = (b as { headerSpans?: Array<{ colStart: number; colSpan: number; text: string }> }).headerSpans ?? [];
+        if (spans.length === 0) return undefined;
+        // Build a spanner header row (row 0) above leaf header names (row 1).
+        const spRowCells: Array<{ colStart: number; colSpan: number; text: string }> = spans
+          .slice()
+          .filter((s) => Number.isFinite(s.colStart) && Number.isFinite(s.colSpan) && s.colSpan > 1)
+          .sort((a, b) => a.colStart - b.colStart);
+        const cells: TableLayoutCell[] = [];
+        let c = 0;
+        while (c < colIds.length) {
+          const s = spRowCells.find((x) => x.colStart === c);
+          if (s) {
+            const span = Math.min(s.colSpan, colIds.length - c);
+            const columnIds = colIds.slice(c, c + span);
+            cells.push({ kind: 'synthetic', columnIds, colSpan: span, text: s.text });
+            c += span;
+            continue;
+          }
+          // Blank spanner cell for uncovered columns.
+          cells.push({ kind: 'synthetic', columnIds: [colIds[c]!], text: '' });
+          c += 1;
+        }
+        return {
+          header: [
+            { cells },
+            {
+              cells: colIds.map((id, i) => ({
+                kind: 'synthetic' as const,
+                columnIds: [id],
+                text: String((b.header ?? [])[i] ?? ''),
+              })),
+            },
+          ],
+        };
+      })();
         const node: TableNode = {
           type: 'table',
           id: stableNodeId({ docId, nodeType: 'table', path }),
           caption: b.caption,
           label: b.label,
+          schema,
+          data,
+        ...(layout ? { layout } : null),
+          // Legacy fields for compatibility
           header: b.header,
           rows: b.rows,
           colAlign: b.colAlign,
@@ -1161,11 +1242,69 @@ function parseXmdToIrFragmentNodes(params: { docId: string; xmd: string; basePat
       const idx = counters.table ?? 0;
       counters.table = idx + 1;
       const path = full(`table[${idx}]`);
+      const slug = (s: string) =>
+        String(s ?? '')
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+      const colIds = (b.header ?? []).map((h, i) => {
+        const base = slug(String(h ?? '').trim());
+        return base ? `c:${base}:${i}` : `c:${i}`;
+      });
+      const schema = { columns: colIds.map((id, i) => ({ id, name: String((b.header ?? [])[i] ?? '') })) };
+      const data = {
+        rows: (b.rows ?? []).map((r, rIdx) => {
+          const rowId = `r:${rIdx}`;
+          const cells: Record<string, string> = {};
+          for (let c = 0; c < colIds.length; c++) {
+            cells[colIds[c]!] = String((r ?? [])[c] ?? '');
+          }
+          return { id: rowId, cells };
+        }),
+      };
+      const layout = (() => {
+        const spans = (b as { headerSpans?: Array<{ colStart: number; colSpan: number; text: string }> }).headerSpans ?? [];
+        if (spans.length === 0) return undefined;
+        const spRowCells: Array<{ colStart: number; colSpan: number; text: string }> = spans
+          .slice()
+          .filter((s) => Number.isFinite(s.colStart) && Number.isFinite(s.colSpan) && s.colSpan > 1)
+          .sort((a, b) => a.colStart - b.colStart);
+        const cells: TableLayoutCell[] = [];
+        let c = 0;
+        while (c < colIds.length) {
+          const s = spRowCells.find((x) => x.colStart === c);
+          if (s) {
+            const span = Math.min(s.colSpan, colIds.length - c);
+            const columnIds = colIds.slice(c, c + span);
+            cells.push({ kind: 'synthetic', columnIds, colSpan: span, text: s.text });
+            c += span;
+            continue;
+          }
+          cells.push({ kind: 'synthetic', columnIds: [colIds[c]!], text: '' });
+          c += 1;
+        }
+        return {
+          header: [
+            { cells },
+            {
+              cells: colIds.map((id, i) => ({
+                kind: 'synthetic' as const,
+                columnIds: [id],
+                text: String((b.header ?? [])[i] ?? ''),
+              })),
+            },
+          ],
+        };
+      })();
       out.push({
         type: 'table',
         id: stableNodeId({ docId, nodeType: 'table', path }),
         caption: b.caption,
         label: b.label,
+        schema,
+        data,
+        ...(layout ? { layout } : null),
         header: b.header,
         rows: b.rows,
         colAlign: b.colAlign,

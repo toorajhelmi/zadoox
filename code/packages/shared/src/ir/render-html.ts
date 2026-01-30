@@ -1,6 +1,10 @@
 import { renderMarkdownToHtml } from '../editor/markdown';
-import type { DocumentNode, GridNode, IrNode } from './types';
+import type { DocumentNode, GridNode, IrNode, TableLayoutCell, TableLayoutRow, TableNode, TextStyle } from './types';
 import { getGridSpacingPreset } from './grid-spacing';
+
+const TRANSPARENT_PIXEL =
+  // 1x1 transparent GIF
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
 
 /**
  * Render HTML from IR.
@@ -10,12 +14,51 @@ import { getGridSpacingPreset } from './grid-spacing';
  *   don't get lost when bridging through XMD.
  */
 export function renderIrToHtml(ir: DocumentNode): string {
-  const html = renderNodes(ir.children);
+  const ctx: RenderCtx = { sectionCounters: [0, 0, 0] };
+  const html = renderNodes(ir.children, ctx);
   return html.trim().length === 0 ? '' : html;
 }
 
-function renderNodes(nodes: IrNode[]): string {
-  return nodes.map(renderNode).filter(Boolean).join('');
+interface RenderCtx {
+  sectionCounters: number[]; // index 0 => \section, 1 => \subsection, ...
+}
+
+function renderNodes(nodes: IrNode[], ctx: RenderCtx): string {
+  const parts: string[] = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i]!;
+    if (n.type === 'document_author') {
+      const authors: Array<{ text: string }> = [];
+      while (i < nodes.length && nodes[i]!.type === 'document_author') {
+        const a = nodes[i]! as { type: 'document_author'; text?: string };
+        const t = String(a.text ?? '').trim();
+        if (t) authors.push({ text: t });
+        i++;
+      }
+      i--; // compensate for for-loop increment
+      if (authors.length > 0) {
+        const inner = authors.map((a) => `<div class="doc-author">${escapeHtml(a.text)}</div>`).join('');
+        parts.push(`<div class="doc-authors">${inner}</div>`);
+        continue;
+      }
+    }
+    const rendered = renderNode(n, ctx);
+    if (rendered) parts.push(rendered);
+  }
+  return parts.join('');
+}
+
+function styleToCss(style?: TextStyle): string {
+  if (!style) return '';
+  const parts: string[] = [];
+  if (style.align) parts.push(`text-align:${style.align}`);
+  if (style.color) parts.push(`color:${style.color}`);
+  if (style.size) {
+    // Use conservative scaling (avoid huge typography changes).
+    const fs = style.size === 'small' ? '0.92em' : style.size === 'large' ? '1.12em' : '1em';
+    parts.push(`font-size:${fs}`);
+  }
+  return parts.join(';');
 }
 
 function forceGridCellMediaToFill(html: string): string {
@@ -153,7 +196,41 @@ function sanitizeDomId(raw: string): string {
     .replace(/^-|-$/g, '');
 }
 
-function renderNode(node: IrNode): string {
+function latexLabelToDomId(labelRaw: string, kind: 'sec' | 'eq' | 'table'): string {
+  const label = String(labelRaw ?? '').trim();
+  if (!label) return '';
+  return `${kind}-${sanitizeDomId(label)}`;
+}
+
+function renderInlineTextWithMathTokens(textRaw: string): string {
+  const text = String(textRaw ?? '');
+  // Inline math placeholders emitted by LaTeX inline conversion:
+  // @@ZXMATHI{<urlencoded tex>}@@
+  return text.replace(/@@ZXMATHI\{([^}]*)\}@@/g, (_m, enc) => {
+    try {
+      const tex = decodeURIComponent(String(enc ?? ''));
+      return `<span class="math-inline"><span class="math-latex">${escapeHtml(tex)}</span></span>`;
+    } catch {
+      return '';
+    }
+  });
+}
+
+function replaceInlineMathTokensInHtml(htmlRaw: string): string {
+  const html = String(htmlRaw ?? '');
+  if (html.indexOf('@@ZXMATHI{') === -1) return html;
+  // Replace tokens without escaping the rest of the HTML (caller is responsible for safety).
+  return html.replace(/@@ZXMATHI\{([^}]*)\}@@/g, (_m, enc) => {
+    try {
+      const tex = decodeURIComponent(String(enc ?? ''));
+      return `<span class="math-inline"><span class="math-latex">${escapeHtml(tex)}</span></span>`;
+    } catch {
+      return '';
+    }
+  });
+}
+
+function renderNode(node: IrNode, ctx: RenderCtx): string {
   switch (node.type) {
     case 'document_title': {
       const text = escapeHtml(node.text ?? '');
@@ -168,22 +245,46 @@ function renderNode(node: IrNode): string {
       const text = escapeHtml(node.text ?? '');
       return `<div class="doc-date">${text}</div>`;
     }
+    case 'abstract': {
+      const body = node.children?.length ? renderNodes(node.children, ctx) : '';
+      return `<section class="doc-abstract"><h2 class="doc-abstract-title">Abstract</h2>${body}</section>`;
+    }
     case 'section': {
       // Distinguish title from sections: section level 1 => h2, level 2 => h3, level 3 => h4...
       const tagLevel = Math.max(2, Math.min(6, (node.level ?? 1) + 1));
       const tag = `h${tagLevel}`;
-      const heading = `<${tag}>${escapeHtml(node.title ?? '')}</${tag}>`;
-      const body = node.children?.length ? renderNodes(node.children) : '';
+      const label = String((node as unknown as { label?: string }).label ?? '').trim();
+      const idAttr = label ? ` id="${latexLabelToDomId(label, 'sec')}"` : '';
+      const starred = Boolean((node as unknown as { starred?: boolean }).starred);
+      const starAttr = starred ? ` data-zx-starred="1"` : '';
+      const level = Math.max(1, Math.min(6, Number(node.level ?? 1) || 1));
+      const numPrefix = (() => {
+        if (starred) return '';
+        if (level > 3) return '';
+        while (ctx.sectionCounters.length < level) ctx.sectionCounters.push(0);
+        ctx.sectionCounters[level - 1] = (ctx.sectionCounters[level - 1] ?? 0) + 1;
+        for (let i = level; i < ctx.sectionCounters.length; i++) ctx.sectionCounters[i] = 0;
+        const nums = ctx.sectionCounters.slice(0, level).filter((n) => n > 0);
+        return nums.length ? `${nums.join('.')} ` : '';
+      })();
+      const heading = `<${tag}${idAttr}${starAttr}>${escapeHtml(numPrefix)}${escapeHtml(node.title ?? '')}</${tag}>`;
+      const body = node.children?.length ? renderNodes(node.children, ctx) : '';
       return `${heading}${body}`;
     }
     case 'paragraph': {
-      const html = renderMarkdownToHtml(node.text ?? '');
-      return html;
+      const html0 = renderMarkdownToHtml(node.text ?? '');
+      // Inline math: replace @@ZXMATHI{...}@@ placeholders emitted by LaTeX inline conversion.
+      // We render them as .math-latex so the web preview can KaTeX-typeset them.
+      const html = replaceInlineMathTokensInHtml(html0);
+      const css = styleToCss((node as unknown as { style?: TextStyle }).style);
+      if (!css) return html;
+      // Wrap so we can apply block-level styling without re-parsing the markdown HTML.
+      return `<div class="text-block" style="${css}">${html}</div>`;
     }
     case 'list': {
       const tag = node.ordered ? 'ol' : 'ul';
       const items = (node.items ?? [])
-        .map((it) => stripOuterPTags(renderMarkdownToHtml(String(it ?? ''))))
+        .map((it) => replaceInlineMathTokensInHtml(stripOuterPTags(renderMarkdownToHtml(String(it ?? '')))))
         .map((inner) => `<li>${inner}</li>`)
         .join('');
       return `<${tag}>${items}</${tag}>`;
@@ -194,31 +295,157 @@ function renderNode(node: IrNode): string {
     }
     case 'math_block': {
       // Render as a block; formatting/KaTeX is a later concern.
+      // We still render it in a dedicated wrapper so the UI can style it cleanly.
       const latex = escapeHtml(node.latex ?? '');
-      return `<div class="math-block">$$<br />${latex}<br />$$</div>`;
+      const label = String((node as unknown as { label?: string }).label ?? '').trim();
+      const idAttr = label ? ` id="${latexLabelToDomId(label, 'eq')}"` : '';
+      return `<div class="math-block"${idAttr}><span class="math-latex">${latex}</span></div>`;
     }
     case 'figure': {
       const figId = node.label ? `figure-${sanitizeDomId(node.label)}` : `figure-${sanitizeDomId(node.id)}`;
       // Important: preserve the existing figure attribute-block behavior (align/width/placement)
       // by reusing the original XMD source line when available.
       const raw = node.source?.raw;
-      if (raw && raw.trim().startsWith('![') && raw.includes('](')) {
+      const rawSrc = String(node.src ?? '').trim();
+      const isAlreadyResolvable =
+        rawSrc.startsWith('zadoox-asset://') || /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(rawSrc) || rawSrc.startsWith('data:');
+      // For LaTeX bundle figures we often have relative paths; prefer the native renderer
+      // (data-latex-asset-path) so the preview can fetch from storage. In that case, do NOT
+      // route through the markdown image renderer (it would emit <img src="relative"> which 404s).
+      if (raw && isAlreadyResolvable && raw.trim().startsWith('![') && raw.includes('](')) {
         // Wrap in an anchor span so the outline can reliably scroll even if the markdown renderer
         // doesn't include an id attribute.
         return `<span id="${figId}">${renderMarkdownToHtml(raw.trimEnd())}</span>`;
       }
 
-      const src = escapeHtml(node.src ?? '');
-      const cap = escapeHtml(node.caption ?? '');
+      // For imported LaTeX bundles, figures often reference relative paths (e.g. Figures/foo or figures/foo.pdf).
+      // Those should be resolved by the web preview layer via /documents/:id/latex/file.
+      // Use generic "zx asset" attributes (scope + path) so this isn't LaTeX-specific in naming.
+      const relPath = escapeHtml(rawSrc.replace(/^\/+/, ''));
+      const ext = rawSrc.split('?')[0]!.split('#')[0]!.toLowerCase().trim().endsWith('.pdf') ? '.pdf' : '';
+      const cap = replaceInlineMathTokensInHtml(escapeHtml(node.caption ?? ''));
+      const parseXmdFigureAttrs = (rawLine: string | undefined): { width?: string; align?: string } => {
+        const s = String(rawLine ?? '').trim();
+        // XMD figure attr-block: ![cap](src){align="center" width="60%" ...}
+        const m = /\{([^}]*)\}\s*$/.exec(s);
+        if (!m) return {};
+        const attrs = String(m[1] ?? '');
+        const widthM = /\bwidth="([^"]+)"/.exec(attrs);
+        const alignM = /\balign="([^"]+)"/.exec(attrs);
+        return {
+          ...(widthM ? { width: String(widthM[1] ?? '').trim() } : null),
+          ...(alignM ? { align: String(alignM[1] ?? '').trim() } : null),
+        };
+      };
+      const parsedAttrs = parseXmdFigureAttrs(raw);
+      const width = String(parsedAttrs.width ?? '').trim();
+      const align = String(parsedAttrs.align ?? '').trim().toLowerCase();
+      const innerMargin =
+        align === 'center' ? 'margin-left:auto;margin-right:auto' : align === 'right' ? 'margin-left:auto;margin-right:0' : 'margin-left:0;margin-right:auto';
+      // LaTeX "page/column width" is much narrower than our preview viewport.
+      // To avoid giant figures (e.g. width="100%") we cap figure width to a paper-like max.
+      const PAPER_MAX_PX = 760;
+      const pct = /^\s*(\d+(?:\.\d+)?)%\s*$/.exec(width);
+      const widthCss = pct
+        ? `min(100%, calc(${PAPER_MAX_PX}px * ${(Number(pct[1]) / 100).toFixed(4)}))`
+        : width
+          ? `min(100%, ${escapeHtml(width)})`
+          : `min(100%, ${PAPER_MAX_PX}px)`;
+      const innerWidth = `width:${widthCss};max-width:100%`;
       const caption =
         cap.trim().length > 0
           ? `<em class="figure-caption" style="display:block;width:100%;text-align:center">${cap}</em>`
           : '';
       // Keep caption centered relative to the image width by using an inner inline-block wrapper.
-      return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;max-width:100%;margin-left:0;margin-right:auto"><img src="${src}" alt="${cap}" style="display:block;max-width:100%" />${caption}</span></span>`;
+      if (isAlreadyResolvable) {
+        return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;${innerWidth};${innerMargin}"><span class="zx-figure-media-frame"><img src="${escapeHtml(
+          rawSrc
+        )}" alt="${cap}" style="display:block;max-width:100%;width:100%;height:auto" /></span>${caption}</span></span>`;
+      }
+      if (ext === '.pdf') {
+        // Render PDFs via <object> so browsers can display them inline (or at least provide a fallback link).
+        return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;${innerWidth};${innerMargin}">
+          <span class="zx-figure-media-frame"><object class="latex-figure-pdf" data="${TRANSPARENT_PIXEL}" data-zx-asset-path="${relPath}" type="application/pdf" style="width:100%;height:min(420px,60vh);display:block;border:1px solid rgba(255,255,255,0.12);border-radius:8px">
+            <a class="latex-figure-link" href="#" data-zx-asset-path="${relPath}">Open figure (PDF)</a>
+          </object></span>
+          ${caption}
+        </span></span>`;
+      }
+      return `<span id="${figId}" class="figure"><span class="figure-inner" style="display:inline-block;${innerWidth};${innerMargin}"><span class="zx-figure-media-frame"><img src="${TRANSPARENT_PIXEL}" data-zx-asset-path="${relPath}" alt="${cap}" style="display:block;max-width:100%;width:100%;height:auto" /></span>${caption}</span></span>`;
     }
     case 'table': {
-      const cols = Math.max(0, (node.header ?? []).length);
+      const t = node as unknown as TableNode;
+      const schemaCols = (t.schema?.columns ?? []).map((c) => ({ id: String(c.id ?? ''), name: String(c.name ?? '') }));
+      const dataRows = t.data?.rows ?? [];
+
+      // Fallback to legacy tables if semantic model is absent.
+      if (schemaCols.length === 0) {
+        const cols = Math.max(0, (t.header ?? []).length);
+        const align = (t.colAlign && t.colAlign.length === cols ? t.colAlign : Array.from({ length: cols }).map(() => 'left')) as Array<
+          'left' | 'center' | 'right'
+        >;
+        const vRules =
+          t.vRules && t.vRules.length === cols + 1 ? t.vRules : Array.from({ length: cols + 1 }).map(() => 'none' as const);
+        const totalRows = 1 + (t.rows?.length ?? 0);
+        const hRules =
+          t.hRules && t.hRules.length === totalRows + 1 ? t.hRules : Array.from({ length: totalRows + 1 }).map(() => 'none' as const);
+
+        const borderColor = (t.style?.borderColor ?? '').trim() || 'rgba(255,255,255,0.16)';
+        const borderWidth = Number.isFinite(t.style?.borderWidthPx) && (t.style?.borderWidthPx ?? 0) > 0 ? Math.round(t.style!.borderWidthPx!) : 1;
+        const singleStyle = (t.style?.borderStyle ?? 'solid') as 'solid' | 'dotted' | 'dashed';
+
+        const cssAlign = (a: 'left' | 'center' | 'right') => (a === 'center' ? 'center' : a === 'right' ? 'right' : 'left');
+        const cssBorder = (rule: 'none' | 'single' | 'double') => {
+          if (rule === 'none') return 'none';
+          const style = rule === 'double' ? 'double' : singleStyle;
+          // Double borders look better with a slightly thicker width; keep deterministic.
+          const w = rule === 'double' ? Math.max(3, borderWidth) : borderWidth;
+          return `${w}px ${style} ${borderColor}`;
+        };
+
+        const cellStyle = (params: { rowIndex: number; colIndex: number; isHeader: boolean }): string => {
+          const { rowIndex, colIndex } = params;
+          const styles: string[] = [];
+          styles.push(`text-align:${cssAlign(align[colIndex] ?? 'left')}`);
+          if (colIndex === 0) styles.push(`border-left:${cssBorder(vRules[0] ?? 'none')}`);
+          if (colIndex > 0) styles.push(`border-left:${cssBorder(vRules[colIndex] ?? 'none')}`);
+          if (colIndex === cols - 1) styles.push(`border-right:${cssBorder(vRules[cols] ?? 'none')}`);
+          if (rowIndex === 0) styles.push(`border-top:${cssBorder(hRules[0] ?? 'none')}`);
+          if (rowIndex > 0) styles.push(`border-top:${cssBorder(hRules[rowIndex] ?? 'none')}`);
+          if (rowIndex === totalRows - 1) styles.push(`border-bottom:${cssBorder(hRules[totalRows] ?? 'none')}`);
+          styles.push('padding:6px 10px');
+          return styles.join(';');
+        };
+
+        const headerCells = (t.header ?? [])
+          .map((h, c) => `<th style="${cellStyle({ rowIndex: 0, colIndex: c, isHeader: true })}">${renderInlineTextWithMathTokens(escapeHtml(String(h)))}</th>`)
+          .join('');
+        const header = `<tr>${headerCells}</tr>`;
+
+        const bodyRows = (t.rows ?? [])
+          .map((r, rIdx) => {
+            const rowIndex = 1 + rIdx;
+            const tds = Array.from({ length: cols }).map((_, c) => {
+              const cell = (r ?? [])[c] ?? '';
+              return `<td style="${cellStyle({ rowIndex, colIndex: c, isHeader: false })}">${renderInlineTextWithMathTokens(escapeHtml(String(cell)))}</td>`;
+            });
+            return `<tr>${tds.join('')}</tr>`;
+          })
+          .join('');
+
+        const caption = String(t.caption ?? '').trim();
+        const capHtml =
+          caption.length > 0
+            ? `<caption style="caption-side:top;text-align:left;margin-bottom:6px;color:#9aa0a6;font-style:italic">${renderInlineTextWithMathTokens(
+                escapeHtml(caption)
+              )}</caption>`
+            : '';
+        const label = String((t as unknown as { label?: string }).label ?? '').trim();
+        const idAttr = label ? ` id="${latexLabelToDomId(label, 'table')}"` : '';
+        return `<table${idAttr} style="border-collapse:collapse;width:100%">${capHtml}<thead>${header}</thead><tbody>${bodyRows}</tbody></table>`;
+      }
+
+      const cols = schemaCols.length;
       const align = (node.colAlign && node.colAlign.length === cols ? node.colAlign : Array.from({ length: cols }).map(() => 'left')) as Array<
         'left' | 'center' | 'right'
       >;
@@ -265,25 +492,79 @@ function renderNode(node: IrNode): string {
         return styles.join(';');
       };
 
-      const headerCells = (node.header ?? [])
-        .map((h, c) => `<th style="${cellStyle({ rowIndex: 0, colIndex: c, isHeader: true })}">${escapeHtml(String(h))}</th>`)
-        .join('');
-      const header = `<tr>${headerCells}</tr>`;
+      const defaultHeaderLayout = (): TableLayoutRow[] => [
+        {
+          cells: schemaCols.map((c) => ({
+            kind: 'synthetic' as const,
+            columnIds: [c.id],
+            text: c.name || c.id,
+          })),
+        },
+      ];
+      const defaultBodyLayout = (): TableLayoutRow[] =>
+        (dataRows ?? []).map((r) => ({
+          cells: schemaCols.map((c) => ({
+            kind: 'ref' as const,
+            columnIds: [c.id],
+            ref: { rowId: r.id, columnId: c.id },
+          })),
+        }));
 
-      const bodyRows = (node.rows ?? [])
-        .map((r, rIdx) => {
-          const rowIndex = 1 + rIdx;
-          const tds = Array.from({ length: cols }).map((_, c) => {
-            const cell = (r ?? [])[c] ?? '';
-            return `<td style="${cellStyle({ rowIndex, colIndex: c, isHeader: false })}">${escapeHtml(String(cell))}</td>`;
-          });
-          return `<tr>${tds.join('')}</tr>`;
-        })
-        .join('');
+      const layoutHeader = (t.layout?.header && t.layout.header.length > 0 ? t.layout.header : defaultHeaderLayout()) as TableLayoutRow[];
+      const layoutBody = (t.layout?.body && t.layout.body.length > 0 ? t.layout.body : defaultBodyLayout()) as TableLayoutRow[];
+
+      const rowById = new Map<string, { id: string; cells: Record<string, string> }>();
+      for (const r of dataRows) rowById.set(r.id, r);
+
+      const renderCellInner = (cell: TableLayoutCell): string => {
+        if (cell.kind === 'synthetic') return renderInlineTextWithMathTokens(escapeHtml(cell.text ?? ''));
+        const row = rowById.get(cell.ref.rowId);
+        const raw = row?.cells?.[cell.ref.columnId] ?? '';
+        return renderInlineTextWithMathTokens(escapeHtml(String(raw)));
+      };
+
+      const renderLayoutSection = (rows: TableLayoutRow[], isHeaderRow: boolean): string => {
+        // Track occupied positions due to rowSpans so we don't render overlapping cells.
+        const occupied: Record<string, boolean> = {};
+        const out: string[] = [];
+        for (let r = 0; r < rows.length; r++) {
+          const row = rows[r]!;
+          let cIndex = 0;
+          const parts: string[] = [];
+          for (const cell of row.cells ?? []) {
+            while (occupied[`${r}:${cIndex}`]) cIndex++;
+            const colSpan = Math.max(1, Number(cell.colSpan ?? cell.columnIds?.length ?? 1) || 1);
+            const rowSpan = Math.max(1, Number(cell.rowSpan ?? 1) || 1);
+            // Mark occupied slots.
+            for (let rr = r; rr < r + rowSpan; rr++) {
+              for (let cc = cIndex; cc < cIndex + colSpan; cc++) {
+                if (rr === r && cc === cIndex) continue;
+                occupied[`${rr}:${cc}`] = true;
+              }
+            }
+            const spanAttrs = `${colSpan > 1 ? ` colspan="${colSpan}"` : ''}${rowSpan > 1 ? ` rowspan="${rowSpan}"` : ''}`;
+            const tag = isHeaderRow ? 'th' : 'td';
+            parts.push(`<${tag}${spanAttrs} style="${cellStyle({ rowIndex: r, colIndex: cIndex, isHeader: isHeaderRow })}">${renderCellInner(cell)}</${tag}>`);
+            cIndex += colSpan;
+          }
+          out.push(`<tr>${parts.join('')}</tr>`);
+        }
+        return out.join('');
+      };
+
+      const header = renderLayoutSection(layoutHeader, true);
+      const bodyRows = renderLayoutSection(layoutBody, false);
 
       const caption = String(node.caption ?? '').trim();
-      const capHtml = caption.length > 0 ? `<caption style="caption-side:top;text-align:left;margin-bottom:6px;color:#9aa0a6;font-style:italic">${escapeHtml(caption)}</caption>` : '';
-      return `<table style="border-collapse:collapse;width:100%">${capHtml}<thead>${header}</thead><tbody>${bodyRows}</tbody></table>`;
+      const capHtml =
+        caption.length > 0
+          ? `<caption style="caption-side:top;text-align:left;margin-bottom:6px;color:#9aa0a6;font-style:italic">${renderInlineTextWithMathTokens(
+              escapeHtml(caption)
+            )}</caption>`
+          : '';
+      const label = String((node as unknown as { label?: string }).label ?? '').trim();
+      const idAttr = label ? ` id="${latexLabelToDomId(label, 'table')}"` : '';
+      return `<table${idAttr} style="border-collapse:collapse;width:100%">${capHtml}<thead>${header}</thead><tbody>${bodyRows}</tbody></table>`;
     }
     case 'grid': {
       const g = node as GridNode;
@@ -312,8 +593,8 @@ function renderNode(node: IrNode): string {
             // Only force "fill cell" media sizing in full-width grids.
             // For left/center/right we want the grid to shrink-wrap to its natural content.
             const inner = isFullWidth
-              ? forceGridCellMediaToFill(renderNodes(cell?.children ?? []))
-              : shrinkWrapGridCellMedia(renderNodes(cell?.children ?? []));
+              ? forceGridCellMediaToFill(renderNodes(cell?.children ?? [], ctx))
+              : shrinkWrapGridCellMedia(renderNodes(cell?.children ?? [], ctx));
             const widthStyle = isFullWidth ? `width:${tdWidthPct}%;` : '';
             return `<td style="${widthStyle}border:${cellBorder};padding:${spacing.previewCellPadY}px ${spacing.previewCellPadX}px;vertical-align:top">${inner}</td>`;
           });
@@ -335,7 +616,13 @@ function renderNode(node: IrNode): string {
       const floatCss = canFloat
         ? `float:${align === 'right' ? 'right' : 'left'};max-width:55%;margin:${align === 'right' ? '0.25em 0 0.75em 1em' : '0.25em 1em 0.75em 0'};`
         : '';
-      const gridId = g.label ? ` id="grid-${sanitizeDomId(g.label)}"` : '';
+      // LaTeX refs treat `fig:*` labels as figure targets. Some multi-panel figures are modeled as `grid`,
+      // so render `fig:*` grid labels with a `figure-...` id to make \ref/\eqref links resolve + prettify.
+      const labelRaw = String(g.label ?? '').trim();
+      const labelPrefix = labelRaw.includes(':') ? labelRaw.split(':')[0]!.toLowerCase().trim() : '';
+      const idPrefix = labelPrefix === 'fig' ? 'figure' : 'grid';
+      const gridId = labelRaw ? ` id="${idPrefix}-${sanitizeDomId(labelRaw)}"` : '';
+      const gridData = labelPrefix === 'fig' ? ` data-zx-figure-grid="1"` : '';
       // NOTE: This enables wrap-around behavior in preview. The editor surface (CodeMirror)
       // cannot do true wrap-around for replacement widgets, so we only implement it here (IR->HTML).
 
@@ -361,16 +648,54 @@ function renderNode(node: IrNode): string {
       const tableCss = isFullWidth
         ? 'border-collapse:collapse;width:100%;table-layout:fixed'
         : 'border-collapse:collapse;table-layout:auto;display:inline-table;width:auto;max-width:100%';
-      return `<div class="xmd-grid"${gridId} style="${alignCss};${outerCss}">${capHtml}<table style="${tableCss}"><tbody>${body}</tbody></table></div>`;
+      return `<div class="xmd-grid"${gridId}${gridData} style="${alignCss};${outerCss}">${capHtml}<table style="${tableCss}"><tbody>${body}</tbody></table></div>`;
     }
-    case 'raw_xmd_block':
-      return renderMarkdownToHtml(node.xmd ?? '');
+    case 'raw_xmd_block': {
+      const raw = escapeHtml(node.xmd ?? '');
+      if (!raw.trim()) return '';
+      return `<div class="unrecognized-block"><div class="unrecognized-badge">Unrecognized</div><pre><code>${raw}</code></pre></div>`;
+    }
     case 'raw_latex_block': {
-      const raw = escapeHtml(node.latex ?? '');
-      return `<pre><code>${raw}</code></pre>`;
+      // Best-effort: remove comment-only lines and boilerplate so previews don't show LaTeX scaffolding.
+      const raw = String(node.latex ?? '');
+      const cleaned = raw
+        .split('\n')
+        .map((ln) => ln.replace(/^[\uFEFF\u200B\u200C\u200D]+/, ''))
+        .filter((ln) => {
+          const t = ln.trim();
+          if (!t) return false;
+          if (t.startsWith('%')) return false;
+          if (/^\\+documentclass\{[^}]+\}/.test(t)) return false;
+          if (/^\\+usepackage(\[[^\]]+\])?\{[^}]+\}/.test(t)) return false;
+          if (/^\\+begin\{document\}/.test(t)) return false;
+          if (/^\\+end\{document\}/.test(t)) return false;
+          if (/^\\+maketitle/.test(t)) return false;
+          return true;
+        })
+        .map((ln) => {
+          // strip trailing comment
+          let escaped = false;
+          for (let k = 0; k < ln.length; k++) {
+            const ch = ln[k]!;
+            if (escaped) {
+              escaped = false;
+              continue;
+            }
+            if (ch === '\\') {
+              escaped = true;
+              continue;
+            }
+            if (ch === '%') return ln.slice(0, k).trimEnd();
+          }
+          return ln;
+        })
+        .join('\n')
+        .trim();
+      if (!cleaned) return '';
+      return `<div class="unrecognized-block raw-latex-block"><div class="unrecognized-badge">Unrecognized</div><pre><code>${escapeHtml(cleaned)}</code></pre></div>`;
     }
     case 'document':
-      return renderNodes(node.children ?? []);
+      return renderNodes(node.children ?? [], ctx);
     default: {
       const _exhaustive: never = node;
       return String(_exhaustive);

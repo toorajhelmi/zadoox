@@ -31,10 +31,16 @@ describe('MarkdownPreview', () => {
     vi.clearAllMocks();
   });
 
-  it('should render "No content to preview" when content is empty', () => {
+  it('should render "No content to preview" when content is empty and no htmlOverride is provided', () => {
     render(<MarkdownPreview content="" />);
 
     expect(screen.getByText('No content to preview')).toBeInTheDocument();
+  });
+
+  it('should render when content is empty but htmlOverride is provided (IR/LaTeX preview)', () => {
+    const { container } = render(<MarkdownPreview content="" htmlOverride="<div>From IR</div>" />);
+    expect(screen.queryByText('No content to preview')).not.toBeInTheDocument();
+    expect(container.querySelector('.markdown-content')?.innerHTML).toContain('From IR');
   });
 
   // Skip - testing implementation details (HTML rendering)

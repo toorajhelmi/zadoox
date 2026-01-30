@@ -8,6 +8,7 @@ import { EditorSidebar } from './editor-sidebar';
 import { EditorToolbar } from './editor-toolbar';
 import { EditorStatusBar } from './editor-status-bar';
 import { IrPreview } from './ir-preview';
+import { extractKatexMacrosFromLatex } from './latex-katex-macros';
 import { FormattingToolbar } from './formatting-toolbar';
 import { ThinkModePanel } from './think-mode-panel';
 import { InlineAIChat } from './inline-ai-chat';
@@ -175,7 +176,16 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
 
   const getCurrentIrForModeSwitch = useCallback(() => getCurrentIrRef.current(), []);
 
-  const { editMode, setEditMode, latexDraft, setLatexDraft, handleEditModeChange } = useEditorEditMode({
+  const {
+    editMode,
+    setEditMode,
+    latexDraft,
+    setLatexDraft,
+    handleEditModeChange,
+    latexEntryLoading,
+    latexEntryError,
+    reloadLatexEntry,
+  } = useEditorEditMode({
     actualDocumentId,
     documentId,
     content,
@@ -194,6 +204,13 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     [handleEditModeChange]
   );
 
+  const katexMacros = useMemo(() => {
+    if (editMode !== 'latex') return undefined;
+    if (!latexDraft || latexDraft.trim().length === 0) return undefined;
+    const macros = extractKatexMacrosFromLatex(latexDraft);
+    return Object.keys(macros).length > 0 ? macros : undefined;
+  }, [editMode, latexDraft]);
+
   const docKey = actualDocumentId || documentId || null;
   const { canonicalIr, getCurrentIr } = useCanonicalIrState({
     docKey,
@@ -204,6 +221,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     documentMetadata,
     setDocumentMetadata,
     latexEditNonce: latexEditNonceRef.current,
+    documentLatex,
   });
 
   useEffect(() => {
@@ -647,6 +665,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           projectName={projectName}
           projectId={projectId}
           currentDocumentId={documentId}
+          documentLatex={documentLatex}
           documentId={actualDocumentId}
           lastSaved={lastSaved}
           activeTab={sidebarTab}
@@ -705,6 +724,22 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         {/* Overlay for toolbars and editor - prevents interaction when inline chat or think panel is open */}
         {(inlineAIChatOpen || thinkPanelOpen) && (
           <div className="absolute inset-0 bg-black/30 pointer-events-auto" style={{ zIndex: 45 }} />
+        )}
+
+        {/* Imported LaTeX docs have empty XMD content; make that obvious in Markdown mode. */}
+        {editMode === 'markdown' && !content.trim() && documentLatex && (
+          <div className="px-4 py-2 border-b border-vscode-border bg-vscode-sidebar flex items-center justify-between">
+            <div className="text-sm text-vscode-text-secondary">
+              This document was imported as <span className="text-white font-medium">LaTeX</span>. Switch to LaTeX to view/edit it.
+            </div>
+            <button
+              type="button"
+              className="px-3 py-1.5 rounded bg-vscode-button text-white hover:bg-vscode-buttonHover transition-colors"
+              onClick={() => void handleEditModeChangeStable('latex')}
+            >
+              Switch to LaTeX
+            </button>
+          </div>
         )}
         
         {/* Toolbar */}
@@ -793,6 +828,34 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                   : undefined
               }
             >
+              {/* LaTeX entry loading/error overlay (imported docs are LaTeX-first). */}
+              {editMode === 'latex' && Boolean(documentLatex) && latexDraft.length === 0 && (
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40">
+                  <div className="max-w-md rounded border border-vscode-border bg-vscode-sidebar px-4 py-3 text-sm text-vscode-text">
+                    {latexEntryError ? (
+                      <div className="space-y-2">
+                        <div className="font-medium text-white">Failed to load LaTeX entry</div>
+                        <div className="text-vscode-text-secondary break-words">{latexEntryError}</div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            className="px-3 py-1.5 rounded bg-vscode-button text-white hover:bg-vscode-buttonHover transition-colors"
+                            onClick={() => reloadLatexEntry()}
+                          >
+                            Retry
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-vscode-text-secondary">
+                        <span className="animate-spin inline-block w-4 h-4 border-2 border-vscode-text-secondary border-t-transparent rounded-full" />
+                        <span>{latexEntryLoading ? 'Loading LaTeX…' : 'Loading LaTeX…'}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Inline AI Hint - Shows toned-down prompt */}
               {!thinkPanelOpen && !inlineAIChatOpen && cursorScreenPosition && cursorPosition && (
                 <InlineAIHint
@@ -1133,7 +1196,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               }
             >
               <div className="h-full">
-                <IrPreview docId={actualDocumentId || documentId} content={content} ir={sidebarIr} />
+                <IrPreview docId={actualDocumentId || documentId} content={content} ir={sidebarIr} katexMacros={katexMacros} />
               </div>
             </div>
           )}

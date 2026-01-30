@@ -3,6 +3,7 @@
 import { renderMarkdownToHtml, extractHeadings } from '@zadoox/shared';
 import { useMemo, useEffect, useRef, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+// KaTeX is loaded lazily so math rendering can never break the preview (figures/assets/etc).
 
 interface MarkdownPreviewProps {
   content: string;
@@ -12,17 +13,40 @@ interface MarkdownPreviewProps {
    * (asset URL rewrite, citation linking, etc).
    */
   htmlOverride?: string;
+  /**
+   * Optional documentId for resolving LaTeX bundle assets when rendering IR previews.
+   */
+  latexDocId?: string;
+  /**
+   * Optional KaTeX macros map (math-only), typically extracted from LaTeX preamble.
+   * Unknown macros remain red; this only helps for simple \newcommand/\def cases.
+   */
+  katexMacros?: Record<string, string>;
 }
 
 const TRANSPARENT_PIXEL =
   // 1x1 transparent GIF
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
 
-export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps) {
+export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros }: MarkdownPreviewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [figureBgDefault] = useState<'dark' | 'light'>(() => {
+    // Default to light so black-on-transparent plots remain readable.
+    if (typeof window === 'undefined') return 'light';
+    const v = window.localStorage.getItem('zx.preview.figureBg');
+    if (v === 'dark' || v === 'light') return v;
+    try {
+      window.localStorage.setItem('zx.preview.figureBg', 'light');
+    } catch {
+      // ignore
+    }
+    return 'light';
+  });
   const assetUrlCacheRef = useRef<Map<string, string>>(new Map());
   const assetInFlightRef = useRef<Set<string>>(new Set());
+  const latexAssetUrlCacheRef = useRef<Map<string, { url: string; contentType: string }>>(new Map());
+  const latexAssetInFlightRef = useRef<Set<string>>(new Set());
   const abortRef = useRef<AbortController | null>(null);
   const html = useMemo(() => {
     if (!content.trim() && !htmlOverride?.trim()) {
@@ -42,12 +66,26 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
       });
     }
     
-    // Add IDs to reference entries in References section FIRST (before converting citations to links)
-    // This ensures references have IDs before citations link to them
-    const referencesSectionMatch = htmlContent.match(/(<h2[^>]*>References<\/h2>)([\s\S]*?)(?=<h[1-6]|<\/div>|$)/i);
+    // Add IDs to reference entries in References section FIRST (before converting citations to links).
+    // This ensures references have IDs before citations link to them.
+    //
+    // Important: section numbering can prefix headings (e.g. "<h3>1 References</h3>"),
+    // and References might not always be h2 depending on the surface/renderer.
+    const referencesSectionMatch = htmlContent.match(
+      /(<h[1-6][^>]*>\s*(?:\d+(?:\.\d+)*\s+)?References\s*<\/h[1-6]>)([\s\S]*?)(?=<h[1-6]|<\/div>|$)/i
+    );
     if (referencesSectionMatch) {
       let referencesContent = referencesSectionMatch[2];
       let refNumber = 1;
+      let bibKeyNumber = 1;
+      // Keyed by sanitized bibkey so mapping is stable across casing / punctuation differences.
+      const bibKeyToNumber = new Map<string, number>();
+      const sanitizeKey = (raw: string): string =>
+        String(raw ?? '')
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
       
       // First, handle numbered/IEEE format: [1] ..., [2] ...
       // References might be in separate paragraphs OR in the same paragraph separated by <br />
@@ -55,24 +93,24 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
       // Case 1: <p>[1] text</p><p>[2] text</p> (separate paragraphs)
       // Case 2: <p>[1] text<br />[2] text</p> (same paragraph with breaks)
       
-      // First, handle separate paragraphs starting with [number]
+      // First, handle numbered/IEEE format: [1] ..., [2] ...
+      // References may be paragraphs (<p>) or list items (<li>) depending on renderer.
       referencesContent = referencesContent.replace(
-        /<p([^>]*)>\[(\d+)\]\s*/g,
-        (match, attrs, number) => {
-          // If attrs is empty, just add id and class
-          if (!attrs || attrs.trim() === '') {
-            return `<p id="ref-${number}" class="reference-entry">[${number}] `;
-          } else {
-            // Preserve existing attributes but add id (if not present) and class
-            const hasId = /id=/.test(attrs);
-            const hasClass = /class=/.test(attrs);
-            if (!hasId) {
-              return `<p id="ref-${number}" ${hasClass ? '' : 'class="reference-entry" '}${attrs}>[${number}] `;
-            } else {
-              // ID already exists, just ensure class is present
-              return `<p ${attrs}${hasClass ? '' : ' class="reference-entry"'}>[${number}] `;
-            }
+        /<(p|li)([^>]*)>\[(\d+)\]\s*/g,
+        (_match, tag, attrs, number) => {
+          const t = String(tag ?? 'p');
+          const a = String(attrs ?? '');
+          if (!a || a.trim() === '') {
+            return `<${t} id="ref-${number}" class="reference-entry">[${number}] `;
           }
+          // Preserve existing attributes but add id (if not present) and class
+          const hasId = /id=/.test(a);
+          const hasClass = /class=/.test(a);
+          if (!hasId) {
+            return `<${t} id="ref-${number}" ${hasClass ? '' : 'class="reference-entry" '}${a}>[${number}] `;
+          }
+          // ID already exists, just ensure class is present
+          return `<${t}${a}${hasClass ? '' : ' class="reference-entry"'}>[${number}] `;
         }
       );
       
@@ -87,23 +125,75 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
         }
       );
       
-      // Then, for other formats (APA, MLA, Chicago, footnote), number them sequentially
-      // Only process paragraphs that don't already have an id (were not processed above)
+      // Then, for other formats (APA, MLA, Chicago, footnote), number them sequentially.
+      // Only process entries that don't already have an id (were not processed above).
+      //
+      // IMPORTANT: skip entries that start with "[" because those are either:
+      // - already-numbered refs: [1] ...
+      // - bibkey refs: [vaswani2017attention] ...
+      // Those are handled by dedicated passes above/below.
       referencesContent = referencesContent.replace(
-        /<p(?!\s+id=)([^>]*)>([^<]+)<\/p>/g,
-        (match, attrs, content) => {
+        /<(p|li)(?!\s+id=)([^>]*)>(?!\s*\[)([^<]+)<\/\1>/g,
+        (_match, tag, attrs, content) => {
+          const t = String(tag ?? 'p');
           // Skip if empty
           if (content.trim() === '') {
-            return match;
+            return _match;
           }
           // Add ID to this reference
           const id = `id="ref-${refNumber}"`;
           refNumber++;
-          return `<p ${id} class="reference-entry"${attrs}>${content}</p>`;
+          return `<${t} ${id} class="reference-entry"${attrs}>${content}</${t}>`;
         }
       );
-      
+
+      // Finally, handle BibTeX-key style: [vaswani2017attention] ...
+      // Add id="refkey-<key>" so inline cite tokens can link to it, and also assign a stable numeric
+      // index so citations can render as [n] instead of the raw key.
+      referencesContent = referencesContent.replace(
+        /<(p|li)([^>]*)>\[([^\]]+)\]\s*/g,
+        (_match, tag, attrs, key) => {
+          const t = String(tag ?? 'p');
+          const k = String(key ?? '').trim();
+          // Keep numeric refs handled above
+          if (/^\d+$/.test(k)) return _match;
+          const sk = sanitizeKey(k);
+          const id = `refkey-${sk}`;
+          const n = (() => {
+            const existing = bibKeyToNumber.get(sk);
+            if (existing) return existing;
+            const next = bibKeyNumber++;
+            bibKeyToNumber.set(sk, next);
+            return next;
+          })();
+          const a = String(attrs ?? '');
+          const hasId = /id=/.test(a);
+          const hasClass = /class=/.test(a);
+          if (hasId) return _match;
+          const cls = hasClass ? '' : 'class="reference-entry" ';
+          // Store sanitized key + assigned number for later citation normalization.
+          return `<${t} id="${id}" data-ref-key="${sk}" data-ref-number="${n}" ${cls}${a}>[${n}] `;
+        }
+      );
+
       htmlContent = htmlContent.replace(referencesSectionMatch[0], referencesSectionMatch[1] + referencesContent);
+
+      // If we assigned bib-key reference numbers, rewrite in-text citation links to display [n]
+      // and carry data-ref-number so the click handler can reliably scroll/highlight.
+      if (bibKeyToNumber.size > 0) {
+        // Rewrite ALL citation-key anchors in one pass, matching on sanitized keys.
+        htmlContent = htmlContent.replace(
+          /<a([^>]*class="[^"]*citation-key[^"]*"[^>]*data-ref-key="([^"]+)"[^>]*)>\[[^\]]*\]<\/a>/g,
+          (m, attrs, rawKeyAttr) => {
+            const sk = sanitizeKey(String(rawKeyAttr ?? ''));
+            const n = bibKeyToNumber.get(sk);
+            if (!n) return m;
+            const hasRefNum = /\bdata-ref-number=/.test(String(attrs ?? ''));
+            const nextAttrs = hasRefNum ? String(attrs ?? '') : `${String(attrs ?? '')} data-ref-number="${n}"`;
+            return `<a${nextAttrs}>[${n}]</a>`;
+          }
+        );
+      }
     }
     
     // Convert citation markers [1], [2], etc. to clickable anchors
@@ -114,8 +204,11 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
     const citationRegex = /\[(\d+)\]/g;
     let match;
     
-    // Find the References section boundaries
-    const refSectionStart = htmlContent.indexOf('<h2') !== -1 ? htmlContent.indexOf('References</h2>') : -1;
+    // Find the References section boundaries.
+    // NOTE: section numbering can prefix headings and heading level may vary.
+    const refHeadingRe = /<h[1-6][^>]*>\s*(?:\d+(?:\.\d+)*\s+)?References\s*<\/h[1-6]>/i;
+    const refHeadingMatch = refHeadingRe.exec(htmlContent);
+    const refSectionStart = refHeadingMatch ? refHeadingMatch.index : -1;
     
     // Collect all citation matches with their positions
     while ((match = citationRegex.exec(htmlContent)) !== null) {
@@ -199,30 +292,44 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
 
   // Track auth token so asset fetching can retry when a session becomes available.
   useEffect(() => {
-    const supabase = createClient();
     let cancelled = false;
 
     (async () => {
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } = await (async () => {
+        try {
+          const supabase = createClient();
+          return await supabase.auth.getSession();
+        } catch {
+          // Supabase not configured or unavailable; keep preview functional without an access token.
+          return { data: { session: null } } as any;
+        }
+      })();
       if (cancelled) return;
       setAccessToken(session?.access_token ?? null);
     })();
 
-    // IMPORTANT: don't detach the method from `supabase.auth` (it relies on `this` internally).
-    const maybeOnAuthStateChange = (supabase.auth as unknown as { onAuthStateChange?: unknown }).onAuthStateChange;
-    const sub =
-      typeof maybeOnAuthStateChange === 'function'
-        ? (supabase.auth as unknown as {
-            onAuthStateChange: (cb: (event: unknown, session: { access_token?: string } | null) => void) => {
-              data: { subscription: { unsubscribe: () => void } };
-            };
-          }).onAuthStateChange((_event, session) => {
-            if (cancelled) return;
-            setAccessToken(session?.access_token ?? null);
-          })
-        : null;
+    // Subscribe to auth changes when Supabase is configured.
+    let sub: { data: { subscription: { unsubscribe: () => void } } } | null = null;
+    try {
+      const supabase = createClient();
+      // IMPORTANT: don't detach the method from `supabase.auth` (it relies on `this` internally).
+      const maybeOnAuthStateChange = (supabase.auth as unknown as { onAuthStateChange?: unknown }).onAuthStateChange;
+      sub =
+        typeof maybeOnAuthStateChange === 'function'
+          ? (supabase.auth as unknown as {
+              onAuthStateChange: (cb: (event: unknown, session: { access_token?: string } | null) => void) => {
+                data: { subscription: { unsubscribe: () => void } };
+              };
+            }).onAuthStateChange((_event, session) => {
+              if (cancelled) return;
+              setAccessToken(session?.access_token ?? null);
+            })
+          : null;
+    } catch {
+      // ignore
+    }
 
     return () => {
       cancelled = true;
@@ -329,8 +436,6 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
   const resolveAssetImages = useCallback(async () => {
     const container = containerRef.current;
     if (!container) return;
-    const token = accessToken;
-    if (!token) return;
 
     const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
     if (!abortRef.current) abortRef.current = new AbortController();
@@ -360,8 +465,9 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
         if (assetInFlightRef.current.has(key)) return;
         assetInFlightRef.current.add(key);
         try {
+          const token = accessToken;
           const res = await fetch(`${API_BASE}/assets/${encodeURIComponent(key)}`, {
-            headers: { Authorization: `Bearer ${token}` },
+            ...(token ? { headers: { Authorization: `Bearer ${token}` } } : { credentials: 'include' }),
             signal,
           });
           if (!res.ok) return;
@@ -382,9 +488,255 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
     );
   }, [accessToken, clampFigureCaptionsToImageWidth, applyGridIntrinsicPercentSizing]);
 
+  const resolveLatexAssetImages = useCallback(async () => {
+    const container = containerRef.current;
+    if (!container) return;
+    if (!latexDocId) return;
+
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
+    if (!abortRef.current) abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
+
+    const imgs = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
+    const latexImgs = imgs.filter((img) => {
+      const p = img.dataset.zxAssetPath;
+      if (!p) return false;
+      const src = img.getAttribute('src') || '';
+      return src === TRANSPARENT_PIXEL || src.trim() === '';
+    });
+
+    const pdfObjects = Array.from(container.querySelectorAll('object.latex-figure-pdf')) as HTMLObjectElement[];
+    const latexObjs = pdfObjects.filter((obj) => {
+      const p = obj.getAttribute('data-zx-asset-path') || '';
+      if (!p) return false;
+      const data = obj.getAttribute('data') || '';
+      return data === TRANSPARENT_PIXEL || data.trim() === '';
+    });
+
+    if (latexImgs.length === 0 && latexObjs.length === 0) return;
+
+    const asPdfObject = (p: string, url: string): HTMLObjectElement => {
+      const obj = document.createElement('object');
+      obj.className = 'latex-figure-pdf';
+      obj.setAttribute('data-zx-asset-path', p);
+      obj.setAttribute('type', 'application/pdf');
+      obj.setAttribute('data', url);
+      obj.setAttribute(
+        'style',
+        'width:min(900px,100%);height:520px;display:block;border:1px solid rgba(255,255,255,0.12);border-radius:8px'
+      );
+      return obj;
+    };
+
+    await Promise.all(
+      [...latexImgs.map((img) => ({ kind: 'img' as const, el: img })), ...latexObjs.map((obj) => ({ kind: 'obj' as const, el: obj }))].map(async (item) => {
+        const p =
+          item.kind === 'img' ? (item.el as HTMLImageElement).dataset.zxAssetPath || '' : (item.el as HTMLObjectElement).getAttribute('data-zx-asset-path') || '';
+        if (!p) return;
+
+        const cached = latexAssetUrlCacheRef.current.get(p);
+        if (cached) {
+          if (cached.contentType.includes('application/pdf')) {
+            if (item.kind === 'img') {
+              const imgEl = item.el as HTMLImageElement;
+              imgEl.replaceWith(asPdfObject(p, cached.url));
+            } else {
+              (item.el as HTMLObjectElement).setAttribute('data', cached.url);
+            }
+          } else {
+            if (item.kind === 'img') (item.el as HTMLImageElement).src = cached.url;
+            else (item.el as HTMLObjectElement).setAttribute('data', cached.url);
+          }
+          return;
+        }
+
+        if (latexAssetInFlightRef.current.has(p)) return;
+        latexAssetInFlightRef.current.add(p);
+        try {
+          const url = `${API_BASE}/documents/${encodeURIComponent(latexDocId)}/latex/file?path=${encodeURIComponent(p)}`;
+          const token = accessToken;
+          const res = await fetch(url, { ...(token ? { headers: { Authorization: `Bearer ${token}` } } : { credentials: 'include' }), signal });
+          if (!res.ok) return;
+          const blob = await res.blob();
+          const objUrl = URL.createObjectURL(blob);
+          const contentType = (res.headers.get('Content-Type') || blob.type || '').toLowerCase();
+          latexAssetUrlCacheRef.current.set(p, { url: objUrl, contentType });
+          if (contentType.includes('application/pdf')) {
+            if (item.kind === 'img') {
+              const imgEl = item.el as HTMLImageElement;
+              imgEl.replaceWith(asPdfObject(p, objUrl));
+            } else {
+              (item.el as HTMLObjectElement).setAttribute('data', objUrl);
+            }
+          } else {
+            if (item.kind === 'img') (item.el as HTMLImageElement).src = objUrl;
+            else (item.el as HTMLObjectElement).setAttribute('data', objUrl);
+          }
+          clampFigureCaptionsToImageWidth();
+          applyGridIntrinsicPercentSizing();
+        } catch {
+          // ignore
+        } finally {
+          latexAssetInFlightRef.current.delete(p);
+        }
+      })
+    );
+  }, [accessToken, latexDocId, clampFigureCaptionsToImageWidth, applyGridIntrinsicPercentSizing]);
+
   useEffect(() => {
     void resolveAssetImages();
-  }, [html, accessToken, resolveAssetImages]);
+    void resolveLatexAssetImages();
+  }, [html, accessToken, resolveAssetImages, resolveLatexAssetImages]);
+
+  // Add per-figure background toggle buttons (and apply default background) after each HTML change.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const ensureFigureButtons = () => {
+      // Some figures may not have the expected wrapper; normalize:
+      // - Ensure media (<img>/<object>) is wrapped in .zx-figure-media-frame
+      // - Ensure each frame has a .zx-figure-bg-toggle button
+      const figureInners = Array.from(container.querySelectorAll('.figure-inner')) as HTMLElement[];
+      for (const inner of figureInners) {
+        const media = inner.querySelector('img, object') as HTMLElement | null;
+        if (!media) continue;
+        const existingFrame = media.closest('.zx-figure-media-frame') as HTMLElement | null;
+        let frame = existingFrame;
+        if (!frame) {
+          frame = document.createElement('span');
+          frame.className = 'zx-figure-media-frame';
+          media.replaceWith(frame);
+          frame.appendChild(media);
+        }
+        if (figureBgDefault === 'light') frame.classList.add('zx-figure-frame-light');
+        else frame.classList.remove('zx-figure-frame-light');
+
+        if (!frame.querySelector('.zx-figure-bg-toggle')) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'zx-figure-bg-toggle';
+          btn.textContent = 'Bg';
+          btn.setAttribute('aria-label', 'Toggle figure background');
+          frame.appendChild(btn);
+        }
+      }
+    };
+
+    try {
+      ensureFigureButtons();
+    } catch {
+      // ignore
+    }
+
+    const onClick = (e: Event) => {
+      const target = e.target as HTMLElement | null;
+      const btn = target?.closest?.('.zx-figure-bg-toggle') as HTMLButtonElement | null;
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const frame = btn.closest('.zx-figure-media-frame') as HTMLElement | null;
+      if (!frame) return;
+      frame.classList.toggle('zx-figure-frame-light');
+    };
+
+    container.addEventListener('click', onClick);
+    return () => container.removeEventListener('click', onClick);
+  }, [html, figureBgDefault]);
+
+  const katexRef = useRef<any>(null);
+  const katexLoadPromiseRef = useRef<Promise<any> | null>(null);
+  const katexLoadErrorOnceRef = useRef<boolean>(false);
+  const loadKatex = useCallback(async (): Promise<any | null> => {
+    if (katexRef.current) return katexRef.current;
+    if (!katexLoadPromiseRef.current) {
+      katexLoadPromiseRef.current = (async () => {
+        // Prefer ESM bundle; fall back to package root if bundler can't load the ESM path.
+        try {
+          const mod: any = await import('katex/dist/katex.mjs');
+          const k = mod?.default ?? mod;
+          katexRef.current = k;
+          return k;
+        } catch (err) {
+          try {
+            const mod2: any = await import('katex');
+            const k2 = mod2?.default ?? mod2;
+            katexRef.current = k2;
+            return k2;
+          } catch (err2) {
+            if (!katexLoadErrorOnceRef.current) {
+              katexLoadErrorOnceRef.current = true;
+              // eslint-disable-next-line no-console
+              console.error('[zx-preview] failed to load KaTeX', err2);
+            }
+            throw err2;
+          }
+        }
+      })();
+    }
+    try {
+      return await katexLoadPromiseRef.current;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const typesetMath = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const codeNodes = Array.from(container.querySelectorAll('.math-latex')) as HTMLElement[];
+    const blockNodes = Array.from(container.querySelectorAll('div.math-block')) as HTMLElement[];
+    const nodes: HTMLElement[] = [...codeNodes];
+    for (const b of blockNodes) {
+      // Some math blocks might not include the <code.math-latex> wrapper (e.g. legacy/alternate HTML).
+      // If so, typeset the whole block.
+      if (!b.querySelector('.math-latex')) nodes.push(b);
+    }
+    if (nodes.length === 0) return;
+
+    const normalizeTex = (raw: string, isDisplay: boolean): string => {
+      let tex = String(raw ?? '').trim();
+      if (!tex) return tex;
+      // Normalize common variants
+      tex = tex.replace(/\\newline\b/g, '\\\\');
+      // Trim trailing line breaks that often appear in extracted align blocks
+      tex = tex.replace(/\\\\\s*$/g, '');
+      // If this looks like an aligned block but isn't wrapped, wrap it so KaTeX can parse & and \\.
+      if (isDisplay && !/\\begin\{[a-zA-Z*]+\}/.test(tex) && (tex.includes('&') || tex.includes('\\\\'))) {
+        tex = `\\begin{aligned}\n${tex}\n\\end{aligned}`;
+      }
+      // Light unicode normalization (helps with some PDF-ish extractions)
+      tex = tex.replace(/−/g, '-').replace(/⋅/g, '\\cdot ');
+      return tex;
+    };
+    void (async () => {
+      const k = await loadKatex();
+      if (!k) return;
+      const render = k.render as ((tex: string, el: HTMLElement, opts: any) => void) | undefined;
+      const renderToString = k.renderToString as ((tex: string, opts: any) => string) | undefined;
+      if (!render && !renderToString) return;
+      for (const el of nodes) {
+        if (el.getAttribute('data-zx-math-rendered') === '1') continue;
+        const displayMode = el.classList.contains('math-block') || Boolean(el.closest('.math-block'));
+        const raw = el.getAttribute('data-zx-math-raw') ?? el.textContent ?? '';
+        const tex = normalizeTex(raw, displayMode);
+        try {
+          const macros = katexMacros && Object.keys(katexMacros).length > 0 ? katexMacros : undefined;
+          if (render) {
+            render(tex, el, { throwOnError: false, displayMode, strict: 'ignore', ...(macros ? { macros } : null) });
+          } else if (renderToString) {
+            el.innerHTML = renderToString(tex, { throwOnError: false, displayMode, strict: 'ignore', ...(macros ? { macros } : null) });
+          }
+          if (!el.getAttribute('data-zx-math-raw')) {
+            el.setAttribute('data-zx-math-raw', String(raw));
+          }
+          el.setAttribute('data-zx-math-rendered', '1');
+        } catch {
+          // ignore (math will remain as raw LaTeX)
+        }
+      }
+    })();
+  }, [katexMacros, loadKatex]);
 
   // If the preview DOM is replaced/reconciled (or images are inserted later),
   // keep resolving any placeholder asset images.
@@ -394,15 +746,33 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
 
     const obs = new MutationObserver(() => {
       void resolveAssetImages();
+      void resolveLatexAssetImages();
       clampFigureCaptionsToImageWidth();
       applyGridIntrinsicPercentSizing();
+      typesetMath();
+      // If figures/media were inserted after initial HTML render, ensure per-figure Bg buttons exist.
+      try {
+        const frames = Array.from(container.querySelectorAll('.zx-figure-media-frame')) as HTMLElement[];
+        for (const f of frames) {
+          if (!f.querySelector('.zx-figure-bg-toggle')) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'zx-figure-bg-toggle';
+            btn.textContent = 'Bg';
+            btn.setAttribute('aria-label', 'Toggle figure background');
+            f.appendChild(btn);
+          }
+        }
+      } catch {
+        // ignore
+      }
     });
     obs.observe(container, { childList: true, subtree: true });
 
     return () => {
       obs.disconnect();
     };
-  }, [resolveAssetImages, clampFigureCaptionsToImageWidth, applyGridIntrinsicPercentSizing]);
+  }, [resolveAssetImages, resolveLatexAssetImages, clampFigureCaptionsToImageWidth, applyGridIntrinsicPercentSizing, typesetMath]);
 
   // Also clamp captions after each HTML change (non-asset images / already-loaded images).
   useEffect(() => {
@@ -410,10 +780,80 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
     applyGridIntrinsicPercentSizing();
   }, [html, clampFigureCaptionsToImageWidth, applyGridIntrinsicPercentSizing]);
 
+  // Typeset LaTeX math blocks after each HTML update.
+  useEffect(() => {
+    typesetMath();
+  }, [html, typesetMath]);
+
+  // Normalize citation numbers in the rendered DOM.
+  // Assign numbers based on first in-text citation appearance (robust even if References section is absent/malformed).
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    try {
+      const sanitizeKey = (raw: string): string =>
+        String(raw ?? '')
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+
+      // Build mapping from bibkey -> numeric index, based on in-text citation order.
+      const citeLinksAll = Array.from(container.querySelectorAll('a.citation-link.citation-key')) as HTMLAnchorElement[];
+      const keyToNum = new Map<string, number>();
+      let nextNum = 1;
+      for (const a of citeLinksAll) {
+        const rawKeyAttr = a.getAttribute('data-ref-key') || '';
+        const sk = sanitizeKey(rawKeyAttr);
+        if (!sk) continue;
+        if (!keyToNum.has(sk)) keyToNum.set(sk, nextNum++);
+      }
+      if (keyToNum.size === 0) return;
+
+      // Update in-text citation links to display [n] and point to refkey-<key>.
+      const citeLinks = Array.from(container.querySelectorAll('a.citation-link.citation-key')) as HTMLAnchorElement[];
+      for (const a of citeLinks) {
+        const rawKeyAttr = a.getAttribute('data-ref-key') || '';
+        const sk = sanitizeKey(rawKeyAttr);
+        const n = keyToNum.get(sk);
+        if (!n) continue;
+        a.textContent = `[${n}]`;
+        a.setAttribute('data-ref-number', String(n));
+        a.setAttribute('href', `#refkey-${sk}`);
+      }
+
+      // Update any reference-entry-like nodes anywhere in the doc that start with [key] to show [n].
+      // (Covers paragraphs, list items, and various wrappers produced by import/renderers.)
+      const candidateEntries = Array.from(container.querySelectorAll('p,li')) as HTMLElement[];
+      for (const el of candidateEntries) {
+        const text = (el.textContent ?? '').trim();
+        const m = /^\s*\[([^\]]+)\]\s*/.exec(text);
+        if (!m) continue;
+        const rawKey = String(m[1] ?? '').trim();
+        if (!rawKey) continue;
+        if (/^\d+$/.test(rawKey)) continue;
+        const sk = sanitizeKey(rawKey);
+        const n = keyToNum.get(sk);
+        if (!n) continue;
+        // Replace only the leading [key] token in the HTML.
+        const inner = el.innerHTML ?? '';
+        el.innerHTML = inner.replace(/^\s*\[[^\]]+\]\s*/, `[${n}] `);
+        if (!el.id) el.id = `refkey-${sk}`;
+        el.classList.add('reference-entry');
+        el.setAttribute('data-ref-key', sk);
+        el.setAttribute('data-ref-number', String(n));
+      }
+    } catch {
+      // Never break preview rendering.
+    }
+  }, [html]);
+
   // Cleanup blob URLs + in-flight fetch on unmount
   useEffect(() => {
     const cache = assetUrlCacheRef.current;
+    const latexCache = latexAssetUrlCacheRef.current;
     const inflight = assetInFlightRef.current;
+    const latexInflight = latexAssetInFlightRef.current;
     return () => {
       abortRef.current?.abort();
       abortRef.current = null;
@@ -422,6 +862,11 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
       }
       cache.clear();
       inflight.clear();
+      for (const url of latexCache.values()) {
+        URL.revokeObjectURL(url.url);
+      }
+      latexCache.clear();
+      latexInflight.clear();
     };
   }, []);
 
@@ -434,19 +879,43 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
       if (citationLink) {
         e.preventDefault();
         const refNumber = citationLink.getAttribute('data-ref-number');
-        if (refNumber) {
-          const refId = `ref-${refNumber}`;
-          const refElement = document.getElementById(refId);
-          if (refElement) {
-            // Scroll to the reference
-            refElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            
-            // Highlight the reference temporarily
-            refElement.classList.add('reference-highlight');
-            setTimeout(() => {
-              refElement.classList.remove('reference-highlight');
-            }, 2000);
+        const refKeyRaw = citationLink.getAttribute('data-ref-key') || '';
+
+        const findRefEl = (): HTMLElement | null => {
+          if (refNumber) {
+            const el = document.getElementById(`ref-${refNumber}`);
+            if (el) return el;
           }
+          // Prefer hash href if present.
+          const href = citationLink.getAttribute('href') || '';
+          if (href.startsWith('#') && href.length > 1) {
+            const id = href.slice(1);
+            const el = document.getElementById(id);
+            if (el) return el;
+          }
+          if (refKeyRaw) {
+            // data-ref-key in citation links is raw (unsanitized). Our reference ids are sanitized.
+            const sanitize = (raw: string) =>
+              String(raw ?? '')
+                .toLowerCase()
+                .replace(/[^a-z0-9_-]+/g, '-')
+                .replace(/-+/g, '-')
+                .replace(/^-|-$/g, '');
+            const el = document.getElementById(`refkey-${sanitize(refKeyRaw)}`);
+            if (el) return el;
+          }
+          return null;
+        };
+
+        const refElement = findRefEl();
+        if (refElement) {
+          // Scroll to the reference
+          refElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Highlight the reference temporarily
+          refElement.classList.add('reference-highlight');
+          setTimeout(() => {
+            refElement.classList.remove('reference-highlight');
+          }, 2000);
         }
       }
     };
@@ -458,6 +927,226 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
     return () => {
       container.removeEventListener('click', handleCitationClick as EventListener);
     };
+  }, [html]);
+
+  // Normalize LaTeX-style cross-reference links (tab:..., fig:..., sec:..., eq:...) into nicer labels
+  // like "Table 1", "Figure 2", "Section 3", "Eq. (4)" while preserving href/id navigation.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    // IMPORTANT: This pass must never break preview rendering (figures/math).
+    // Any unexpected DOM edge cases must be swallowed.
+    const run = () => {
+      try {
+      const getById = (id: string): HTMLElement | null => {
+        // Use DOM id lookup to avoid CSS selector escaping pitfalls.
+        return document.getElementById(id);
+      };
+
+      const buildIdIndex = (selector: string, prefix: string): Map<string, number> => {
+        const map = new Map<string, number>();
+        const els = Array.from(container.querySelectorAll(selector)) as HTMLElement[];
+        let n = 1;
+        for (const el of els) {
+          const id = el.getAttribute('id') || '';
+          if (!id || !id.startsWith(prefix)) continue;
+          // Only number each id once.
+          if (!map.has(id)) {
+            map.set(id, n);
+            n++;
+          }
+        }
+        return map;
+      };
+
+      // Targets are created by shared IR renderers:
+      // - tables: <table id="table-...">
+      // - figures: <span id="figure-...">...</span>
+      // - equations: element with id="eq-..."
+      // - sections: heading tags with id="sec-..."
+      const tableNums = buildIdIndex('table[id]', 'table-');
+      // Figures:
+      // - Normal figures render as <span id="figure-..." class="figure">...</span>
+      // - Some multi-panel figures are modeled as `.xmd-grid` blocks but labeled `fig:*`.
+      //   Those grids render with id="figure-..." + data-zx-figure-grid="1".
+      // - IMPORTANT: Do NOT count subfigures inside grids as top-level figures (they pollute numbering).
+      const figNums = (() => {
+        const map = new Map<string, number>();
+        const els = Array.from(container.querySelectorAll('[id^="figure-"]')) as HTMLElement[];
+        let n = 1;
+        for (const el of els) {
+          const id = el.getAttribute('id') || '';
+          if (!id || !id.startsWith('figure-')) continue;
+          const inGrid = el.closest('.xmd-grid') as HTMLElement | null;
+          const isFigureGrid = el.classList.contains('xmd-grid') && el.getAttribute('data-zx-figure-grid') === '1';
+          // Exclude subfigures inside grids; keep the grid itself if it's a figure-grid.
+          if (inGrid && !isFigureGrid) continue;
+          if (!map.has(id)) {
+            map.set(id, n);
+            n++;
+          }
+        }
+        return map;
+      })();
+      const eqNums = buildIdIndex('[id^="eq-"]', 'eq-');
+
+    // Hierarchical section numbering (1, 1.1, 1.1.1...) for non-starred sections only.
+    // Store the computed number on the element so links can look it up reliably.
+      const secNums = new Map<string, string>();
+      const sectionHeadings = Array.from(container.querySelectorAll('h1[id],h2[id],h3[id],h4[id],h5[id],h6[id]')) as HTMLElement[];
+      const secCounters = [0, 0, 0, 0, 0, 0];
+      for (const h of sectionHeadings) {
+        const id = h.getAttribute('id') || '';
+        if (!id.startsWith('sec-')) continue;
+        if (h.getAttribute('data-zx-starred') === '1') continue;
+        const tag = (h.tagName || '').toUpperCase();
+        const depth = tag === 'H1' ? 0 : tag === 'H2' ? 1 : tag === 'H3' ? 2 : tag === 'H4' ? 3 : tag === 'H5' ? 4 : 5;
+        secCounters[depth] += 1;
+        for (let d = depth + 1; d < secCounters.length; d++) secCounters[d] = 0;
+        const parts = secCounters.slice(0, depth + 1).filter((n) => n > 0);
+        if (parts.length === 0) continue;
+        const num = parts.join('.');
+        secNums.set(id, num);
+        h.setAttribute('data-zx-secnum', num);
+      }
+
+    // Also store computed numbers on table/figure targets so links can look them up.
+      for (const [id, n] of tableNums.entries()) {
+        const el = getById(id);
+        if (el) el.setAttribute('data-zx-tabnum', String(n));
+      }
+      for (const [id, n] of figNums.entries()) {
+        const el = getById(id);
+        if (el) el.setAttribute('data-zx-fignum', String(n));
+      }
+      for (const [id, n] of eqNums.entries()) {
+        const el = getById(id);
+        if (el) el.setAttribute('data-zx-eqnum', String(n));
+      }
+
+      const labelForId = (id: string): string | null => {
+        const el = getById(id);
+        const t = el?.getAttribute('data-zx-tabnum') || (tableNums.get(id) ? String(tableNums.get(id)) : '');
+        if (t) return `Table ${t}`;
+        const f = el?.getAttribute('data-zx-fignum') || (figNums.get(id) ? String(figNums.get(id)) : '');
+        if (f) return `Figure ${f}`;
+        const s = el?.getAttribute('data-zx-secnum') || (secNums.get(id) ?? '');
+        if (s) return `Section ${s}`;
+        const e = el?.getAttribute('data-zx-eqnum') || (eqNums.get(id) ? String(eqNums.get(id)) : '');
+        if (e) return `Eq. (${e})`;
+        return null;
+      };
+
+      const sanitizeLabel = (raw: string): string =>
+        String(raw ?? '')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+
+      const refIdFromLabel = (labelRaw: string): string => {
+        const label = String(labelRaw ?? '').trim();
+        const slug = sanitizeLabel(label);
+        const prefix = label.split(':')[0]?.toLowerCase().trim();
+        if (prefix === 'fig') return `figure-${slug}`;
+        if (prefix === 'grid') return `grid-${slug}`;
+        if (prefix === 'tbl' || prefix === 'tab') return `table-${slug}`;
+        if (prefix === 'eq') return `eq-${slug}`;
+        if (prefix === 'sec') return `sec-${slug}`;
+        return `sec-${slug}`;
+      };
+
+      const refIdFromLabelNoDup = (labelRaw: string): string => {
+        const label = String(labelRaw ?? '').trim();
+        const parts = label.split(':');
+        if (parts.length < 2) return refIdFromLabel(label);
+        const prefix = parts[0]!.toLowerCase().trim();
+        const rest = parts.slice(1).join(':');
+        const slug = sanitizeLabel(rest);
+        if (prefix === 'fig') return `figure-${slug}`;
+        if (prefix === 'grid') return `grid-${slug}`;
+        if (prefix === 'tbl' || prefix === 'tab') return `table-${slug}`;
+        if (prefix === 'eq') return `eq-${slug}`;
+        if (prefix === 'sec') return `sec-${slug}`;
+        return `sec-${slug}`;
+      };
+
+    const alreadyPretty = (raw: string): boolean => /^(Table|Figure|Section)\s+\d+\b|^Eq\.\s*\(\d+\)\b/.test(String(raw ?? '').trim());
+
+      const links = Array.from(container.querySelectorAll('a[href^="#"]')) as HTMLAnchorElement[];
+      for (const a of links) {
+        // Never touch citations (they are handled separately and can be numeric or key-based).
+        if (a.classList.contains('citation-link')) continue;
+        const href = a.getAttribute('href') || '';
+        if (!href.startsWith('#') || href.length < 2) continue;
+        const id = href.slice(1);
+        let friendly = labelForId(id);
+        // Fallback: some renderers produce href ids that don't match our target ids.
+        // If link text looks like a LaTeX label (e.g. "sec:attention"), resolve via label -> id mapping.
+        if (!friendly) {
+          const rawText = (a.textContent || '').trim();
+          if (rawText.includes(':') && !alreadyPretty(rawText)) {
+            const candidateIds = [refIdFromLabel(rawText), refIdFromLabelNoDup(rawText)];
+            const found = candidateIds.find((cid) => Boolean(getById(cid)));
+            if (found) {
+              friendly = labelForId(found);
+              // Ensure click navigates to the real target.
+              a.setAttribute('href', `#${found}`);
+            }
+          }
+        }
+        if (!friendly) continue;
+
+        const raw = (a.textContent || '').trim();
+        // Avoid clobbering already-pretty refs (e.g. user content that already says "Figure 3").
+        if (alreadyPretty(raw)) continue;
+        a.setAttribute('title', raw);
+        // For ref links, plain text is correct and avoids any weird DOM issues.
+        a.textContent = friendly;
+        a.setAttribute('data-zx-ref-pretty', '1');
+      }
+
+    // Also prefix captions so they match the same numbering used by refs.
+    // Tables: <table id="table-..."><caption>...</caption>...
+      for (const [id, n] of tableNums.entries()) {
+        const table = getById(id) as HTMLTableElement | null;
+        const cap = table?.querySelector('caption') as HTMLTableCaptionElement | null;
+        if (!cap) continue;
+        if (cap.getAttribute('data-zx-numbered') === '1') continue;
+        const currentText = (cap.textContent || '').trim();
+        if (!currentText) continue;
+        if (/^Table\s+\d+\b/i.test(currentText)) continue;
+        cap.insertBefore(document.createTextNode(`Table ${n}. `), cap.firstChild);
+        cap.setAttribute('data-zx-numbered', '1');
+      }
+
+    // Figures: markdown renderer uses <em class="figure-caption">...</em> inside a wrapper.
+      for (const [id, n] of figNums.entries()) {
+        const fig = getById(id) as HTMLElement | null;
+        if (!fig) continue;
+        const cap =
+          fig.classList.contains('xmd-grid') && fig.getAttribute('data-zx-figure-grid') === '1'
+            ? (fig.querySelector('.xmd-grid-caption') as HTMLElement | null)
+            : (fig.querySelector('.figure-caption') as HTMLElement | null);
+        if (!cap) continue;
+        if (cap.getAttribute('data-zx-numbered') === '1') continue;
+        const currentText = (cap.textContent || '').trim();
+        if (!currentText) continue;
+        if (/^Figure\s+\d+\b/i.test(currentText)) continue;
+        cap.insertBefore(document.createTextNode(`Figure ${n}. `), cap.firstChild);
+        cap.setAttribute('data-zx-numbered', '1');
+      }
+      } catch (err) {
+        // Never allow ref-numbering failures to break preview rendering (figures/math).
+        // eslint-disable-next-line no-console
+        console.error('[zx-preview] ref numbering failed', err);
+      }
+    };
+    // Defer so the new HTML is definitely in the DOM before we query/number.
+    const raf = requestAnimationFrame(run);
+    return () => cancelAnimationFrame(raf);
   }, [html]);
 
   // Prevent normal markdown links from navigating away from the editor.
@@ -536,7 +1225,7 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
     };
   }, [html]);
 
-  if (!content.trim()) {
+  if (!content.trim() && !htmlOverride?.trim()) {
     return (
       <div className="h-full flex items-center justify-center text-vscode-text-secondary">
         <p>No content to preview</p>
@@ -557,6 +1246,40 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
         }}
       />
       <style jsx global>{`
+        /* Figure background is controlled per-image via .zx-figure-frame-light. */
+        .markdown-content .zx-figure-media-frame {
+          position: relative;
+          display: inline-block;
+        }
+        .markdown-content .zx-figure-media-frame.zx-figure-frame-light {
+          background: #ffffff;
+          padding: 8px;
+          border-radius: 10px;
+          display: inline-block;
+          box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+        }
+        .markdown-content .zx-figure-media-frame.zx-figure-frame-light .latex-figure-pdf {
+          border-color: rgba(0, 0, 0, 0.12) !important;
+        }
+        .markdown-content .zx-figure-bg-toggle {
+          position: absolute;
+          top: 6px;
+          right: 6px;
+          z-index: 5;
+          font-size: 11px;
+          line-height: 1;
+          padding: 4px 6px;
+          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          background: rgba(0, 0, 0, 0.35);
+          color: rgba(255, 255, 255, 0.92);
+          cursor: pointer;
+        }
+        .markdown-content .zx-figure-media-frame.zx-figure-frame-light .zx-figure-bg-toggle {
+          border-color: rgba(0, 0, 0, 0.12);
+          background: rgba(255, 255, 255, 0.9);
+          color: rgba(0, 0, 0, 0.75);
+        }
         .markdown-content .doc-title {
           font-size: 2.2em;
           font-weight: 800;
@@ -569,6 +1292,39 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
           font-size: 0.95em;
           margin: 0.1em 0;
           text-align: center;
+        }
+        .markdown-content .doc-authors {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+          gap: 4px 16px;
+          align-items: center;
+          justify-items: center;
+          margin: 0.1em 0;
+        }
+        .markdown-content .doc-authors .doc-author {
+          margin: 0;
+          text-align: center;
+          width: 100%;
+        }
+        .markdown-content .doc-abstract {
+          margin-top: 18px;
+          margin-bottom: 18px;
+          padding: 14px 16px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 10px;
+          background: rgba(255, 255, 255, 0.03);
+        }
+        .markdown-content .doc-abstract-title {
+          margin: 0 0 10px 0;
+          font-size: 1.1em;
+          font-weight: 700;
+          letter-spacing: 0.01em;
+          color: #ffffff;
+        }
+        .markdown-content .doc-abstract p,
+        .markdown-content .doc-abstract .text-block {
+          margin-top: 0.5em;
+          margin-bottom: 0.5em;
         }
         .markdown-content h1 {
           font-size: 2em;
@@ -593,6 +1349,18 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
           font-weight: bold;
           margin: 0.55em 0 0.25em 0;
           color: #ffffff;
+        }
+        .markdown-content h5 {
+          font-size: 1.02em;
+          font-weight: 800;
+          margin: 0.5em 0 0.2em 0;
+          color: #ffffff;
+        }
+        .markdown-content h6 {
+          font-size: 0.98em;
+          font-weight: 800;
+          margin: 0.45em 0 0.2em 0;
+          color: rgba(255, 255, 255, 0.92);
         }
         .markdown-content p {
           margin: 0.5em 0;
@@ -672,8 +1440,110 @@ export function MarkdownPreview({ content, htmlOverride }: MarkdownPreviewProps)
             background-color: rgba(78, 201, 176, 0);
           }
         }
+        .markdown-content .math-block {
+          margin: 14px auto;
+          padding: 10px 12px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 8px;
+          background: rgba(255, 255, 255, 0.04);
+          max-width: 100%;
+          overflow-x: auto;
+        }
+        .markdown-content .math-inline .math-latex {
+          /* Inline math should not look like inline code. */
+          background: transparent !important;
+          padding: 0 !important;
+          border-radius: 0 !important;
+          font-family: inherit;
+          white-space: normal;
+        }
+        .markdown-content code.math-latex {
+          background: transparent !important;
+          padding: 0 !important;
+          border-radius: 0 !important;
+          font-family: inherit;
+        }
+        .markdown-content .citation-link {
+          color: #4ec9b0;
+          text-decoration: underline;
+          cursor: pointer;
+          transition: color 0.2s;
+        }
+        .markdown-content .citation-link:hover {
+          color: #6ed4c0;
+          text-decoration: underline;
+        }
+        .markdown-content .reference-entry {
+          transition: background-color 0.3s;
+        }
+        .markdown-content .reference-entry.reference-highlight {
+          background-color: rgba(78, 201, 176, 0.2);
+          padding: 0.2em 0.4em;
+          border-radius: 4px;
+          animation: highlight-fade 2s ease-out;
+        }
+        @keyframes highlight-fade {
+          0% {
+            background-color: rgba(78, 201, 176, 0.4);
+          }
+          100% {
+            background-color: rgba(78, 201, 176, 0);
+          }
+        }
+        .markdown-content .math-block {
+          margin: 14px auto;
+          padding: 10px 12px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 8px;
+          background: rgba(255, 255, 255, 0.04);
+          max-width: 100%;
+          overflow-x: auto;
+          font-family: var(--font-vscode, Consolas, Monaco, "Courier New", monospace);
+        }
+        .markdown-content .math-block .math-latex {
+          white-space: pre;
+          color: #e6e6e6;
+        }
+        .markdown-content .math-inline .math-latex {
+          /* Inline math should not look like inline code. */
+          background: transparent !important;
+          padding: 0 !important;
+          border-radius: 0 !important;
+          font-family: inherit;
+          white-space: normal;
+        }
+        .markdown-content code.math-latex {
+          background: transparent !important;
+          padding: 0 !important;
+          border-radius: 0 !important;
+          font-family: inherit;
+        }
+        .markdown-content .raw-latex-block {
+          opacity: 0.75;
+        }
+        .markdown-content .unrecognized-block {
+          margin: 14px 0;
+          padding: 10px 12px;
+          border: 1px solid rgba(255, 165, 0, 0.35);
+          border-radius: 10px;
+          background: rgba(255, 165, 0, 0.06);
+        }
+        .markdown-content .unrecognized-badge {
+          display: inline-block;
+          font-size: 11px;
+          letter-spacing: 0.02em;
+          padding: 2px 8px;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 165, 0, 0.45);
+          color: rgba(255, 215, 160, 0.95);
+          margin-bottom: 8px;
+        }
+        .markdown-content .unrecognized-block pre {
+          margin: 0;
+          white-space: pre-wrap;
+          overflow-wrap: anywhere;
+        }
       `}</style>
     </div>
   );
 }
-

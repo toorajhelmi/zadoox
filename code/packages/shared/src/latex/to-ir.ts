@@ -1,5 +1,6 @@
 import { stableNodeId } from '../ir/id';
 import type {
+  AbstractNode,
   CodeBlockNode,
   DocumentTitleNode,
   DocumentAuthorNode,
@@ -17,7 +18,10 @@ import type {
   TableStyle,
   TableRule,
   TableColumnAlign,
+  TableLayoutCell,
+  TableLayoutRow,
 } from '../ir/types';
+import type { TextStyle } from '../ir/types';
 
 /**
  * Parse a supported-subset LaTeX string into IR (best-effort, Phase 12).
@@ -49,6 +53,7 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
   let titleCount = 0;
   let authorCount = 0;
   let dateCount = 0;
+  let abstractCount = 0;
   type Counters = Record<string, number>;
   const countersStack: Counters[] = [
     {
@@ -125,6 +130,8 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
           id: stableNodeId({ docId, nodeType: 'section', path }),
           level: b.level,
           title: b.title,
+          ...(b.label ? { label: b.label } : null),
+          ...(b.starred ? { starred: true } : null),
           children: [],
           source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
         };
@@ -133,6 +140,49 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
       }
 
       const counters = currentCounters();
+
+      if (b.kind === 'bibliography') {
+        // Emit a synthetic "References" section with one paragraph per entry, keyed by [bibkey].
+        const parent = currentCounters();
+        const secIdx = parent.section ?? 0;
+        parent.section = secIdx + 1;
+
+        const leaf = `sec[${secIdx}]`;
+        sectionPathStack.push(leaf);
+        const path = sectionPathStack.join('/');
+
+        const refs: SectionNode = {
+          type: 'section',
+          id: stableNodeId({ docId, nodeType: 'section', path }),
+          level: 1,
+          title: 'References',
+          children: [],
+          source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
+        };
+        openSection(refs);
+
+        const refsCounters = currentCounters();
+        for (const it of b.items ?? []) {
+          const idx = refsCounters.paragraph ?? 0;
+          refsCounters.paragraph = idx + 1;
+          const pPath = fullPath(`p[${idx}]`);
+          const key = String(it.key ?? '').trim();
+          const text = String(it.text ?? '').trim();
+          const para: ParagraphNode = {
+            type: 'paragraph',
+            id: stableNodeId({ docId, nodeType: 'paragraph', path: pPath }),
+            text: key ? `[${key}] ${text}`.trim() : text,
+            source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
+          };
+          appendToCurrentContainer(para);
+        }
+
+        // Close the synthetic section so subsequent content (if any) doesn't get swallowed.
+        sectionStack.pop();
+        countersStack.pop();
+        sectionPathStack.pop();
+        return;
+      }
 
       if (b.kind === 'author') {
         const idx = authorCount++;
@@ -160,6 +210,33 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
         return;
       }
 
+      if (b.kind === 'abstract') {
+        const idx = abstractCount++;
+        const path = `abstract[${idx}]`;
+        const node: AbstractNode = {
+          type: 'abstract',
+          id: stableNodeId({ docId, nodeType: 'abstract', path }),
+          children: [],
+          source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
+        };
+        // Abstract is always document-level and should not affect section hierarchy.
+        doc.children.push(node);
+
+        const paragraphs = (b as { paragraphs?: string[] }).paragraphs ?? [];
+        for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
+          const text = String(paragraphs[pIdx] ?? '').trim();
+          if (!text) continue;
+          const pNode: ParagraphNode = {
+            type: 'paragraph',
+            id: stableNodeId({ docId, nodeType: 'paragraph', path: `${path}/p[${pIdx}]` }),
+            text,
+            source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
+          };
+          node.children.push(pNode);
+        }
+        return;
+      }
+
       if (b.kind === 'paragraph') {
         const idx = counters.paragraph ?? 0;
         counters.paragraph = idx + 1;
@@ -168,6 +245,7 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
           type: 'paragraph',
           id: stableNodeId({ docId, nodeType: 'paragraph', path }),
           text: b.text,
+          ...(b.style ? { style: b.style } : null),
           source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
         };
         appendToCurrentContainer(node);
@@ -211,6 +289,7 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
           type: 'math_block',
           id: stableNodeId({ docId, nodeType: 'math_block', path }),
           latex: b.latex,
+          ...(b.label ? { label: b.label } : null),
           source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
         };
         appendToCurrentContainer(node);
@@ -296,11 +375,108 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
         const idx = counters.table ?? 0;
         counters.table = idx + 1;
         const path = fullPath(`table[${idx}]`);
+        const slug = (s: string) =>
+          String(s ?? '')
+            .toLowerCase()
+            .replace(/[^a-z0-9_-]+/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '');
+        const colIds = (b.header ?? []).map((h, i) => {
+          const base = slug(String(h ?? '').trim());
+          return base ? `c:${base}:${i}` : `c:${i}`;
+        });
+        const schema = { columns: colIds.map((id, i) => ({ id, name: String((b.header ?? [])[i] ?? '') })) };
+        const data = {
+          rows: (b.rows ?? []).map((r, rIdx) => {
+            const rowId = `r:${rIdx}`;
+            const cells: Record<string, string> = {};
+            for (let c = 0; c < colIds.length; c++) {
+              cells[colIds[c]!] = String((r ?? [])[c] ?? '');
+            }
+            return { id: rowId, cells };
+          }),
+        };
+
+        const layout = (() => {
+          const headerSpans = (b.headerColSpans ?? []).filter((s) => s.colSpan > 1);
+          const bodySpans = (b.bodyColSpans ?? []).filter((s) => s.colSpan > 1);
+          const bodyRowSpans = (b.bodyRowSpans ?? []).filter((s) => s.rowSpan > 1);
+          const hasAny = headerSpans.length > 0 || bodySpans.length > 0 || bodyRowSpans.length > 0;
+          if (!hasAny) return undefined;
+
+          const headerCells: TableLayoutCell[] = [];
+          {
+            const spanByStart = new Map<number, number>();
+            for (const s of headerSpans) spanByStart.set(s.colStart, s.colSpan);
+            let c = 0;
+            while (c < colIds.length) {
+              const span = spanByStart.get(c);
+              if (span && span > 1) {
+                const s = Math.min(span, colIds.length - c);
+                headerCells.push({
+                  kind: 'synthetic',
+                  columnIds: colIds.slice(c, c + s),
+                  colSpan: s,
+                  text: String((b.header ?? [])[c] ?? ''),
+                });
+                c += s;
+                continue;
+              }
+              headerCells.push({ kind: 'synthetic', columnIds: [colIds[c]!], text: String((b.header ?? [])[c] ?? '') });
+              c += 1;
+            }
+          }
+
+          const bodyRows: TableLayoutRow[] = [];
+          const bodySpanByRow = new Map<number, Map<number, number>>();
+          for (const s of bodySpans) {
+            if (!bodySpanByRow.has(s.row)) bodySpanByRow.set(s.row, new Map());
+            bodySpanByRow.get(s.row)!.set(s.colStart, s.colSpan);
+          }
+          const bodyRowSpanByRow = new Map<number, Map<number, number>>();
+          for (const s of bodyRowSpans) {
+            if (!bodyRowSpanByRow.has(s.row)) bodyRowSpanByRow.set(s.row, new Map());
+            bodyRowSpanByRow.get(s.row)!.set(s.col, s.rowSpan);
+          }
+
+          for (let r = 0; r < (data.rows ?? []).length; r++) {
+            const rowId = data.rows[r]!.id;
+            const spans = bodySpanByRow.get(r) ?? new Map();
+            const rSpans = bodyRowSpanByRow.get(r) ?? new Map();
+            const covered = new Set<number>();
+            const cells: TableLayoutCell[] = [];
+            for (let c = 0; c < colIds.length; c++) {
+              if (covered.has(c)) continue;
+              const span = spans.get(c);
+              const colSpan = span && span > 1 ? Math.min(span, colIds.length - c) : 1;
+              for (let k = 1; k < colSpan; k++) covered.add(c + k);
+              const rowSpan = rSpans.get(c);
+              const colId = colIds[c]!;
+              cells.push({
+                kind: 'ref',
+                columnIds: colIds.slice(c, c + colSpan),
+                ...(colSpan > 1 ? { colSpan } : null),
+                ...(rowSpan && rowSpan > 1 ? { rowSpan } : null),
+                ref: { rowId, columnId: colId },
+              });
+            }
+            bodyRows.push({ cells });
+          }
+
+          return {
+            header: [{ cells: headerCells }],
+            body: bodyRows,
+          };
+        })();
+
         const node: TableNode = {
           type: 'table',
           id: b.id || stableNodeId({ docId, nodeType: 'table', path }),
           ...(b.caption ? { caption: b.caption } : null),
           ...(b.label ? { label: b.label } : null),
+          schema,
+          data,
+          ...(layout ? { layout } : null),
           header: b.header,
           rows: b.rows,
           ...(b.colAlign ? { colAlign: b.colAlign } : null),
@@ -342,7 +518,9 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
 }
 
 function latexGraphicPathToSrc(pathArg: string): string {
-  const p = String(pathArg ?? '').trim();
+  let p = String(pathArg ?? '').trim();
+  // Many LaTeX sources use "./figs/foo" style paths. Normalize to match storage manifest paths.
+  p = p.replace(/^(\.\/)+/, '');
   if (p.startsWith('assets/')) return `zadoox-asset://${p.slice('assets/'.length)}`;
   return p;
 }
@@ -372,7 +550,17 @@ function latexWidthToXmdWidth(widthRaw: string): string | undefined {
   return undefined;
 }
 
-function parseIncludegraphicsLine(line: string): { src?: string; width?: string } {
+function latexScaleToXmdWidth(scaleRaw: string): string | undefined {
+  const s = String(scaleRaw ?? '').trim();
+  if (!s) return undefined;
+  const n = Number(s);
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  const pct = n * 100;
+  const pretty = pct % 1 === 0 ? String(pct.toFixed(0)) : String(pct.toFixed(1));
+  return `${pretty}%`;
+}
+
+function parseIncludegraphicsLine(line: string): { src?: string; width?: string; scale?: string } {
   const raw = String(line ?? '');
   // \includegraphics is often wrapped (e.g. \fbox{...}, \fcolorbox{...}{...}{...}),
   // so we must match it as a substring and not require end-of-line anchors.
@@ -384,11 +572,29 @@ function parseIncludegraphicsLine(line: string): { src?: string; width?: string 
   const pathArg = String(m[2] ?? '').trim();
 
   let width: string | undefined;
+  let scale: string | undefined;
   if (opt) {
     const wm = /(^|,)\s*width\s*=\s*([^,]+)\s*(,|$)/.exec(opt);
     if (wm) width = String(wm[2] ?? '').trim();
+    const sm = /(^|,)\s*scale\s*=\s*([^,]+)\s*(,|$)/.exec(opt);
+    if (sm) scale = String(sm[2] ?? '').trim();
   }
-  return { src: latexGraphicPathToSrc(pathArg), width };
+  return { src: latexGraphicPathToSrc(pathArg), width, scale };
+}
+
+function parseAllIncludegraphics(line: string): Array<{ src: string; width?: string; scale?: string }> {
+  const raw = String(line ?? '');
+  const hits: Array<{ src: string; width?: string; scale?: string }> = [];
+  let idx = 0;
+  while (idx < raw.length) {
+    const next = raw.indexOf('\\includegraphics', idx);
+    if (next < 0) break;
+    const sub = raw.slice(next);
+    const one = parseIncludegraphicsLine(sub);
+    if (one.src) hits.push({ src: one.src, ...(one.width ? { width: one.width } : null), ...(one.scale ? { scale: one.scale } : null) });
+    idx = next + '\\includegraphics'.length;
+  }
+  return hits;
 }
 
 type Block =
@@ -417,9 +623,19 @@ type Block =
       endOffset: number;
     }
   | {
+      kind: 'abstract';
+      paragraphs: string[];
+      raw: string;
+      blockIndex: number;
+      startOffset: number;
+      endOffset: number;
+    }
+  | {
       kind: 'section';
       level: number;
       title: string;
+      label?: string;
+      starred?: boolean;
       raw: string;
       blockIndex: number;
       startOffset: number;
@@ -428,6 +644,7 @@ type Block =
   | {
       kind: 'paragraph';
       text: string;
+      style?: TextStyle;
       raw: string;
       blockIndex: number;
       startOffset: number;
@@ -453,6 +670,7 @@ type Block =
   | {
       kind: 'math';
       latex: string;
+      label?: string;
       raw: string;
       blockIndex: number;
       startOffset: number;
@@ -494,12 +712,27 @@ type Block =
       label?: string;
       header: string[];
       rows: string[][];
+      headerColSpans?: Array<{ colStart: number; colSpan: number }>;
+      bodyColSpans?: Array<{ row: number; colStart: number; colSpan: number }>;
+      bodyRowSpans?: Array<{ row: number; col: number; rowSpan: number }>;
       colAlign?: TableColumnAlign[];
       vRules?: TableRule[];
       hRules?: TableRule[];
       style?: TableStyle;
       raw: string;
       id?: string;
+      blockIndex: number;
+      startOffset: number;
+      endOffset: number;
+    }
+  | {
+      /**
+       * Bibliography environment (thebibliography).
+       * We parse this into a "References" section in IR so raw LaTeX commands don't leak into preview.
+       */
+      kind: 'bibliography';
+      items: Array<{ key: string; text: string }>;
+      raw: string;
       blockIndex: number;
       startOffset: number;
       endOffset: number;
@@ -539,11 +772,271 @@ function isBlank(line: string): boolean {
 function parseBlocks(latex: string): Block[] {
   const lines = splitLinesWithOffsets(latex);
   const blocks: Block[] = [];
+  const hasBeginDocument = /\\begin\{document\}/.test(latex);
+  let inPreamble = hasBeginDocument;
+
+  const isZxMarkerLine = (trimmed: string): boolean => /^%\s*ZX-(BEGIN|END):/i.test(trimmed);
+
+  const stripInlineComment = (line: string): string => {
+    // Remove LaTeX comments (best-effort) by stripping from the first unescaped %.
+    // We intentionally do not attempt to fully parse TeX; this is just to avoid previewing comment text.
+    const s = String(line ?? '');
+    let escaped = false;
+    for (let k = 0; k < s.length; k++) {
+      const ch = s[k]!;
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (ch === '%') {
+        return s.slice(0, k).trimEnd();
+      }
+    }
+    return s;
+  };
+
+  const stripLeadingLayoutCommands = (input: string): string => {
+    let s = String(input ?? '');
+    // Keep trimming leading whitespace as we remove tokens.
+    s = s.trimStart();
+    // Remove repeated layout-only commands that sometimes prefix real structure on the same line.
+    // Example from arXiv sources: "\pagebreak \section*{...}"
+    // Also tolerate spacing helpers like \vspace{...}.
+    let changed = true;
+    while (changed) {
+      changed = false;
+      const m1 = /^\\(pagebreak|newpage|clearpage|cleardoublepage|vfill|smallskip|medskip|bigskip)\b\s*/.exec(s);
+      if (m1) {
+        s = s.slice(m1[0].length).trimStart();
+        changed = true;
+        continue;
+      }
+      const m2 = /^\\(vspace|hspace)\*?\{[^}]*\}\s*/.exec(s);
+      if (m2) {
+        s = s.slice(m2[0].length).trimStart();
+        changed = true;
+        continue;
+      }
+    }
+    return s;
+  };
+
+  const stripFormattingOnlyMacros = (input: string): string => {
+    let s = String(input ?? '');
+    // Remove simple formatting-only commands that often appear in boilerplate/legal notices.
+    s = s.replace(/\\color\{[^}]*\}/g, ' ');
+    // Common font size switches (no braces).
+    s = s.replace(/\\(tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge)\b/g, ' ');
+    // Spacing helpers.
+    s = s.replace(/\\hspace\*?\{[^}]*\}/g, ' ');
+    s = s.replace(/\\vspace\*?\{[^}]*\}/g, ' ');
+    s = s.replace(/\\hfill\b/g, ' ');
+    return s.replace(/\s+/g, ' ').trim();
+  };
+
+  const extractTextStyleAndClean = (input: string): { text: string; style?: TextStyle } => {
+    let s = String(input ?? '');
+    const style: TextStyle = {};
+
+    // Alignment (currently only from explicit environments like center; handled by caller)
+    // Color
+    const colorMatch = /\\color\{([^}]+)\}/.exec(s);
+    if (colorMatch) {
+      const c = String(colorMatch[1] ?? '').trim();
+      if (c) style.color = c;
+      s = s.replace(/\\color\{[^}]*\}/g, ' ');
+    }
+
+    // Size (map many LaTeX size switches to a small enum)
+    const sizeMatch = /\\(tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge)\b/.exec(s);
+    if (sizeMatch) {
+      const k = String(sizeMatch[1] ?? '');
+      if (['tiny', 'scriptsize', 'footnotesize', 'small'].includes(k)) style.size = 'small';
+      else if (k === 'normalsize') style.size = 'normal';
+      else style.size = 'large';
+      s = s.replace(/\\(tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge)\b/g, ' ');
+    }
+
+    // Strip spacing macros that should not render as text.
+    s = s.replace(/\\hspace\*?\{[^}]*\}/g, ' ');
+    s = s.replace(/\\vspace\*?\{[^}]*\}/g, ' ');
+    s = s.replace(/\\hfill\b/g, ' ');
+
+    const cleaned = stripFormattingOnlyMacros(s);
+    const outStyle = Object.keys(style).length > 0 ? style : undefined;
+    return { text: cleaned, style: outStyle };
+  };
+
+  const parseBracedCommand = (
+    startLineIndex: number,
+    cmd: 'title' | 'author' | 'date'
+  ): { content: string; raw: string; endIndex: number; startOffset: number; endOffset: number } | null => {
+    const first = lines[startLineIndex];
+    if (!first) return null;
+    const firstTrim = first.line.trim().replace(/^[\uFEFF\u200B\u200C\u200D]+/, '');
+    const openRe = new RegExp(`^\\\\+${cmd}\\s*\\{`, 'i');
+    const m = openRe.exec(firstTrim);
+    if (!m) return null;
+
+    const segStartOffset = first.start;
+    let i = startLineIndex;
+    let depth = 0;
+    let started = false;
+    let content = '';
+    let endOffset = first.end;
+
+    const scan = (s: string, includeNewlineBefore: boolean) => {
+      const lineText = stripInlineComment(s);
+      let escaped = false;
+      for (let k = 0; k < lineText.length; k++) {
+        const ch = lineText[k]!;
+        if (escaped) {
+          escaped = false;
+          if (started) content += ch;
+          continue;
+        }
+        if (ch === '\\') {
+          escaped = true;
+          if (started) content += ch;
+          continue;
+        }
+        if (!started) {
+          // Wait until we hit the first opening '{' of the command.
+          if (ch === '{') {
+            started = true;
+            depth = 1;
+            if (includeNewlineBefore) content += '\n';
+            continue;
+          }
+          continue;
+        }
+        if (ch === '{') {
+          depth++;
+          content += ch;
+          continue;
+        }
+        if (ch === '}') {
+          depth--;
+          if (depth === 0) return true; // done
+          content += ch;
+          continue;
+        }
+        content += ch;
+      }
+      return false;
+    };
+
+    while (i < lines.length) {
+      const ln = lines[i]!;
+      const done = scan(ln.line, i !== startLineIndex);
+      endOffset = ln.end;
+      if (done) {
+        const raw = lines.slice(startLineIndex, i + 1).map((l) => l.line).join('\n');
+        return { content: content.trim(), raw, endIndex: i, startOffset: segStartOffset, endOffset };
+      }
+      i++;
+    }
+    return null;
+  };
+
+  const splitAuthorContent = (raw: string): string[] => {
+    const stripCmdWithArg = (input: string, cmd: string): string => {
+      const s = String(input ?? '');
+      let out = '';
+      let i = 0;
+      while (i < s.length) {
+        const ch = s[i]!;
+        if (ch !== '\\') {
+          out += ch;
+          i++;
+          continue;
+        }
+        // parse command name
+        let j = i + 1;
+        while (j < s.length && /[a-zA-Z*]/.test(s[j]!)) j++;
+        const name = s.slice(i + 1, j);
+        if (name !== cmd) {
+          out += ch;
+          i++;
+          continue;
+        }
+        // skip optional [..]
+        i = j;
+        if (s[i] === '[') {
+          let depth = 1;
+          i++;
+          while (i < s.length && depth > 0) {
+            const c = s[i]!;
+            if (c === '[') depth++;
+            else if (c === ']') depth--;
+            i++;
+          }
+        }
+        // skip {..}
+        if (s[i] === '{') {
+          let depth = 1;
+          i++;
+          while (i < s.length && depth > 0) {
+            const c = s[i]!;
+            if (c === '{') depth++;
+            else if (c === '}') depth--;
+            i++;
+          }
+        }
+        // command stripped
+      }
+      return out;
+    };
+
+    let s = String(raw ?? '');
+    // NeurIPS-style author blocks often contain \thanks{...} and similar footnote macros.
+    // Strip them so author names remain clean.
+    for (const cmd of ['thanks', 'samethanks', 'footnotemark', 'footnotetext']) {
+      s = stripCmdWithArg(s, cmd);
+    }
+    // Strip common spacing macros that appear between author tokens in some templates.
+    for (const cmd of ['hspace', 'hspace*', 'vspace', 'vspace*']) {
+      s = stripCmdWithArg(s, cmd);
+    }
+    // Strip no-arg spacing commands.
+    s = s
+      .replace(/\\hfill\b/g, ' ')
+      .replace(/\\quad\b/g, ' ')
+      .replace(/\\qquad\b/g, ' ')
+      .replace(/\\hskip\b/g, ' ')
+      .replace(/\\vskip\b/g, ' ');
+
+    const normalized = s
+      .replace(/\\AND\b/g, '\n')
+      .replace(/\\And\b/g, '\n')
+      .replace(/\\and\b/g, '\n')
+      .replace(/\\\\/g, '\n')
+      .replace(/\\newline\b/g, '\n');
+    const parts = normalized
+      .split('\n')
+      .map((p) => latexInlineToMarkdown(String(p ?? '').trim()))
+      .map((p) => p.trim())
+      .filter(Boolean);
+    return parts.length ? parts : [''];
+  };
 
   const pushParagraph = (startIdx: number, endIdxExclusive: number, blockIndex: number) => {
     const seg = lines.slice(startIdx, endIdxExclusive);
     const raw = seg.map((l) => l.line).join('\n');
-    const text = latexInlineToMarkdown(raw.trimEnd());
+    const rawWithoutComments = seg
+      .map((l) => l.line)
+      .filter((ln) => {
+        const t = ln.trim();
+        if (t.startsWith('%') && !isZxMarkerLine(t)) return false;
+        return true;
+      })
+      .map(stripInlineComment)
+      .join('\n');
+    const text = latexInlineToMarkdown(rawWithoutComments.trimEnd());
     const startOffset = seg[0]?.start ?? 0;
     const endOffset = seg[seg.length - 1]?.end ?? startOffset;
     if (text.trim().length === 0) return;
@@ -564,7 +1057,61 @@ function parseBlocks(latex: string): Block[] {
     // Also tolerate trailing comments like: \end{document} % comment
     // Some environments may introduce a BOM/zero-width chars (e.g. from copy/paste or server transforms).
     // Strip them so boilerplate lines like \end{document} never leak into IR/XMD.
-    const trimmed = line.trim().replace(/^[\uFEFF\u200B\u200C\u200D]+/, '');
+    const trimmed0 = line.trim().replace(/^[\uFEFF\u200B\u200C\u200D]+/, '');
+    // Strip leading layout-only commands so structure like "\pagebreak \section{...}" is detected.
+    const trimmed = stripLeadingLayoutCommands(trimmed0);
+    // Standalone layout-only lines should not become paragraphs.
+    if (!trimmed) {
+      i++;
+      blockIndex++;
+      continue;
+    }
+    // If this doc has an explicit \begin{document}, treat everything before it as "preamble":
+    // - ignore macro/package/setup lines (e.g. \PassOptionsToPackage, \newcommand, \def, etc.)
+    // - but still extract \title/\author/\date so the document renders nicely.
+    if (inPreamble) {
+      if (/^\\+begin\{document\}(?:\s*%.*)?$/.test(trimmed)) {
+        inPreamble = false;
+        i++;
+        blockIndex++;
+        continue;
+      }
+      // Keep comment-line ignore behavior in preamble too.
+      if (trimmed.startsWith('%') && !isZxMarkerLine(trimmed)) {
+        i++;
+        blockIndex++;
+        continue;
+      }
+      // Preserve metadata fields from preamble.
+      const titleBlock = parseBracedCommand(i, 'title');
+      if (titleBlock) {
+        blocks.push({ kind: 'title', title: latexInlineToMarkdown(titleBlock.content), raw: titleBlock.raw, blockIndex, startOffset: titleBlock.startOffset, endOffset: titleBlock.endOffset });
+        i = titleBlock.endIndex + 1;
+        blockIndex++;
+        continue;
+      }
+      const authorBlock = parseBracedCommand(i, 'author');
+      if (authorBlock) {
+        const authors = splitAuthorContent(authorBlock.content);
+        for (const a of authors) {
+          blocks.push({ kind: 'author', text: a, raw: authorBlock.raw, blockIndex, startOffset: authorBlock.startOffset, endOffset: authorBlock.endOffset });
+          blockIndex++;
+        }
+        i = authorBlock.endIndex + 1;
+        continue;
+      }
+      const dateBlock = parseBracedCommand(i, 'date');
+      if (dateBlock) {
+        blocks.push({ kind: 'date', text: latexInlineToMarkdown(dateBlock.content), raw: dateBlock.raw, blockIndex, startOffset: dateBlock.startOffset, endOffset: dateBlock.endOffset });
+        i = dateBlock.endIndex + 1;
+        blockIndex++;
+        continue;
+      }
+      // Ignore everything else in preamble.
+      i++;
+      blockIndex++;
+      continue;
+    }
     if (/^\\+documentclass\{[^}]+\}(?:\s*%.*)?$/.test(trimmed)) {
       i++;
       blockIndex++;
@@ -589,6 +1136,199 @@ function parseBlocks(latex: string): Block[] {
       i++;
       blockIndex++;
       continue;
+    }
+
+    // Pure comment lines: ignore (but keep ZX markers which are also comments).
+    if (trimmed.startsWith('%') && !isZxMarkerLine(trimmed)) {
+      i++;
+      blockIndex++;
+      continue;
+    }
+
+    // Bibliography style declaration is formatting-only; ignore in IR preview.
+    if (/^\\+bibliographystyle\{[^}]+\}(?:\s*%.*)?$/.test(trimmed)) {
+      i++;
+      blockIndex++;
+      continue;
+    }
+
+    // thebibliography environment -> emit a synthetic References section (one entry per \bibitem).
+    if (/^\\+begin\{thebibliography\}/.test(trimmed)) {
+      const startOffset = start;
+      let j = i + 1;
+      const entryLines: string[] = [];
+      while (j < lines.length && !/^\\+end\{thebibliography\}/.test(lines[j]!.line.trim())) {
+        const rawLine = lines[j]!.line;
+        const t = rawLine.trim();
+        if (t.startsWith('%') && !isZxMarkerLine(t)) {
+          j++;
+          continue;
+        }
+        entryLines.push(stripInlineComment(rawLine).trim());
+        j++;
+      }
+      if (j < lines.length && /^\\+end\{thebibliography\}/.test(lines[j]!.line.trim())) {
+        const endOffset = lines[j]!.end;
+        const raw = lines.slice(i, j + 1).map((l) => l.line).join('\n');
+
+        const items: Array<{ key: string; text: string }> = [];
+        let curKey = '';
+        let curParts: string[] = [];
+        const flush = () => {
+          const k = String(curKey ?? '').trim();
+          const joined = curParts.join(' ').replace(/\s+/g, ' ').trim();
+          if (k && joined) items.push({ key: k, text: latexInlineToMarkdown(joined).replace(/\s+/g, ' ').trim() });
+          curKey = '';
+          curParts = [];
+        };
+
+        for (const ln of entryLines) {
+          const m = /^\\bibitem(?:\[[^\]]*\])?\{([^}]+)\}\s*(.*)$/.exec(String(ln ?? '').trim());
+          if (m) {
+            flush();
+            curKey = String(m[1] ?? '').trim();
+            const rest = String(m[2] ?? '').trim();
+            if (rest) curParts.push(rest);
+            continue;
+          }
+          if (!curKey) continue;
+          if (ln.trim().length > 0) curParts.push(ln.trim());
+        }
+        flush();
+
+        if (items.length > 0) {
+          blocks.push({ kind: 'bibliography', items, raw, blockIndex, startOffset, endOffset });
+        }
+
+        i = j + 1;
+        blockIndex++;
+        continue;
+      }
+      // Unclosed => raw
+      const raw = lines.slice(i).map((l) => l.line).join('\n');
+      blocks.push({ kind: 'raw', latex: raw, raw, blockIndex, startOffset, endOffset: lines[lines.length - 1]?.end ?? end });
+      break;
+    }
+
+    // abstract environment -> emit a dedicated abstract block
+    if (trimmed === '\\begin{abstract}') {
+      const startOffset = start;
+      let j = i + 1;
+      const bodyLines: Array<{ line: string; start: number; end: number }> = [];
+      while (j < lines.length && lines[j].line.trim() !== '\\end{abstract}') {
+        const rawLine = lines[j].line;
+        const t = rawLine.trim();
+        if (t.startsWith('%') && !isZxMarkerLine(t)) {
+          j++;
+          continue;
+        }
+        bodyLines.push({ line: stripInlineComment(rawLine), start: lines[j].start, end: lines[j].end });
+        j++;
+      }
+      if (j < lines.length && lines[j].line.trim() === '\\end{abstract}') {
+        const endOffset = lines[j].end;
+        const raw = lines.slice(i, j + 1).map((l) => l.line).join('\n');
+        const text = latexInlineToMarkdown(bodyLines.map((l) => l.line).join('\n').trimEnd());
+        const paragraphs = text
+          .split(/\n\s*\n/g)
+          .map((p) => p.trim())
+          .filter(Boolean);
+        blocks.push({ kind: 'abstract', paragraphs, raw, blockIndex, startOffset, endOffset });
+
+        i = j + 1;
+        blockIndex++;
+        continue;
+      }
+      // Unclosed => raw
+      const raw = lines.slice(i).map((l) => l.line).join('\n');
+      blocks.push({ kind: 'raw', latex: raw, raw, blockIndex, startOffset, endOffset: lines[lines.length - 1]?.end ?? end });
+      break;
+    }
+
+    // center environment (often used for boilerplate notes / centered callouts)
+    // We do NOT preserve centering semantics in IR yet; we just extract the text.
+    if (trimmed.startsWith('\\begin{center}')) {
+      const startOffset = start;
+      let j = i;
+      const body: string[] = [];
+      const blockStyle: TextStyle = { align: 'center' };
+
+      // Extract any inline content that appears on the same line as \begin{center}
+      const afterBeginFull = stripInlineComment(line).replace(/^.*?\\begin\{center\}/, '').trim();
+      const inlineEndIdx = afterBeginFull.indexOf('\\end{center}');
+      if (inlineEndIdx >= 0) {
+        const inlineBody = afterBeginFull.slice(0, inlineEndIdx).trim();
+        const raw = line;
+        const { text: cleaned, style } = extractTextStyleAndClean(inlineBody);
+        const text = latexInlineToMarkdown(cleaned);
+        if (text.trim().length > 0) {
+          const merged: TextStyle | undefined = (() => {
+            const s = { ...blockStyle, ...(style || {}) };
+            return Object.keys(s).length ? s : undefined;
+          })();
+          blocks.push({
+            kind: 'paragraph',
+            text,
+            raw,
+            blockIndex,
+            startOffset,
+            endOffset: end,
+            ...(merged ? { style: merged } : null),
+          } as Extract<Block, { kind: 'paragraph' }>);
+        }
+        i = i + 1;
+        blockIndex++;
+        continue;
+      }
+      if (afterBeginFull) body.push(afterBeginFull);
+
+      j = i + 1;
+      while (j < lines.length) {
+        const rawLine = lines[j]!.line;
+        const t = rawLine.trim();
+        if (t === '\\end{center}') break;
+        if (t.startsWith('%') && !isZxMarkerLine(t)) {
+          j++;
+          continue;
+        }
+        const noComment = stripInlineComment(rawLine);
+        const endIdx = noComment.indexOf('\\end{center}');
+        if (endIdx >= 0) {
+          const beforeEnd = noComment.slice(0, endIdx).trim();
+          if (beforeEnd) body.push(beforeEnd);
+          break;
+        }
+        body.push(noComment);
+        j++;
+      }
+      if (j < lines.length && (lines[j]!.line.trim() === '\\end{center}' || stripInlineComment(lines[j]!.line).includes('\\end{center}'))) {
+        const endOffset = lines[j]!.end;
+        const raw = lines.slice(i, j + 1).map((l) => l.line).join('\n');
+        const { text: cleaned, style } = extractTextStyleAndClean(body.join('\n'));
+        const text = latexInlineToMarkdown(cleaned);
+        if (text.trim().length > 0) {
+          const merged: TextStyle | undefined = (() => {
+            const s = { ...blockStyle, ...(style || {}) };
+            return Object.keys(s).length ? s : undefined;
+          })();
+          blocks.push({
+            kind: 'paragraph',
+            text,
+            raw,
+            blockIndex,
+            startOffset,
+            endOffset,
+            ...(merged ? { style: merged } : null),
+          } as Extract<Block, { kind: 'paragraph' }>);
+        }
+        i = j + 1;
+        blockIndex++;
+        continue;
+      }
+      // Unclosed => raw
+      const raw = lines.slice(i).map((l) => l.line).join('\n');
+      blocks.push({ kind: 'raw', latex: raw, raw, blockIndex, startOffset, endOffset: lines[lines.length - 1]?.end ?? end });
+      break;
     }
 
     // ZX markers: lossless block boundaries for generated content.
@@ -706,56 +1446,113 @@ function parseBlocks(latex: string): Block[] {
       blockIndex++;
       continue;
     }
-    if (/^\\+author\{[^}]*\}(?:\s*%.*)?$/.test(trimmed)) {
-      const m = /^\\+author\{([^}]*)\}(?:\s*%.*)?$/.exec(trimmed);
-      const text = latexInlineToMarkdown((m?.[1] ?? '').trim());
-      // Preserve explicit author marker even if empty (\author{} means "no author")
-      blocks.push({ kind: 'author', text, raw: line, blockIndex, startOffset: start, endOffset: end });
-      i++;
-      blockIndex++;
+    const authorBlock2 = parseBracedCommand(i, 'author');
+    if (authorBlock2) {
+      const authors = splitAuthorContent(authorBlock2.content);
+      for (const a of authors) {
+        blocks.push({ kind: 'author', text: a, raw: authorBlock2.raw, blockIndex, startOffset: authorBlock2.startOffset, endOffset: authorBlock2.endOffset });
+        blockIndex++;
+      }
+      i = authorBlock2.endIndex + 1;
       continue;
     }
-    if (/^\\+date\{[^}]*\}(?:\s*%.*)?$/.test(trimmed)) {
-      const m = /^\\+date\{([^}]*)\}(?:\s*%.*)?$/.exec(trimmed);
-      const text = latexInlineToMarkdown((m?.[1] ?? '').trim());
-      // Preserve explicit date marker even if empty (\date{} means "no date" / suppress default)
-      blocks.push({ kind: 'date', text, raw: line, blockIndex, startOffset: start, endOffset: end });
-      i++;
+    const dateBlock2 = parseBracedCommand(i, 'date');
+    if (dateBlock2) {
+      blocks.push({ kind: 'date', text: latexInlineToMarkdown(dateBlock2.content), raw: dateBlock2.raw, blockIndex, startOffset: dateBlock2.startOffset, endOffset: dateBlock2.endOffset });
+      i = dateBlock2.endIndex + 1;
       blockIndex++;
       continue;
     }
 
     // \title{...}
-    const titleMatch = /^\\+title\{([^}]*)\}(?:\s*%.*)?$/.exec(trimmed);
-    if (titleMatch) {
-      const title = latexInlineToMarkdown((titleMatch[1] ?? '').trim());
+    const titleBlock2 = parseBracedCommand(i, 'title');
+    if (titleBlock2) {
+      blocks.push({ kind: 'title', title: latexInlineToMarkdown(titleBlock2.content), raw: titleBlock2.raw, blockIndex, startOffset: titleBlock2.startOffset, endOffset: titleBlock2.endOffset });
+      i = titleBlock2.endIndex + 1;
+      blockIndex++;
+      continue;
+    }
+
+    // Sections (including paragraph/subparagraph)
+    // Note: \paragraph / \subparagraph are often "run-in" headings, but we render them as block headings.
+    const sec = /^\\+(section|subsection|subsubsection|paragraph|subparagraph)(\*)?\{([^}]*)\}([\s\S]*)$/.exec(trimmed);
+    if (sec) {
+      const level =
+        sec[1] === 'section'
+          ? 1
+          : sec[1] === 'subsection'
+            ? 2
+            : sec[1] === 'subsubsection'
+              ? 3
+              : sec[1] === 'paragraph'
+                ? 4
+                : 5;
+      const starred = Boolean(sec[2]);
+      const title = latexInlineToMarkdown((sec[3] ?? '').trim());
+      let tail = String(sec[4] ?? '').trim();
+      // Allow "\subsection{X} \label{sec:x} Some text..." on the same line.
+      let label: string | undefined;
+      const lm = /\\label\{([^}]+)\}/.exec(tail);
+      if (lm) {
+        label = String(lm[1] ?? '').trim();
+        tail = tail.replace(lm[0], ' ').trim();
+      }
       blocks.push({
-        kind: 'title',
+        kind: 'section',
+        level,
         title,
+        ...(label ? { label } : null),
+        ...(starred ? { starred: true } : null),
         raw: line,
         blockIndex,
         startOffset: start,
         endOffset: end,
       });
+      if (tail.length > 0) {
+        blocks.push({
+          kind: 'paragraph',
+          text: latexInlineToMarkdown(tail),
+          raw: line,
+          blockIndex: blockIndex + 1,
+          startOffset: start,
+          endOffset: end,
+        });
+        blockIndex++;
+      }
       i++;
       blockIndex++;
       continue;
     }
 
-    // Sections
-    const sec = /^\\+(section|subsection|subsubsection)\{([^}]*)\}(?:\s*%.*)?$/.exec(trimmed);
-    if (sec) {
-      const level = sec[1] === 'section' ? 1 : sec[1] === 'subsection' ? 2 : 3;
-      const title = latexInlineToMarkdown((sec[2] ?? '').trim());
-      blocks.push({
-        kind: 'section',
-        level,
-        title,
-        raw: line,
-        blockIndex,
-        startOffset: start,
-        endOffset: end,
-      });
+    // Standalone \label{...} lines should attach to the previous structural block.
+    // This is extremely common in LaTeX sources (\section{...}\n\label{sec:...}).
+    const onlyLabel = /^\\label\{([^}]+)\}(?:\s*%.*)?$/.exec(trimmed);
+    if (onlyLabel) {
+      const lbl = String(onlyLabel[1] ?? '').trim();
+      if (lbl && blocks.length > 0) {
+        // Attach to the most recent section/math/figure/table.
+        for (let k = blocks.length - 1; k >= 0; k--) {
+          const prev = blocks[k]!;
+          if (prev.kind === 'section') {
+            prev.label = prev.label || lbl;
+            break;
+          }
+          if (prev.kind === 'math') {
+            prev.label = prev.label || lbl;
+            break;
+          }
+          if (prev.kind === 'figure') {
+            prev.label = prev.label || lbl;
+            break;
+          }
+          if (prev.kind === 'table') {
+            prev.label = prev.label || lbl;
+            break;
+          }
+          // Stop scanning if we hit a section boundary (don't attach across big gaps).
+          if (prev.kind === 'raw') break;
+        }
+      }
       i++;
       blockIndex++;
       continue;
@@ -784,19 +1581,69 @@ function parseBlocks(latex: string): Block[] {
       break;
     }
 
-    // equation environment
-    if (line.trim() === '\\begin{equation}') {
+    // table environment (best-effort)
+    // Support optional placement args and starred form used by many LaTeX papers:
+    // - \begin{table}[t]
+    // - \begin{table*}[t]
+    const beginTable = /^\\begin\{table\*?\}(?:\[[^\]]*\])?/.test(line.trim());
+    if (beginTable) {
+      const startOffset = start;
+      let j = i;
+      // If \end{table} isn't on this line, scan until it.
+      if (!/\\end\{table\*?\}/.test(line)) {
+        j = i + 1;
+        while (j < lines.length && !/^\\end\{table\*?\}/.test(lines[j].line.trim())) j++;
+      }
+      // If we found the end of the environment, either parse it or fall back to a raw block,
+      // but ALWAYS continue parsing after it. Only break when the env is unclosed.
+      if (j < lines.length && (j === i || /^\\end\{table\*?\}/.test(lines[j].line.trim()))) {
+        const endOffset = lines[j]?.end ?? end;
+        const seg = lines.slice(i, j + 1);
+        const raw = seg.map((l) => l.line).join('\n');
+        const parsed = parseLatexTableEnvironment(raw);
+        if (parsed) {
+          blocks.push({ ...parsed, raw, blockIndex, startOffset, endOffset });
+        } else {
+          blocks.push({ kind: 'raw', latex: raw, raw, blockIndex, startOffset, endOffset });
+        }
+        i = j + 1;
+        blockIndex++;
+        continue;
+      }
+      // Unclosed => raw remainder and stop.
+      const raw = lines.slice(i).map((l) => l.line).join('\n');
+      blocks.push({ kind: 'raw', latex: raw, raw, blockIndex, startOffset, endOffset: lines[lines.length - 1]?.end ?? end });
+      break;
+    }
+
+    // math environments (best-effort)
+    const mathBegin = /^\\begin\{(equation\*?|align\*?|gather\*?|multline\*?)\}$/.exec(line.trim());
+    if (mathBegin) {
+      const env = mathBegin[1]!;
       const startOffset = start;
       let j = i + 1;
       const body: string[] = [];
-      while (j < lines.length && lines[j].line.trim() !== '\\end{equation}') {
-        body.push(lines[j].line);
+      let label: string | undefined;
+      while (j < lines.length && lines[j].line.trim() !== `\\end{${env}}`) {
+        const rawLine = lines[j].line;
+        const t = rawLine.trim();
+        if (t.startsWith('%') && !isZxMarkerLine(t)) {
+          j++;
+          continue;
+        }
+        const lab = /^\\label\{([^}]*)\}(?:\s*%.*)?$/.exec(t);
+        if (lab) {
+          label = String(lab[1] ?? '').trim();
+          j++;
+          continue;
+        }
+        body.push(stripInlineComment(rawLine));
         j++;
       }
-      if (j < lines.length && lines[j].line.trim() === '\\end{equation}') {
+      if (j < lines.length && lines[j].line.trim() === `\\end{${env}}`) {
         const endOffset = lines[j].end;
         const raw = lines.slice(i, j + 1).map((l) => l.line).join('\n');
-        blocks.push({ kind: 'math', latex: body.join('\n').trim(), raw, blockIndex, startOffset, endOffset });
+        blocks.push({ kind: 'math', latex: body.join('\n').trim(), ...(label ? { label } : null), raw, blockIndex, startOffset, endOffset });
         i = j + 1;
         blockIndex++;
         continue;
@@ -871,7 +1718,11 @@ function parseBlocks(latex: string): Block[] {
     }
 
     // figure environment (Zadoox subset)
-    if (line.trim() === '\\begin{figure}') {
+    // Support optional placement args and starred form used by many LaTeX papers:
+    // - \begin{figure}[t]
+    // - \begin{figure*}[t]
+    const beginFigure = /^\\begin\{figure\*?\}(?:\[[^\]]*\])?\s*$/.test(line.trim());
+    if (beginFigure) {
       const startOffset = start;
       let j = i + 1;
       let src = '';
@@ -881,8 +1732,10 @@ function parseBlocks(latex: string): Block[] {
       let desc: string | undefined;
       let caption = '';
       let label: string | undefined;
+      const includegraphics: Array<{ src: string; width?: string; scale?: string }> = [];
 
-      while (j < lines.length && lines[j].line.trim() !== '\\end{figure}') {
+      // End can be \end{figure} or \end{figure*}
+      while (j < lines.length && !/^\\end\{figure\*?\}\s*$/.test(lines[j].line.trim())) {
         const t = lines[j].line.trim();
         const c = /^%\s*zadoox-([a-zA-Z0-9_-]+)\s*:\s*(.*)$/.exec(t);
         if (c) {
@@ -900,9 +1753,12 @@ function parseBlocks(latex: string): Block[] {
         if (t === '\\raggedright') align = 'left';
         if (t === '\\centering') align = 'center';
 
-        const ig = parseIncludegraphicsLine(t);
+        const allIg = parseAllIncludegraphics(t);
+        if (allIg.length) includegraphics.push(...allIg);
+        const ig = allIg[0] ?? parseIncludegraphicsLine(t);
         if (!src && ig.src) src = ig.src;
         if (!width && ig.width) width = latexWidthToXmdWidth(ig.width);
+        if (!width && ig.scale) width = latexScaleToXmdWidth(ig.scale);
 
         const cap = /^\\caption\{([^}]*)\}(?:\s*%.*)?$/.exec(t);
         if (cap) {
@@ -918,7 +1774,7 @@ function parseBlocks(latex: string): Block[] {
         }
         j++;
       }
-      if (j < lines.length && lines[j].line.trim() === '\\end{figure}') {
+      if (j < lines.length && /^\\end\{figure\*?\}\s*$/.test(lines[j].line.trim())) {
         const endOffset = lines[j].end;
         const raw = lines.slice(i, j + 1).map((l) => l.line).join('\n');
 
@@ -931,6 +1787,31 @@ function parseBlocks(latex: string): Block[] {
             cols: grid.cols,
             caption: caption || undefined,
             rows: grid.rows,
+            raw,
+            blockIndex,
+            startOffset,
+            endOffset,
+          });
+          i = j + 1;
+          blockIndex++;
+          continue;
+        }
+
+        // Generic multi-image figure (common in arXiv: "(left)... (right)..."):
+        // If we saw multiple includegraphics calls, render them using our existing GridNode IR
+        // (same node type as the figure-grid wizard), as a 1-row grid.
+        if (includegraphics.length > 1) {
+          const cols = includegraphics.length;
+          const row = includegraphics.map((ig) => ({
+            src: ig.src,
+            caption: '',
+            width: ig.width ? latexWidthToXmdWidth(ig.width) : ig.scale ? latexScaleToXmdWidth(ig.scale) : undefined,
+          }));
+          blocks.push({
+            kind: 'grid',
+            cols,
+            caption: caption || undefined,
+            rows: [row],
             raw,
             blockIndex,
             startOffset,
@@ -1005,7 +1886,7 @@ function parseBlocks(latex: string): Block[] {
         (/^\\(section|subsection|subsubsection)\{/.test(t) ||
           t === '\\begin{verbatim}' ||
           t === '\\begin{equation}' ||
-          t === '\\begin{figure}' ||
+          /^\\begin\{figure\*?\}(?:\[[^\]]*\])?\s*$/.test(t) ||
           /^\\begin\{wrapfigure\}\{[lr]\}\{/.test(t) ||
           /^\\begin\{(itemize|enumerate)\}/.test(t))
       ) {
@@ -1060,6 +1941,126 @@ function buildXmdFigureLine(b: Extract<Block, { kind: 'figure' }>): string {
 function latexInlineToMarkdown(text: string): string {
   let s = text ?? '';
 
+  const inlineMathToken = (tex: string): string => `@@ZXMATHI{${encodeURIComponent(tex)}}@@`;
+
+  // Common TeX "layout-only" macros that should not render as text (best-effort).
+  // These appear frequently in arXiv sources and especially inside tables.
+  s = s.replace(/\\(pagebreak|newpage|clearpage|cleardoublepage)\b/g, ' ');
+  s = s.replace(/\\(vspace|hspace)\*?\{[^}]*\}/g, ' ');
+  // Row-height hacks inside cells (common prefix like \rule{0pt}{2.0ex})
+  s = s.replace(/\\rule\{0pt\}\{[^}]+\}/g, ' ');
+  // booktabs rule commands should not show as literal cell text
+  s = s.replace(/\\(toprule|midrule|bottomrule|cmidrule)\b/g, ' ');
+  s = s.replace(/\\specialrule\{[^}]*\}\{[^}]*\}\{[^}]*\}/g, ' ');
+
+  // Common font switches in braces used in older LaTeX sources
+  // {\bf Text} -> **Text**
+  s = s.replace(/\{\\bf\s+([^}]*)\}/g, (_m, inner) => `**${String(inner ?? '').trim()}**`);
+  // {\it Text} / {\em Text} -> *Text*
+  s = s.replace(/\{\\it\s+([^}]*)\}/g, (_m, inner) => `*${String(inner ?? '').trim()}*`);
+  s = s.replace(/\{\\em\s+([^}]*)\}/g, (_m, inner) => `*${String(inner ?? '').trim()}*`);
+
+  // Special letters frequently seen in author names
+  // {\L}ukasz -> Łukasz
+  s = s.replace(/\{\\L\}/g, 'Ł');
+  s = s.replace(/\{\\l\}/g, 'ł');
+
+  // Bibliography formatting (common in arXiv sources / thebibliography):
+  // - \bibitem{key} / \bibitem[short]{key} => [key]
+  // - \newblock => separator (space)
+  // - {\em ...} => *...*
+  // - ~ => space
+  // Keep these early so later escaping/citation logic doesn't preserve raw commands.
+  s = s.replace(/\\bibitem(?:\[[^\]]*\])?\{([^}]+)\}\s*/g, (_m, key) => {
+    const k = String(key ?? '').trim();
+    return k ? `[${k}] ` : '';
+  });
+  s = s.replace(/\\newblock\b/g, ' ');
+  s = s.replace(/\{\\em\s+([^}]*)\}/g, (_m, inner) => `*${String(inner ?? '').trim()}*`);
+  // Non-breaking space in LaTeX sources; in markdown/HTML preview we want a normal space.
+  s = s.replace(/~/g, ' ');
+  // Treat explicit LaTeX line breaks in bib entries as spaces.
+  s = s.replace(/\\\\/g, ' ');
+
+  // Inline math:
+  // - \( ... \)
+  s = s.replace(/\\\(([\s\S]*?)\\\)/g, (_m, tex) => inlineMathToken(String(tex ?? '').trim()));
+  // - $ ... $ (single-dollar only; $$ ... $$ is handled elsewhere as block math)
+  // We do a small scan instead of a big regex to avoid edge cases with escaped \$.
+  s = (() => {
+    const src = String(s ?? '');
+    let out = '';
+    let i = 0;
+    while (i < src.length) {
+      const ch = src[i]!;
+      if (ch !== '$' || (i > 0 && src[i - 1] === '\\')) {
+        out += ch;
+        i++;
+        continue;
+      }
+      // Don't treat $$ as inline math.
+      if (src[i + 1] === '$') {
+        out += '$$';
+        i += 2;
+        continue;
+      }
+      // Find the closing unescaped single '$'
+      let j = i + 1;
+      while (j < src.length) {
+        if (src[j] === '$' && src[j - 1] !== '\\') break;
+        // Stop if we hit a double-dollar start (avoid eating display math)
+        if (src[j] === '$' && src[j + 1] === '$') break;
+        j++;
+      }
+      if (j >= src.length || src[j] !== '$') {
+        // No closing delimiter; treat as literal.
+        out += '$';
+        i++;
+        continue;
+      }
+      const tex = src.slice(i + 1, j);
+      out += inlineMathToken(tex.trim());
+      i = j + 1;
+    }
+    return out;
+  })();
+
+  const sanitizeRef = (raw: string): string =>
+    String(raw ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+
+  const refTargetId = (labelRaw: string): string => {
+    const label = String(labelRaw ?? '').trim();
+    const slug = sanitizeRef(label);
+    const prefix = label.split(':')[0]?.toLowerCase().trim();
+    if (prefix === 'fig') return `figure-${slug}`;
+    if (prefix === 'grid') return `grid-${slug}`;
+    if (prefix === 'tbl' || prefix === 'tab') return `table-${slug}`;
+    if (prefix === 'eq') return `eq-${slug}`;
+    if (prefix === 'sec') return `sec-${slug}`;
+    // Default to section-style id.
+    return `sec-${slug}`;
+  };
+
+  // Citations:
+  // Convert \cite/\citep/\citet (+ optional star) into a stable inline token we can render later.
+  // We intentionally ignore optional args ([...]) for now.
+  const citeToToken = (mode: 'cite' | 'citep' | 'citet') => (_m: string, keysRaw: string) => {
+    const keys = String(keysRaw ?? '')
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean)
+      .join(', ');
+    return keys ? `[@${mode} ${keys}]` : '';
+  };
+  s = s.replace(/\\cite\*?(?:\[[^\]]*\])*\{([^}]+)\}/g, citeToToken('cite'));
+  s = s.replace(/\\citep\*?(?:\[[^\]]*\])*\{([^}]+)\}/g, citeToToken('citep'));
+  s = s.replace(/\\citet\*?(?:\[[^\]]*\])*\{([^}]+)\}/g, citeToToken('citet'));
+
   // \href{url}{text} -> [text](url)
   s = s.replace(/\\href\{([^}]+)\}\{([^}]+)\}/g, (_m, url, t) => `[${t}](${url})`);
   // \url{url} -> <url>
@@ -1071,9 +2072,19 @@ function latexInlineToMarkdown(text: string): string {
   // \texttt{t} -> `t`
   s = s.replace(/\\texttt\{([^}]+)\}/g, (_m, t) => `\`${t}\``);
 
+  // Cross references:
+  // - Drop \label in inline text (we attach labels to blocks we recognize; others are not rendered as text).
+  s = s.replace(/\\label\{[^}]+\}/g, '');
+  // - \eqref{lbl} -> ([lbl](#...))
+  s = s.replace(/\\eqref\{([^}]+)\}/g, (_m, lbl) => `([${String(lbl ?? '').trim()}](#${refTargetId(lbl)}))`);
+  // - \ref{lbl} -> [lbl](#...)
+  s = s.replace(/\\ref\{([^}]+)\}/g, (_m, lbl) => `[${String(lbl ?? '').trim()}](#${refTargetId(lbl)})`);
+
   // Unescape common escaped characters
   s = s.replace(/\\([%&#_{}])/g, '$1');
 
+  // Collapse excess whitespace created by macro stripping.
+  s = s.replace(/\s+/g, ' ').trim();
   return s;
 }
 
@@ -1450,6 +2461,463 @@ function parseTableFromRaw(raw: string): Extract<Block, { kind: 'table' }> | nul
   };
 }
 
+function parseLatexTableEnvironment(raw: string): Extract<Block, { kind: 'table' }> | null {
+  const text = String(raw ?? '');
+  const captionMatch = /\\caption\{([^}]*)\}/.exec(text);
+  const labelMatch = /\\label\{([^}]*)\}/.exec(text);
+  const caption = captionMatch ? latexInlineToMarkdown(String(captionMatch[1] ?? '').trim()) : undefined;
+  const label = labelMatch ? latexInlineToMarkdown(String(labelMatch[1] ?? '').trim()) : undefined;
+
+  // Prefer tabularx when possible.
+  const tabularx = parseAnyTabularxToTable(text);
+  if (tabularx) return { ...tabularx, ...(caption ? { caption } : null), ...(label ? { label } : null) };
+
+  const tabular = parseAnyTabularToTable(text);
+  if (tabular) return { ...tabular, ...(caption ? { caption } : null), ...(label ? { label } : null) };
+
+  return null;
+}
+
+function parseAnyTabularxToTable(textRaw: string): Extract<Block, { kind: 'table' }> | null {
+  const text = String(textRaw ?? '');
+  const beginIdx = text.indexOf('\\begin{tabularx}');
+  if (beginIdx < 0) return null;
+
+  let pos = beginIdx + '\\begin{tabularx}'.length;
+  while (pos < text.length && /\s/.test(text[pos]!)) pos++;
+
+  const readBraceGroup = (): string | null => {
+    if (text[pos] !== '{') return null;
+    let depth = 1;
+    pos++;
+    const start = pos;
+    while (pos < text.length && depth > 0) {
+      const ch = text[pos]!;
+      if (ch === '{') depth++;
+      else if (ch === '}') depth--;
+      pos++;
+    }
+    if (depth !== 0) return null;
+    return text.slice(start, pos - 1);
+  };
+
+  const _width = readBraceGroup();
+  if (_width == null) return null;
+  while (pos < text.length && /\s/.test(text[pos]!)) pos++;
+  const colSpec = readBraceGroup();
+  if (colSpec == null) return null;
+
+  const endNeedle = '\\end{tabularx}';
+  const endIdx = text.indexOf(endNeedle, pos);
+  if (endIdx < 0) return null;
+  const body = text.slice(pos, endIdx);
+
+  const cols = countTabularCols(colSpec);
+  if (cols <= 0) return null;
+  const { colAlign, vRules } = parseGenericColSpecToAlignAndVRules(colSpec, cols);
+  const style = parseTabularRuleStyleFromRaw(textRaw) ?? undefined;
+  const { header, rows, hRules, headerColSpans, bodyColSpans, bodyRowSpans } = parseTabularBodyToRows(body, cols);
+
+  return {
+    kind: 'table',
+    header,
+    rows,
+    ...(headerColSpans ? { headerColSpans } : null),
+    ...(bodyColSpans ? { bodyColSpans } : null),
+    ...(bodyRowSpans ? { bodyRowSpans } : null),
+    colAlign,
+    vRules,
+    hRules,
+    ...(style ? { style } : null),
+    raw: textRaw,
+    blockIndex: 0,
+    startOffset: 0,
+    endOffset: textRaw.length,
+  };
+}
+
+function parseAnyTabularToTable(textRaw: string): Extract<Block, { kind: 'table' }> | null {
+  const text = String(textRaw ?? '');
+  const beginNeedle = '\\begin{tabular}{';
+  const beginIdx = text.indexOf(beginNeedle);
+  if (beginIdx < 0) return null;
+
+  let pos = beginIdx + beginNeedle.length;
+  let depth = 1;
+  const colStart = pos;
+  while (pos < text.length && depth > 0) {
+    const ch = text[pos]!;
+    if (ch === '{') depth++;
+    else if (ch === '}') depth--;
+    pos++;
+  }
+  if (depth !== 0) return null;
+  const colSpec = text.slice(colStart, pos - 1);
+
+  const endNeedle = '\\end{tabular}';
+  const endIdx = text.indexOf(endNeedle, pos);
+  if (endIdx < 0) return null;
+  const body = text.slice(pos, endIdx);
+
+  const cols = countTabularCols(colSpec);
+  if (cols <= 0) return null;
+  const { colAlign, vRules } = parseGenericColSpecToAlignAndVRules(colSpec, cols);
+  const style = parseTabularRuleStyleFromRaw(textRaw) ?? undefined;
+  const { header, rows, hRules, headerColSpans, bodyColSpans, bodyRowSpans } = parseTabularBodyToRows(body, cols);
+
+  return {
+    kind: 'table',
+    header,
+    rows,
+    ...(headerColSpans ? { headerColSpans } : null),
+    ...(bodyColSpans ? { bodyColSpans } : null),
+    ...(bodyRowSpans ? { bodyRowSpans } : null),
+    colAlign,
+    vRules,
+    hRules,
+    ...(style ? { style } : null),
+    raw: textRaw,
+    blockIndex: 0,
+    startOffset: 0,
+    endOffset: textRaw.length,
+  };
+}
+
+function parseGenericColSpecToAlignAndVRules(colSpecRaw: string, cols: number): { colAlign: TableColumnAlign[]; vRules: TableRule[] } {
+  const spec = String(colSpecRaw ?? '');
+  const colAlign: TableColumnAlign[] = [];
+  const vRules: TableRule[] = [];
+
+  const readBars = (s: string, idx: number): { rule: TableRule; idx: number } => {
+    let i = idx;
+    let n = 0;
+    while (i < s.length && s[i] === '|') {
+      n++;
+      i++;
+    }
+    const rule: TableRule = n >= 2 ? 'double' : n === 1 ? 'single' : 'none';
+    return { rule, idx: i };
+  };
+
+  const readBraceGroupEnd = (s: string, idx: number): number => {
+    if (s[idx] !== '{') return idx;
+    let depth = 1;
+    let i = idx + 1;
+    while (i < s.length && depth > 0) {
+      const ch = s[i]!;
+      if (ch === '{') depth++;
+      else if (ch === '}') depth--;
+      i++;
+    }
+    return i;
+  };
+
+  const tokenAlign = (t: string): TableColumnAlign => {
+    const ch = t.trim()[0];
+    if (ch === 'c' || ch === 'C') return 'center';
+    if (ch === 'r' || ch === 'R') return 'right';
+    return 'left';
+  };
+
+  const bars0 = readBars(spec, 0);
+  vRules.push(bars0.rule);
+  let i = bars0.idx;
+  let depth = 0;
+
+  while (i < spec.length && colAlign.length < cols) {
+    const ch = spec[i]!;
+    if (ch === '{') {
+      depth++;
+      i++;
+      continue;
+    }
+    if (ch === '}') {
+      depth = Math.max(0, depth - 1);
+      i++;
+      continue;
+    }
+    if (depth !== 0) {
+      i++;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      i++;
+      continue;
+    }
+    if (ch === '|') {
+      const bars = readBars(spec, i);
+      i = bars.idx;
+      continue;
+    }
+    // Skip >{...} and <{...}
+    if ((ch === '>' || ch === '<') && spec[i + 1] === '{') {
+      i = readBraceGroupEnd(spec, i + 1);
+      continue;
+    }
+
+    const tokenStart = i;
+    if ((ch === 'p' || ch === 'm' || ch === 'b') && spec[i + 1] === '{') {
+      i = readBraceGroupEnd(spec, i + 1);
+      colAlign.push(tokenAlign(spec.slice(tokenStart, i)));
+    } else {
+      i++;
+      colAlign.push(tokenAlign(spec.slice(tokenStart, i)));
+    }
+
+    const bars = readBars(spec, i);
+    vRules.push(bars.rule);
+    i = bars.idx;
+  }
+
+  while (colAlign.length < cols) colAlign.push('left');
+  if (colAlign.length > cols) colAlign.length = cols;
+  while (vRules.length < cols + 1) vRules.push('none');
+  if (vRules.length > cols + 1) vRules.length = cols + 1;
+  return { colAlign, vRules };
+}
+
+function parseTabularBodyToRows(bodyRaw: string, cols: number): {
+  header: string[];
+  rows: string[][];
+  hRules: TableRule[];
+  headerColSpans?: Array<{ colStart: number; colSpan: number }>;
+  bodyColSpans?: Array<{ row: number; colStart: number; colSpan: number }>;
+  bodyRowSpans?: Array<{ row: number; col: number; rowSpan: number }>;
+} {
+  const body = String(bodyRaw ?? '');
+  // Split into "statements" more safely than a global "\\\\" replace.
+  // IMPORTANT: "\\\\" can appear inside cell content (e.g. nested tabular inside \multirow),
+  // so we only treat it as a row terminator at brace-depth 0.
+  const splitTabularStatements = (src: string): string[] => {
+    const s = normalizeLineEndings(String(src ?? ''));
+    const out: string[] = [];
+    let cur = '';
+    let depth = 0;
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i]!;
+      if (ch === '{') depth++;
+      else if (ch === '}') depth = Math.max(0, depth - 1);
+      if (ch === '\n') {
+        const t = cur.trim();
+        if (t) out.push(t);
+        cur = '';
+        continue;
+      }
+      // Row terminator at top level.
+      if (depth === 0 && ch === '\\' && s[i + 1] === '\\') {
+        cur += '\\\\';
+        const t = cur.trim();
+        if (t) out.push(t);
+        cur = '';
+        i++;
+        continue;
+      }
+      cur += ch;
+    }
+    const t = cur.trim();
+    if (t) out.push(t);
+    return out;
+  };
+
+  const splitCombinedRuleLine = (ln: string): string[] => {
+    const t = String(ln ?? '').trim();
+    if (!t) return [];
+    // Common arXiv pattern: \hline\rule{0pt}{2.0ex}
+    if (/^\\hline\b/.test(t) && /\\rule\{0pt\}\{[^}]+\}/.test(t)) return ['\\hline'];
+    return [t];
+  };
+
+  const lines = splitTabularStatements(body)
+    .flatMap(splitCombinedRuleLine)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+    // Standalone TeX comment lines sometimes appear inside tabular bodies (e.g. "%\\cmidrule")
+    // and should never become literal table cells.
+    .filter((l) => !l.startsWith('%'))
+    // Rule/color setup lines are emitted before hlines/rows; skip them so they don't become table content.
+    .filter((l) => !/^\\arrayrulecolor\{[^}]+\}(?:\s*%.*)?$/.test(l))
+    // Spacer rules: ignore vertical spacing hacks entirely.
+    .filter((l) => !/^\\rule\{0pt\}\{[^}]+\}(?:\s*%.*)?$/.test(l));
+
+  const toRule = (n: number): TableRule => (n >= 2 ? 'double' : n === 1 ? 'single' : 'none');
+  const toCellText = (s: string): string =>
+    latexInlineToMarkdown(String(s ?? '').trim())
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const readBraceGroup = (s: string, startIdx: number): { value: string; nextIdx: number } | null => {
+    if (s[startIdx] !== '{') return null;
+    let depth = 1;
+    let i = startIdx + 1;
+    const start = i;
+    while (i < s.length && depth > 0) {
+      const ch = s[i]!;
+      if (ch === '{') depth++;
+      else if (ch === '}') depth--;
+      i++;
+    }
+    if (depth !== 0) return null;
+    return { value: s.slice(start, i - 1), nextIdx: i };
+  };
+
+  const parseMulticolumn = (rawCell: string): { colSpan: number; text: string } | null => {
+    const t = String(rawCell ?? '').trim();
+    if (!t.startsWith('\\multicolumn')) return null;
+    let i = '\\multicolumn'.length;
+    while (i < t.length && /\s/.test(t[i]!)) i++;
+    const g1 = readBraceGroup(t, i);
+    if (!g1) return null;
+    const n = Number(String(g1.value ?? '').trim());
+    if (!Number.isFinite(n) || n <= 1) return null;
+    i = g1.nextIdx;
+    while (i < t.length && /\s/.test(t[i]!)) i++;
+    const _g2 = readBraceGroup(t, i);
+    if (!_g2) return null;
+    i = _g2.nextIdx;
+    while (i < t.length && /\s/.test(t[i]!)) i++;
+    const g3 = readBraceGroup(t, i);
+    if (!g3) return null;
+    return { colSpan: Math.floor(n), text: toCellText(g3.value) };
+  };
+
+  const parseMultirow = (rawCell: string): { rowSpan: number; text: string } | null => {
+    const t = String(rawCell ?? '').trim();
+    if (!t.startsWith('\\multirow')) return null;
+    let i = '\\multirow'.length;
+    while (i < t.length && /\s/.test(t[i]!)) i++;
+    const g1 = readBraceGroup(t, i);
+    if (!g1) return null;
+    const n = Number(String(g1.value ?? '').trim());
+    if (!Number.isFinite(n) || n <= 1) return null;
+    i = g1.nextIdx;
+    while (i < t.length && /\s/.test(t[i]!)) i++;
+    const _g2 = readBraceGroup(t, i);
+    if (!_g2) return null;
+    i = _g2.nextIdx;
+    while (i < t.length && /\s/.test(t[i]!)) i++;
+    const g3 = readBraceGroup(t, i);
+    if (!g3) return null;
+    return { rowSpan: Math.floor(n), text: toCellText(g3.value) };
+  };
+
+  const hRules: TableRule[] = [];
+  const rows: string[][] = [];
+  const header: string[] = [];
+  const headerColSpans: Array<{ colStart: number; colSpan: number }> = [];
+  const bodyColSpans: Array<{ row: number; colStart: number; colSpan: number }> = [];
+  const bodyRowSpans: Array<{ row: number; col: number; rowSpan: number }> = [];
+  let i = 0;
+
+  const readHLines = () => {
+    let n = 0;
+    while (i < lines.length) {
+      const t = lines[i] ?? '';
+      if (t === '\\hline' || /^\\hline\b/.test(t)) {
+        n += 1;
+        i++;
+        continue;
+      }
+      if (t === '\\cline' || /^\\cline\b/.test(t)) {
+        n += 1;
+        i++;
+        continue;
+      }
+      // booktabs: treat top/bottom as "double" boundaries, mid as single
+      if (t === '\\toprule' || /^\\toprule\b/.test(t)) {
+        n += 2;
+        i++;
+        continue;
+      }
+      if (t === '\\midrule' || /^\\midrule\b/.test(t)) {
+        n += 1;
+        i++;
+        continue;
+      }
+      if (t === '\\bottomrule' || /^\\bottomrule\b/.test(t)) {
+        n += 2;
+        i++;
+        continue;
+      }
+      // cmidrule spans columns; we don't model spans yet, but treat it as a single rule boundary.
+      if (/^\\cmidrule/.test(t)) {
+        n += 1;
+        i++;
+        continue;
+      }
+      // booktabs: explicit thickness rule (commonly used in arXiv tables)
+      if (t === '\\specialrule' || /^\\specialrule\b/.test(t)) {
+        n += 1;
+        i++;
+        continue;
+      }
+      break;
+    }
+    return n;
+  };
+
+  const readRow = (rowKind: 'header' | 'body', bodyRowIndex: number): string[] | null => {
+    if (i >= lines.length) return null;
+    const rowLine = lines[i] ?? '';
+    i++;
+    const m = /^(.*)\\\\\s*$/.exec(rowLine);
+    const core = String((m ? m[1] : rowLine) ?? '').trim();
+    if (!core) return Array.from({ length: cols }).map(() => '');
+    const rawParts = core.split(/&(?![^{}]*\})/).map((p) => String(p ?? '').trim());
+    const parts: string[] = [];
+    let c = 0;
+    for (const rp of rawParts) {
+      if (c >= cols) break;
+      const mc = parseMulticolumn(rp);
+      if (mc) {
+        const span = Math.min(cols - c, mc.colSpan);
+        parts.push(mc.text);
+        for (let k = 1; k < span; k++) parts.push('');
+        if (rowKind === 'header') headerColSpans.push({ colStart: c, colSpan: span });
+        else bodyColSpans.push({ row: bodyRowIndex, colStart: c, colSpan: span });
+        c += span;
+        continue;
+      }
+      const mr = parseMultirow(rp);
+      if (mr) {
+        parts.push(mr.text);
+        if (rowKind === 'body') bodyRowSpans.push({ row: bodyRowIndex, col: c, rowSpan: Math.min(mr.rowSpan, 999) });
+        c += 1;
+        continue;
+      }
+      parts.push(toCellText(rp));
+      c += 1;
+    }
+    while (parts.length < cols) parts.push('');
+    if (parts.length > cols) parts.length = cols;
+    return parts;
+  };
+
+  hRules.push(toRule(readHLines()));
+  const h = readRow('header', -1);
+  if (!h) return { header: [], rows: [], hRules: [] };
+  header.push(...h);
+  hRules.push(toRule(readHLines()));
+
+  while (i < lines.length) {
+    const r = readRow('body', rows.length);
+    if (!r) break;
+    rows.push(r);
+    hRules.push(toRule(readHLines()));
+  }
+
+  const totalRows = 1 + rows.length;
+  while (hRules.length < totalRows + 1) hRules.push('none');
+  if (hRules.length > totalRows + 1) hRules.length = totalRows + 1;
+  return {
+    header,
+    rows,
+    hRules,
+    ...(headerColSpans.length ? { headerColSpans } : null),
+    ...(bodyColSpans.length ? { bodyColSpans } : null),
+    ...(bodyRowSpans.length ? { bodyRowSpans } : null),
+  };
+}
+
 function parseFigureGridFromSubfigureRaw(raw: string): {
   cols: number;
   rows: Array<Array<{ src: string; caption: string; width?: string } | null>>;
@@ -1473,6 +2941,7 @@ function parseFigureGridFromSubfigureRaw(raw: string): {
       const ig = parseIncludegraphicsLine(t);
       if (!src && ig.src) src = ig.src;
       if (!width && ig.width) width = latexWidthToXmdWidth(ig.width);
+      if (!width && ig.scale) width = latexScaleToXmdWidth(ig.scale);
       const mCap = /^\\caption\{([^}]*)\}(?:\s*%.*)?$/.exec(t);
       if (mCap) cap = latexInlineToMarkdown(String(mCap[1] ?? '').trim());
     }
