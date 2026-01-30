@@ -1,5 +1,5 @@
 import { fnv1a32, hashToId } from './id';
-import type { DocumentNode, GridNode, IrNode, TableNode } from './types';
+import type { DocumentNode, GridNode, IrNode, ParagraphNode, TableNode } from './types';
 
 export interface IrStoreSnapshot {
   ir: DocumentNode;
@@ -31,7 +31,7 @@ function nodeContentForHash(node: IrNode): string {
     case 'abstract': {
       const text = (node.children ?? [])
         .filter((c) => c.type === 'paragraph')
-        .map((c) => normalizeWhitespace((c as any).text ?? ''))
+        .map((c) => normalizeWhitespace((c as ParagraphNode).text ?? ''))
         .join('\n');
       return `abstract:${normalizeWhitespace(text)}`;
     }
