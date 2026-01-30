@@ -8,6 +8,12 @@ import { ensureLatexPreambleForLatexContent } from './latex-preamble';
 
 export type EditMode = 'markdown' | 'latex';
 
+function isLatexManifest(v: unknown): v is { bucket?: string; basePrefix?: string; entryPath?: string } {
+  if (!v || typeof v !== 'object') return false;
+  const o = v as any;
+  return typeof o.basePrefix === 'string' && typeof o.entryPath === 'string';
+}
+
 export type EditorDocMetadata = {
   lastEditedFormat?: EditMode;
   xmdIrHash?: string;
@@ -31,12 +37,6 @@ export function useEditorEditMode(params: {
   const [latexEntryLoading, setLatexEntryLoading] = useState(false);
   const [latexEntryError, setLatexEntryError] = useState<string | null>(null);
   const [latexEntryReloadNonce, setLatexEntryReloadNonce] = useState(0);
-
-  const isLatexManifest = useCallback((v: unknown): v is { bucket?: string; basePrefix?: string; entryPath?: string } => {
-    if (!v || typeof v !== 'object') return false;
-    const o = v as any;
-    return typeof o.basePrefix === 'string' && typeof o.entryPath === 'string';
-  }, []);
 
   // Important: only initialize editMode from metadata once per document.
   // Otherwise, late metadata refreshes can overwrite explicit user selection
@@ -66,22 +66,11 @@ export function useEditorEditMode(params: {
     }
   }, [actualDocumentId, documentId, documentMetadata, documentLatex]);
 
-  // Back-compat: legacy docs may store full LaTeX source as a string (not a storage-backed manifest).
-  // If we're in LaTeX mode and there's no draft yet, seed it from documentLatex.
-  useEffect(() => {
-    if (editMode !== 'latex') return;
-    if (latexDraft.trim().length > 0) return;
-    if (typeof documentLatex === 'string' && documentLatex.trim().length > 0) {
-      setLatexDraft(documentLatex);
-    }
-  }, [documentLatex, editMode, latexDraft]);
-
   // If we have a LaTeX manifest, load the entry file via backend.
   useEffect(() => {
     const docId = actualDocumentId || null;
     if (!docId) return;
     if (!documentLatex) return;
-    if (!isLatexManifest(documentLatex)) return;
     const shouldLoad = latexDraft.length === 0 || editMode !== 'latex';
     if (!shouldLoad) return;
 
@@ -146,11 +135,9 @@ export function useEditorEditMode(params: {
             // Storage-backed LaTeX: if we have a manifest, load entry; else derive from IR and create it.
             let latexBase = latexDraft;
             if (!latexBase) {
-              if (isLatexManifest(documentLatex)) {
+              if (documentLatex) {
                 const res = await api.documents.latexEntryGet(actualDocumentId);
                 latexBase = res.text || '';
-              } else if (typeof documentLatex === 'string' && documentLatex.trim().length > 0) {
-                latexBase = documentLatex;
               } else {
                 latexBase = irToLatexDocument(currentIr);
               }
