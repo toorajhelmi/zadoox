@@ -93,24 +93,24 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
       // Case 1: <p>[1] text</p><p>[2] text</p> (separate paragraphs)
       // Case 2: <p>[1] text<br />[2] text</p> (same paragraph with breaks)
       
-      // First, handle separate paragraphs starting with [number]
+      // First, handle numbered/IEEE format: [1] ..., [2] ...
+      // References may be paragraphs (<p>) or list items (<li>) depending on renderer.
       referencesContent = referencesContent.replace(
-        /<p([^>]*)>\[(\d+)\]\s*/g,
-        (match, attrs, number) => {
-          // If attrs is empty, just add id and class
-          if (!attrs || attrs.trim() === '') {
-            return `<p id="ref-${number}" class="reference-entry">[${number}] `;
-          } else {
-            // Preserve existing attributes but add id (if not present) and class
-            const hasId = /id=/.test(attrs);
-            const hasClass = /class=/.test(attrs);
-            if (!hasId) {
-              return `<p id="ref-${number}" ${hasClass ? '' : 'class="reference-entry" '}${attrs}>[${number}] `;
-            } else {
-              // ID already exists, just ensure class is present
-              return `<p ${attrs}${hasClass ? '' : ' class="reference-entry"'}>[${number}] `;
-            }
+        /<(p|li)([^>]*)>\[(\d+)\]\s*/g,
+        (_match, tag, attrs, number) => {
+          const t = String(tag ?? 'p');
+          const a = String(attrs ?? '');
+          if (!a || a.trim() === '') {
+            return `<${t} id="ref-${number}" class="reference-entry">[${number}] `;
           }
+          // Preserve existing attributes but add id (if not present) and class
+          const hasId = /id=/.test(a);
+          const hasClass = /class=/.test(a);
+          if (!hasId) {
+            return `<${t} id="ref-${number}" ${hasClass ? '' : 'class="reference-entry" '}${a}>[${number}] `;
+          }
+          // ID already exists, just ensure class is present
+          return `<${t}${a}${hasClass ? '' : ' class="reference-entry"'}>[${number}] `;
         }
       );
       
@@ -126,23 +126,24 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
       );
       
       // Then, for other formats (APA, MLA, Chicago, footnote), number them sequentially.
-      // Only process paragraphs that don't already have an id (were not processed above).
+      // Only process entries that don't already have an id (were not processed above).
       //
-      // IMPORTANT: skip paragraphs that start with "[" because those are either:
+      // IMPORTANT: skip entries that start with "[" because those are either:
       // - already-numbered refs: [1] ...
       // - bibkey refs: [vaswani2017attention] ...
       // Those are handled by dedicated passes above/below.
       referencesContent = referencesContent.replace(
-        /<p(?!\s+id=)([^>]*)>(?!\s*\[)([^<]+)<\/p>/g,
-        (match, attrs, content) => {
+        /<(p|li)(?!\s+id=)([^>]*)>(?!\s*\[)([^<]+)<\/\1>/g,
+        (_match, tag, attrs, content) => {
+          const t = String(tag ?? 'p');
           // Skip if empty
           if (content.trim() === '') {
-            return match;
+            return _match;
           }
           // Add ID to this reference
           const id = `id="ref-${refNumber}"`;
           refNumber++;
-          return `<p ${id} class="reference-entry"${attrs}>${content}</p>`;
+          return `<${t} ${id} class="reference-entry"${attrs}>${content}</${t}>`;
         }
       );
 
@@ -150,11 +151,12 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
       // Add id="refkey-<key>" so inline cite tokens can link to it, and also assign a stable numeric
       // index so citations can render as [n] instead of the raw key.
       referencesContent = referencesContent.replace(
-        /<p([^>]*)>\[([^\]]+)\]\s*/g,
-        (match, attrs, key) => {
+        /<(p|li)([^>]*)>\[([^\]]+)\]\s*/g,
+        (_match, tag, attrs, key) => {
+          const t = String(tag ?? 'p');
           const k = String(key ?? '').trim();
           // Keep numeric refs handled above
-          if (/^\d+$/.test(k)) return match;
+          if (/^\d+$/.test(k)) return _match;
           const sk = sanitizeKey(k);
           const id = `refkey-${sk}`;
           const n = (() => {
@@ -164,12 +166,13 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
             bibKeyToNumber.set(sk, next);
             return next;
           })();
-          const hasId = /id=/.test(attrs);
-          const hasClass = /class=/.test(attrs);
-          if (hasId) return match;
+          const a = String(attrs ?? '');
+          const hasId = /id=/.test(a);
+          const hasClass = /class=/.test(a);
+          if (hasId) return _match;
           const cls = hasClass ? '' : 'class="reference-entry" ';
           // Store sanitized key + assigned number for later citation normalization.
-          return `<p id="${id}" data-ref-key="${sk}" data-ref-number="${n}" ${cls}${attrs}>[${n}] `;
+          return `<${t} id="${id}" data-ref-key="${sk}" data-ref-number="${n}" ${cls}${a}>[${n}] `;
         }
       );
 
@@ -289,30 +292,44 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
 
   // Track auth token so asset fetching can retry when a session becomes available.
   useEffect(() => {
-    const supabase = createClient();
     let cancelled = false;
 
     (async () => {
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } = await (async () => {
+        try {
+          const supabase = createClient();
+          return await supabase.auth.getSession();
+        } catch {
+          // Supabase not configured or unavailable; keep preview functional without an access token.
+          return { data: { session: null } } as any;
+        }
+      })();
       if (cancelled) return;
       setAccessToken(session?.access_token ?? null);
     })();
 
-    // IMPORTANT: don't detach the method from `supabase.auth` (it relies on `this` internally).
-    const maybeOnAuthStateChange = (supabase.auth as unknown as { onAuthStateChange?: unknown }).onAuthStateChange;
-    const sub =
-      typeof maybeOnAuthStateChange === 'function'
-        ? (supabase.auth as unknown as {
-            onAuthStateChange: (cb: (event: unknown, session: { access_token?: string } | null) => void) => {
-              data: { subscription: { unsubscribe: () => void } };
-            };
-          }).onAuthStateChange((_event, session) => {
-            if (cancelled) return;
-            setAccessToken(session?.access_token ?? null);
-          })
-        : null;
+    // Subscribe to auth changes when Supabase is configured.
+    let sub: { data: { subscription: { unsubscribe: () => void } } } | null = null;
+    try {
+      const supabase = createClient();
+      // IMPORTANT: don't detach the method from `supabase.auth` (it relies on `this` internally).
+      const maybeOnAuthStateChange = (supabase.auth as unknown as { onAuthStateChange?: unknown }).onAuthStateChange;
+      sub =
+        typeof maybeOnAuthStateChange === 'function'
+          ? (supabase.auth as unknown as {
+              onAuthStateChange: (cb: (event: unknown, session: { access_token?: string } | null) => void) => {
+                data: { subscription: { unsubscribe: () => void } };
+              };
+            }).onAuthStateChange((_event, session) => {
+              if (cancelled) return;
+              setAccessToken(session?.access_token ?? null);
+            })
+          : null;
+    } catch {
+      // ignore
+    }
 
     return () => {
       cancelled = true;
@@ -419,8 +436,6 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
   const resolveAssetImages = useCallback(async () => {
     const container = containerRef.current;
     if (!container) return;
-    const token = accessToken;
-    if (!token) return;
 
     const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
     if (!abortRef.current) abortRef.current = new AbortController();
@@ -450,8 +465,9 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
         if (assetInFlightRef.current.has(key)) return;
         assetInFlightRef.current.add(key);
         try {
+          const token = accessToken;
           const res = await fetch(`${API_BASE}/assets/${encodeURIComponent(key)}`, {
-            headers: { Authorization: `Bearer ${token}` },
+            ...(token ? { headers: { Authorization: `Bearer ${token}` } } : { credentials: 'include' }),
             signal,
           });
           if (!res.ok) return;
@@ -475,8 +491,6 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
   const resolveLatexAssetImages = useCallback(async () => {
     const container = containerRef.current;
     if (!container) return;
-    const token = accessToken;
-    if (!token) return;
     if (!latexDocId) return;
 
     const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
@@ -540,7 +554,8 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
         latexAssetInFlightRef.current.add(p);
         try {
           const url = `${API_BASE}/documents/${encodeURIComponent(latexDocId)}/latex/file?path=${encodeURIComponent(p)}`;
-          const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal });
+          const token = accessToken;
+          const res = await fetch(url, { ...(token ? { headers: { Authorization: `Bearer ${token}` } } : { credentials: 'include' }), signal });
           if (!res.ok) return;
           const blob = await res.blob();
           const objUrl = URL.createObjectURL(blob);
@@ -770,6 +785,69 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
     typesetMath();
   }, [html, typesetMath]);
 
+  // Normalize citation numbers in the rendered DOM.
+  // Assign numbers based on first in-text citation appearance (robust even if References section is absent/malformed).
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    try {
+      const sanitizeKey = (raw: string): string =>
+        String(raw ?? '')
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+
+      // Build mapping from bibkey -> numeric index, based on in-text citation order.
+      const citeLinksAll = Array.from(container.querySelectorAll('a.citation-link.citation-key')) as HTMLAnchorElement[];
+      const keyToNum = new Map<string, number>();
+      let nextNum = 1;
+      for (const a of citeLinksAll) {
+        const rawKeyAttr = a.getAttribute('data-ref-key') || '';
+        const sk = sanitizeKey(rawKeyAttr);
+        if (!sk) continue;
+        if (!keyToNum.has(sk)) keyToNum.set(sk, nextNum++);
+      }
+      if (keyToNum.size === 0) return;
+
+      // Update in-text citation links to display [n] and point to refkey-<key>.
+      const citeLinks = Array.from(container.querySelectorAll('a.citation-link.citation-key')) as HTMLAnchorElement[];
+      for (const a of citeLinks) {
+        const rawKeyAttr = a.getAttribute('data-ref-key') || '';
+        const sk = sanitizeKey(rawKeyAttr);
+        const n = keyToNum.get(sk);
+        if (!n) continue;
+        a.textContent = `[${n}]`;
+        a.setAttribute('data-ref-number', String(n));
+        a.setAttribute('href', `#refkey-${sk}`);
+      }
+
+      // Update any reference-entry-like nodes anywhere in the doc that start with [key] to show [n].
+      // (Covers paragraphs, list items, and various wrappers produced by import/renderers.)
+      const candidateEntries = Array.from(container.querySelectorAll('p,li')) as HTMLElement[];
+      for (const el of candidateEntries) {
+        const text = (el.textContent ?? '').trim();
+        const m = /^\s*\[([^\]]+)\]\s*/.exec(text);
+        if (!m) continue;
+        const rawKey = String(m[1] ?? '').trim();
+        if (!rawKey) continue;
+        if (/^\d+$/.test(rawKey)) continue;
+        const sk = sanitizeKey(rawKey);
+        const n = keyToNum.get(sk);
+        if (!n) continue;
+        // Replace only the leading [key] token in the HTML.
+        const inner = el.innerHTML ?? '';
+        el.innerHTML = inner.replace(/^\s*\[[^\]]+\]\s*/, `[${n}] `);
+        if (!el.id) el.id = `refkey-${sk}`;
+        el.classList.add('reference-entry');
+        el.setAttribute('data-ref-key', sk);
+        el.setAttribute('data-ref-number', String(n));
+      }
+    } catch {
+      // Never break preview rendering.
+    }
+  }, [html]);
+
   // Cleanup blob URLs + in-flight fetch on unmount
   useEffect(() => {
     const cache = assetUrlCacheRef.current;
@@ -960,6 +1038,41 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
         return null;
       };
 
+      const sanitizeLabel = (raw: string): string =>
+        String(raw ?? '')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+
+      const refIdFromLabel = (labelRaw: string): string => {
+        const label = String(labelRaw ?? '').trim();
+        const slug = sanitizeLabel(label);
+        const prefix = label.split(':')[0]?.toLowerCase().trim();
+        if (prefix === 'fig') return `figure-${slug}`;
+        if (prefix === 'grid') return `grid-${slug}`;
+        if (prefix === 'tbl' || prefix === 'tab') return `table-${slug}`;
+        if (prefix === 'eq') return `eq-${slug}`;
+        if (prefix === 'sec') return `sec-${slug}`;
+        return `sec-${slug}`;
+      };
+
+      const refIdFromLabelNoDup = (labelRaw: string): string => {
+        const label = String(labelRaw ?? '').trim();
+        const parts = label.split(':');
+        if (parts.length < 2) return refIdFromLabel(label);
+        const prefix = parts[0]!.toLowerCase().trim();
+        const rest = parts.slice(1).join(':');
+        const slug = sanitizeLabel(rest);
+        if (prefix === 'fig') return `figure-${slug}`;
+        if (prefix === 'grid') return `grid-${slug}`;
+        if (prefix === 'tbl' || prefix === 'tab') return `table-${slug}`;
+        if (prefix === 'eq') return `eq-${slug}`;
+        if (prefix === 'sec') return `sec-${slug}`;
+        return `sec-${slug}`;
+      };
+
     const alreadyPretty = (raw: string): boolean => /^(Table|Figure|Section)\s+\d+\b|^Eq\.\s*\(\d+\)\b/.test(String(raw ?? '').trim());
 
       const links = Array.from(container.querySelectorAll('a[href^="#"]')) as HTMLAnchorElement[];
@@ -969,7 +1082,21 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
         const href = a.getAttribute('href') || '';
         if (!href.startsWith('#') || href.length < 2) continue;
         const id = href.slice(1);
-        const friendly = labelForId(id);
+        let friendly = labelForId(id);
+        // Fallback: some renderers produce href ids that don't match our target ids.
+        // If link text looks like a LaTeX label (e.g. "sec:attention"), resolve via label -> id mapping.
+        if (!friendly) {
+          const rawText = (a.textContent || '').trim();
+          if (rawText.includes(':') && !alreadyPretty(rawText)) {
+            const candidateIds = [refIdFromLabel(rawText), refIdFromLabelNoDup(rawText)];
+            const found = candidateIds.find((cid) => Boolean(getById(cid)));
+            if (found) {
+              friendly = labelForId(found);
+              // Ensure click navigates to the real target.
+              a.setAttribute('href', `#${found}`);
+            }
+          }
+        }
         if (!friendly) continue;
 
         const raw = (a.textContent || '').trim();
@@ -1321,6 +1448,56 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
           background: rgba(255, 255, 255, 0.04);
           max-width: 100%;
           overflow-x: auto;
+        }
+        .markdown-content .math-inline .math-latex {
+          /* Inline math should not look like inline code. */
+          background: transparent !important;
+          padding: 0 !important;
+          border-radius: 0 !important;
+          font-family: inherit;
+          white-space: normal;
+        }
+        .markdown-content code.math-latex {
+          background: transparent !important;
+          padding: 0 !important;
+          border-radius: 0 !important;
+          font-family: inherit;
+        }
+        .markdown-content .citation-link {
+          color: #4ec9b0;
+          text-decoration: underline;
+          cursor: pointer;
+          transition: color 0.2s;
+        }
+        .markdown-content .citation-link:hover {
+          color: #6ed4c0;
+          text-decoration: underline;
+        }
+        .markdown-content .reference-entry {
+          transition: background-color 0.3s;
+        }
+        .markdown-content .reference-entry.reference-highlight {
+          background-color: rgba(78, 201, 176, 0.2);
+          padding: 0.2em 0.4em;
+          border-radius: 4px;
+          animation: highlight-fade 2s ease-out;
+        }
+        @keyframes highlight-fade {
+          0% {
+            background-color: rgba(78, 201, 176, 0.4);
+          }
+          100% {
+            background-color: rgba(78, 201, 176, 0);
+          }
+        }
+        .markdown-content .math-block {
+          margin: 14px auto;
+          padding: 10px 12px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 8px;
+          background: rgba(255, 255, 255, 0.04);
+          max-width: 100%;
+          overflow-x: auto;
           font-family: var(--font-vscode, Consolas, Monaco, "Courier New", monospace);
         }
         .markdown-content .math-block .math-latex {
@@ -1370,4 +1547,3 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
     </div>
   );
 }
-
