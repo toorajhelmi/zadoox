@@ -28,6 +28,13 @@ function nodeContentForHash(node: IrNode): string {
       return `docauthor:${normalizeWhitespace(node.text)}`;
     case 'document_date':
       return `docdate:${normalizeWhitespace(node.text)}`;
+    case 'abstract': {
+      const text = (node.children ?? [])
+        .filter((c) => c.type === 'paragraph')
+        .map((c) => normalizeWhitespace((c as any).text ?? ''))
+        .join('\n');
+      return `abstract:${normalizeWhitespace(text)}`;
+    }
     case 'section':
       return `sec:${node.level}:${normalizeWhitespace(node.title)}`;
     case 'paragraph':
@@ -96,7 +103,7 @@ export function* walkIrNodes(root: DocumentNode): Generator<IrNode, void, void> 
     const node = stack.pop()!;
     yield node;
     // Traverse in-order for container nodes.
-    if (node.type === 'document' || node.type === 'section') {
+    if (node.type === 'document' || node.type === 'section' || node.type === 'abstract') {
       const children = node.children ?? [];
       for (let i = children.length - 1; i >= 0; i--) stack.push(children[i]!);
       continue;

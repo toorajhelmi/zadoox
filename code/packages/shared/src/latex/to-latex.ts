@@ -252,6 +252,11 @@ function renderNode(node: IrNode): string {
       return `\\author{${escapeLatexText(node.text)}}`;
     case 'document_date':
       return `\\date{${escapeLatexText(node.text)}}`;
+    case 'abstract': {
+      const body = node.children.length ? renderNodes(node.children) : '';
+      // Keep abstract unnumbered and in the standard environment.
+      return `\\begin{abstract}\n${body}\n\\end{abstract}`.trimEnd();
+    }
     case 'section': {
       const cmd =
         node.level <= 1

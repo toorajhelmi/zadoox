@@ -66,13 +66,19 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
       });
     }
     
-    // Add IDs to reference entries in References section FIRST (before converting citations to links)
-    // This ensures references have IDs before citations link to them
-    const referencesSectionMatch = htmlContent.match(/(<h2[^>]*>References<\/h2>)([\s\S]*?)(?=<h[1-6]|<\/div>|$)/i);
+    // Add IDs to reference entries in References section FIRST (before converting citations to links).
+    // This ensures references have IDs before citations link to them.
+    //
+    // Important: section numbering can prefix headings (e.g. "<h3>1 References</h3>"),
+    // and References might not always be h2 depending on the surface/renderer.
+    const referencesSectionMatch = htmlContent.match(
+      /(<h[1-6][^>]*>\s*(?:\d+(?:\.\d+)*\s+)?References\s*<\/h[1-6]>)([\s\S]*?)(?=<h[1-6]|<\/div>|$)/i
+    );
     if (referencesSectionMatch) {
       let referencesContent = referencesSectionMatch[2];
       let refNumber = 1;
       let bibKeyNumber = 1;
+      // Keyed by sanitized bibkey so mapping is stable across casing / punctuation differences.
       const bibKeyToNumber = new Map<string, number>();
       const sanitizeKey = (raw: string): string =>
         String(raw ?? '')
@@ -119,10 +125,15 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
         }
       );
       
-      // Then, for other formats (APA, MLA, Chicago, footnote), number them sequentially
-      // Only process paragraphs that don't already have an id (were not processed above)
+      // Then, for other formats (APA, MLA, Chicago, footnote), number them sequentially.
+      // Only process paragraphs that don't already have an id (were not processed above).
+      //
+      // IMPORTANT: skip paragraphs that start with "[" because those are either:
+      // - already-numbered refs: [1] ...
+      // - bibkey refs: [vaswani2017attention] ...
+      // Those are handled by dedicated passes above/below.
       referencesContent = referencesContent.replace(
-        /<p(?!\s+id=)([^>]*)>([^<]+)<\/p>/g,
+        /<p(?!\s+id=)([^>]*)>(?!\s*\[)([^<]+)<\/p>/g,
         (match, attrs, content) => {
           // Skip if empty
           if (content.trim() === '') {
@@ -144,45 +155,41 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
           const k = String(key ?? '').trim();
           // Keep numeric refs handled above
           if (/^\d+$/.test(k)) return match;
-          const id = `refkey-${sanitizeKey(k)}`;
+          const sk = sanitizeKey(k);
+          const id = `refkey-${sk}`;
           const n = (() => {
-            const existing = bibKeyToNumber.get(k);
+            const existing = bibKeyToNumber.get(sk);
             if (existing) return existing;
             const next = bibKeyNumber++;
-            bibKeyToNumber.set(k, next);
+            bibKeyToNumber.set(sk, next);
             return next;
           })();
           const hasId = /id=/.test(attrs);
           const hasClass = /class=/.test(attrs);
           if (hasId) return match;
           const cls = hasClass ? '' : 'class="reference-entry" ';
-          // Store raw key + assigned number for later citation normalization.
-          return `<p id="${id}" data-ref-key="${sanitizeKey(k)}" data-ref-number="${n}" ${cls}${attrs}>[${n}] `;
+          // Store sanitized key + assigned number for later citation normalization.
+          return `<p id="${id}" data-ref-key="${sk}" data-ref-number="${n}" ${cls}${attrs}>[${n}] `;
         }
       );
 
-      // Normalize any remaining raw "[key]" markers at the start of a bibkey reference entry
-      // to match the numeric mapping above.
-      for (const [rawKey, n] of bibKeyToNumber.entries()) {
-        const safeKey = rawKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        referencesContent = referencesContent.replace(new RegExp(`(id="refkey-${sanitizeKey(rawKey)}"[^>]*>)(\\[)${safeKey}(\\])`, 'g'), `$1[${n}]`);
-      }
-      
       htmlContent = htmlContent.replace(referencesSectionMatch[0], referencesSectionMatch[1] + referencesContent);
 
       // If we assigned bib-key reference numbers, rewrite in-text citation links to display [n]
       // and carry data-ref-number so the click handler can reliably scroll/highlight.
       if (bibKeyToNumber.size > 0) {
-        for (const [rawKey, n] of bibKeyToNumber.entries()) {
-          const safeKey = rawKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          // renderMarkdownToHtml emits: <a ... class="citation-link citation-key" data-ref-key="RAW">[RAW]</a>
-          htmlContent = htmlContent.replace(
-            new RegExp(`(<a[^>]*class="[^"]*citation-key[^"]*"[^>]*data-ref-key="${safeKey}"[^>]*>)(\\[)${safeKey}(\\])(<\\/a>)`, 'g'),
-            `$1[${n}]$4`
-          );
-          // Ensure any bibkey cites that weren't rendered as links (edge cases) still become numeric.
-          htmlContent = htmlContent.replace(new RegExp(`\\[@cite\\s+${safeKey}\\]`, 'g'), `[${n}]`);
-        }
+        // Rewrite ALL citation-key anchors in one pass, matching on sanitized keys.
+        htmlContent = htmlContent.replace(
+          /<a([^>]*class="[^"]*citation-key[^"]*"[^>]*data-ref-key="([^"]+)"[^>]*)>\[[^\]]*\]<\/a>/g,
+          (m, attrs, rawKeyAttr) => {
+            const sk = sanitizeKey(String(rawKeyAttr ?? ''));
+            const n = bibKeyToNumber.get(sk);
+            if (!n) return m;
+            const hasRefNum = /\bdata-ref-number=/.test(String(attrs ?? ''));
+            const nextAttrs = hasRefNum ? String(attrs ?? '') : `${String(attrs ?? '')} data-ref-number="${n}"`;
+            return `<a${nextAttrs}>[${n}]</a>`;
+          }
+        );
       }
     }
     
@@ -194,8 +201,11 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
     const citationRegex = /\[(\d+)\]/g;
     let match;
     
-    // Find the References section boundaries
-    const refSectionStart = htmlContent.indexOf('<h2') !== -1 ? htmlContent.indexOf('References</h2>') : -1;
+    // Find the References section boundaries.
+    // NOTE: section numbering can prefix headings and heading level may vary.
+    const refHeadingRe = /<h[1-6][^>]*>\s*(?:\d+(?:\.\d+)*\s+)?References\s*<\/h[1-6]>/i;
+    const refHeadingMatch = refHeadingRe.exec(htmlContent);
+    const refSectionStart = refHeadingMatch ? refHeadingMatch.index : -1;
     
     // Collect all citation matches with their positions
     while ((match = citationRegex.exec(htmlContent)) !== null) {
@@ -1168,6 +1178,26 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
           margin: 0;
           text-align: center;
           width: 100%;
+        }
+        .markdown-content .doc-abstract {
+          margin-top: 18px;
+          margin-bottom: 18px;
+          padding: 14px 16px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 10px;
+          background: rgba(255, 255, 255, 0.03);
+        }
+        .markdown-content .doc-abstract-title {
+          margin: 0 0 10px 0;
+          font-size: 1.1em;
+          font-weight: 700;
+          letter-spacing: 0.01em;
+          color: #ffffff;
+        }
+        .markdown-content .doc-abstract p,
+        .markdown-content .doc-abstract .text-block {
+          margin-top: 0.5em;
+          margin-bottom: 0.5em;
         }
         .markdown-content h1 {
           font-size: 2em;

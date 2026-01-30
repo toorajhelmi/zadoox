@@ -14,11 +14,16 @@ const TRANSPARENT_PIXEL =
  *   don't get lost when bridging through XMD.
  */
 export function renderIrToHtml(ir: DocumentNode): string {
-  const html = renderNodes(ir.children);
+  const ctx: RenderCtx = { sectionCounters: [0, 0, 0] };
+  const html = renderNodes(ir.children, ctx);
   return html.trim().length === 0 ? '' : html;
 }
 
-function renderNodes(nodes: IrNode[]): string {
+interface RenderCtx {
+  sectionCounters: number[]; // index 0 => \section, 1 => \subsection, ...
+}
+
+function renderNodes(nodes: IrNode[], ctx: RenderCtx): string {
   const parts: string[] = [];
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i]!;
@@ -37,7 +42,7 @@ function renderNodes(nodes: IrNode[]): string {
         continue;
       }
     }
-    const rendered = renderNode(n);
+    const rendered = renderNode(n, ctx);
     if (rendered) parts.push(rendered);
   }
   return parts.join('');
@@ -225,7 +230,7 @@ function replaceInlineMathTokensInHtml(htmlRaw: string): string {
   });
 }
 
-function renderNode(node: IrNode): string {
+function renderNode(node: IrNode, ctx: RenderCtx): string {
   switch (node.type) {
     case 'document_title': {
       const text = escapeHtml(node.text ?? '');
@@ -240,6 +245,10 @@ function renderNode(node: IrNode): string {
       const text = escapeHtml(node.text ?? '');
       return `<div class="doc-date">${text}</div>`;
     }
+    case 'abstract': {
+      const body = node.children?.length ? renderNodes(node.children, ctx) : '';
+      return `<section class="doc-abstract"><h2 class="doc-abstract-title">Abstract</h2>${body}</section>`;
+    }
     case 'section': {
       // Distinguish title from sections: section level 1 => h2, level 2 => h3, level 3 => h4...
       const tagLevel = Math.max(2, Math.min(6, (node.level ?? 1) + 1));
@@ -248,8 +257,18 @@ function renderNode(node: IrNode): string {
       const idAttr = label ? ` id="${latexLabelToDomId(label, 'sec')}"` : '';
       const starred = Boolean((node as unknown as { starred?: boolean }).starred);
       const starAttr = starred ? ` data-zx-starred="1"` : '';
-      const heading = `<${tag}${idAttr}${starAttr}>${escapeHtml(node.title ?? '')}</${tag}>`;
-      const body = node.children?.length ? renderNodes(node.children) : '';
+      const level = Math.max(1, Math.min(6, Number(node.level ?? 1) || 1));
+      const numPrefix = (() => {
+        if (starred) return '';
+        if (level > 3) return '';
+        while (ctx.sectionCounters.length < level) ctx.sectionCounters.push(0);
+        ctx.sectionCounters[level - 1] = (ctx.sectionCounters[level - 1] ?? 0) + 1;
+        for (let i = level; i < ctx.sectionCounters.length; i++) ctx.sectionCounters[i] = 0;
+        const nums = ctx.sectionCounters.slice(0, level).filter((n) => n > 0);
+        return nums.length ? `${nums.join('.')} ` : '';
+      })();
+      const heading = `<${tag}${idAttr}${starAttr}>${escapeHtml(numPrefix)}${escapeHtml(node.title ?? '')}</${tag}>`;
+      const body = node.children?.length ? renderNodes(node.children, ctx) : '';
       return `${heading}${body}`;
     }
     case 'paragraph': {
@@ -574,8 +593,8 @@ function renderNode(node: IrNode): string {
             // Only force "fill cell" media sizing in full-width grids.
             // For left/center/right we want the grid to shrink-wrap to its natural content.
             const inner = isFullWidth
-              ? forceGridCellMediaToFill(renderNodes(cell?.children ?? []))
-              : shrinkWrapGridCellMedia(renderNodes(cell?.children ?? []));
+              ? forceGridCellMediaToFill(renderNodes(cell?.children ?? [], ctx))
+              : shrinkWrapGridCellMedia(renderNodes(cell?.children ?? [], ctx));
             const widthStyle = isFullWidth ? `width:${tdWidthPct}%;` : '';
             return `<td style="${widthStyle}border:${cellBorder};padding:${spacing.previewCellPadY}px ${spacing.previewCellPadX}px;vertical-align:top">${inner}</td>`;
           });
@@ -676,7 +695,7 @@ function renderNode(node: IrNode): string {
       return `<div class="unrecognized-block raw-latex-block"><div class="unrecognized-badge">Unrecognized</div><pre><code>${escapeHtml(cleaned)}</code></pre></div>`;
     }
     case 'document':
-      return renderNodes(node.children ?? []);
+      return renderNodes(node.children ?? [], ctx);
     default: {
       const _exhaustive: never = node;
       return String(_exhaustive);

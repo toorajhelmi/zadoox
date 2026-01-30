@@ -12,6 +12,7 @@ export type IrNodeType =
   | 'document_title'
   | 'document_author'
   | 'document_date'
+  | 'abstract'
   | 'section'
   | 'paragraph'
   | 'list'
@@ -65,6 +66,11 @@ export interface DocumentAuthorNode extends BaseNode {
 export interface DocumentDateNode extends BaseNode {
   type: 'document_date';
   text: string;
+}
+
+export interface AbstractNode extends BaseNode {
+  type: 'abstract';
+  children: IrNode[];
 }
 
 export interface SectionNode extends BaseNode {
@@ -310,6 +316,7 @@ export type IrNode =
   | DocumentTitleNode
   | DocumentAuthorNode
   | DocumentDateNode
+  | AbstractNode
   | SectionNode
   | ParagraphNode
   | ListNode

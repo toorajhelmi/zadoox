@@ -1,5 +1,6 @@
 import { stableNodeId } from '../ir/id';
 import type {
+  AbstractNode,
   CodeBlockNode,
   DocumentTitleNode,
   DocumentAuthorNode,
@@ -52,6 +53,7 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
   let titleCount = 0;
   let authorCount = 0;
   let dateCount = 0;
+  let abstractCount = 0;
   type Counters = Record<string, number>;
   const countersStack: Counters[] = [
     {
@@ -205,6 +207,33 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
           source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
         };
         doc.children.push(node);
+        return;
+      }
+
+      if (b.kind === 'abstract') {
+        const idx = abstractCount++;
+        const path = `abstract[${idx}]`;
+        const node: AbstractNode = {
+          type: 'abstract',
+          id: stableNodeId({ docId, nodeType: 'abstract', path }),
+          children: [],
+          source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
+        };
+        // Abstract is always document-level and should not affect section hierarchy.
+        doc.children.push(node);
+
+        const paragraphs = (b as { paragraphs?: string[] }).paragraphs ?? [];
+        for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
+          const text = String(paragraphs[pIdx] ?? '').trim();
+          if (!text) continue;
+          const pNode: ParagraphNode = {
+            type: 'paragraph',
+            id: stableNodeId({ docId, nodeType: 'paragraph', path: `${path}/p[${pIdx}]` }),
+            text,
+            source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
+          };
+          node.children.push(pNode);
+        }
         return;
       }
 
@@ -588,6 +617,14 @@ type Block =
   | {
       kind: 'date';
       text: string;
+      raw: string;
+      blockIndex: number;
+      startOffset: number;
+      endOffset: number;
+    }
+  | {
+      kind: 'abstract';
+      paragraphs: string[];
       raw: string;
       blockIndex: number;
       startOffset: number;
@@ -1173,7 +1210,7 @@ function parseBlocks(latex: string): Block[] {
       break;
     }
 
-    // abstract environment -> emit a synthetic "Abstract" section + paragraph(s)
+    // abstract environment -> emit a dedicated abstract block
     if (trimmed === '\\begin{abstract}') {
       const startOffset = start;
       let j = i + 1;
@@ -1191,32 +1228,15 @@ function parseBlocks(latex: string): Block[] {
       if (j < lines.length && lines[j].line.trim() === '\\end{abstract}') {
         const endOffset = lines[j].end;
         const raw = lines.slice(i, j + 1).map((l) => l.line).join('\n');
-
-        blocks.push({
-          kind: 'section',
-          level: 1,
-          title: 'Abstract',
-          raw: '\\section*{Abstract}',
-          blockIndex,
-          startOffset,
-          endOffset,
-        });
-
-        // Split abstract into paragraph blocks (blank-line separated).
         const text = latexInlineToMarkdown(bodyLines.map((l) => l.line).join('\n').trimEnd());
-        if (text.trim().length > 0) {
-          blocks.push({
-            kind: 'paragraph',
-            text,
-            raw,
-            blockIndex: blockIndex + 1,
-            startOffset,
-            endOffset,
-          });
-        }
+        const paragraphs = text
+          .split(/\n\s*\n/g)
+          .map((p) => p.trim())
+          .filter(Boolean);
+        blocks.push({ kind: 'abstract', paragraphs, raw, blockIndex, startOffset, endOffset });
 
         i = j + 1;
-        blockIndex += 2;
+        blockIndex++;
         continue;
       }
       // Unclosed => raw

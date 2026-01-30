@@ -30,6 +30,12 @@ function renderNode(node: IrNode): string {
       return (node.text ?? '').trim().length > 0 ? `@^ ${node.text}` : '@^';
     case 'document_date':
       return (node.text ?? '').trim().length > 0 ? `@= ${node.text}` : '@=';
+    case 'abstract': {
+      // Best-effort bridge: represent as an unnumbered "Abstract" heading.
+      const heading = `## Abstract`;
+      const body = node.children.length ? renderNodes(node.children) : '';
+      return body ? `${heading}\n\n${body}` : heading;
+    }
     case 'section': {
       const heading = `${'#'.repeat(Math.max(1, Math.min(6, node.level)))} ${node.title}`;
       const body = node.children.length ? renderNodes(node.children) : '';
