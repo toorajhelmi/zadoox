@@ -125,16 +125,13 @@ export function useDocumentState(documentId: string, projectId: string) {
           setParagraphModes(document.metadata?.paragraphModes || {});
           setDocumentMetadata(document.metadata || {});
           setSemanticGraph((document as any).semanticGraph ?? null);
-          // Back-compat: older docs stored LaTeX source under metadata.latex (string).
-          // Newer docs store a storage-backed manifest under documents.latex.
-          const loadedLatex = (document as any).latex ?? (document.metadata as any)?.latex ?? null;
-          setDocumentLatex(loadedLatex);
+          setDocumentLatex((document as any).latex ?? null);
           // Initialize “persisted signature” so we don’t attempt to save without a real user change.
           lastPersistedSigRef.current = stableStringify({
             content: loadedContent,
             metadata: document.metadata || {},
             semanticGraph: normalizeSemanticGraphForCompare((document as any).semanticGraph ?? null),
-            latex: loadedLatex,
+            latex: (document as any).latex ?? null,
           });
           setIsLoading(false);
       } catch (error) {

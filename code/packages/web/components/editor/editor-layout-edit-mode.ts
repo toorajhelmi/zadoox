@@ -8,12 +8,6 @@ import { ensureLatexPreambleForLatexContent } from './latex-preamble';
 
 export type EditMode = 'markdown' | 'latex';
 
-function isLatexManifest(v: unknown): v is { bucket?: string; basePrefix?: string; entryPath?: string } {
-  if (!v || typeof v !== 'object') return false;
-  const o = v as any;
-  return typeof o.basePrefix === 'string' && typeof o.entryPath === 'string';
-}
-
 export type EditorDocMetadata = {
   lastEditedFormat?: EditMode;
   xmdIrHash?: string;
