@@ -597,7 +597,13 @@ function renderNode(node: IrNode): string {
       const floatCss = canFloat
         ? `float:${align === 'right' ? 'right' : 'left'};max-width:55%;margin:${align === 'right' ? '0.25em 0 0.75em 1em' : '0.25em 1em 0.75em 0'};`
         : '';
-      const gridId = g.label ? ` id="grid-${sanitizeDomId(g.label)}"` : '';
+      // LaTeX refs treat `fig:*` labels as figure targets. Some multi-panel figures are modeled as `grid`,
+      // so render `fig:*` grid labels with a `figure-...` id to make \ref/\eqref links resolve + prettify.
+      const labelRaw = String(g.label ?? '').trim();
+      const labelPrefix = labelRaw.includes(':') ? labelRaw.split(':')[0]!.toLowerCase().trim() : '';
+      const idPrefix = labelPrefix === 'fig' ? 'figure' : 'grid';
+      const gridId = labelRaw ? ` id="${idPrefix}-${sanitizeDomId(labelRaw)}"` : '';
+      const gridData = labelPrefix === 'fig' ? ` data-zx-figure-grid="1"` : '';
       // NOTE: This enables wrap-around behavior in preview. The editor surface (CodeMirror)
       // cannot do true wrap-around for replacement widgets, so we only implement it here (IR->HTML).
 
@@ -623,7 +629,7 @@ function renderNode(node: IrNode): string {
       const tableCss = isFullWidth
         ? 'border-collapse:collapse;width:100%;table-layout:fixed'
         : 'border-collapse:collapse;table-layout:auto;display:inline-table;width:auto;max-width:100%';
-      return `<div class="xmd-grid"${gridId} style="${alignCss};${outerCss}">${capHtml}<table style="${tableCss}"><tbody>${body}</tbody></table></div>`;
+      return `<div class="xmd-grid"${gridId}${gridData} style="${alignCss};${outerCss}">${capHtml}<table style="${tableCss}"><tbody>${body}</tbody></table></div>`;
     }
     case 'raw_xmd_block': {
       const raw = escapeHtml(node.xmd ?? '');

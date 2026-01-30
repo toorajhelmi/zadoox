@@ -621,15 +621,32 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
 
   const katexRef = useRef<any>(null);
   const katexLoadPromiseRef = useRef<Promise<any> | null>(null);
+  const katexLoadErrorOnceRef = useRef<boolean>(false);
   const loadKatex = useCallback(async (): Promise<any | null> => {
     if (katexRef.current) return katexRef.current;
     if (!katexLoadPromiseRef.current) {
       katexLoadPromiseRef.current = (async () => {
-        // Import the ESM bundle; it exports { default }.
-        const mod: any = await import('katex/dist/katex.mjs');
-        const k = mod?.default ?? mod;
-        katexRef.current = k;
-        return k;
+        // Prefer ESM bundle; fall back to package root if bundler can't load the ESM path.
+        try {
+          const mod: any = await import('katex/dist/katex.mjs');
+          const k = mod?.default ?? mod;
+          katexRef.current = k;
+          return k;
+        } catch (err) {
+          try {
+            const mod2: any = await import('katex');
+            const k2 = mod2?.default ?? mod2;
+            katexRef.current = k2;
+            return k2;
+          } catch (err2) {
+            if (!katexLoadErrorOnceRef.current) {
+              katexLoadErrorOnceRef.current = true;
+              // eslint-disable-next-line no-console
+              console.error('[zx-preview] failed to load KaTeX', err2);
+            }
+            throw err2;
+          }
+        }
       })();
     }
     try {
@@ -832,7 +849,8 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
 
     // IMPORTANT: This pass must never break preview rendering (figures/math).
     // Any unexpected DOM edge cases must be swallowed.
-    try {
+    const run = () => {
+      try {
       const getById = (id: string): HTMLElement | null => {
         // Use DOM id lookup to avoid CSS selector escaping pitfalls.
         return document.getElementById(id);
@@ -860,7 +878,29 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
       // - equations: element with id="eq-..."
       // - sections: heading tags with id="sec-..."
       const tableNums = buildIdIndex('table[id]', 'table-');
-      const figNums = buildIdIndex('[id^="figure-"]', 'figure-');
+      // Figures:
+      // - Normal figures render as <span id="figure-..." class="figure">...</span>
+      // - Some multi-panel figures are modeled as `.xmd-grid` blocks but labeled `fig:*`.
+      //   Those grids render with id="figure-..." + data-zx-figure-grid="1".
+      // - IMPORTANT: Do NOT count subfigures inside grids as top-level figures (they pollute numbering).
+      const figNums = (() => {
+        const map = new Map<string, number>();
+        const els = Array.from(container.querySelectorAll('[id^="figure-"]')) as HTMLElement[];
+        let n = 1;
+        for (const el of els) {
+          const id = el.getAttribute('id') || '';
+          if (!id || !id.startsWith('figure-')) continue;
+          const inGrid = el.closest('.xmd-grid') as HTMLElement | null;
+          const isFigureGrid = el.classList.contains('xmd-grid') && el.getAttribute('data-zx-figure-grid') === '1';
+          // Exclude subfigures inside grids; keep the grid itself if it's a figure-grid.
+          if (inGrid && !isFigureGrid) continue;
+          if (!map.has(id)) {
+            map.set(id, n);
+            n++;
+          }
+        }
+        return map;
+      })();
       const eqNums = buildIdIndex('[id^="eq-"]', 'eq-');
 
     // Hierarchical section numbering (1, 1.1, 1.1.1...) for non-starred sections only.
@@ -949,7 +989,10 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
       for (const [id, n] of figNums.entries()) {
         const fig = getById(id) as HTMLElement | null;
         if (!fig) continue;
-        const cap = fig.querySelector('.figure-caption') as HTMLElement | null;
+        const cap =
+          fig.classList.contains('xmd-grid') && fig.getAttribute('data-zx-figure-grid') === '1'
+            ? (fig.querySelector('.xmd-grid-caption') as HTMLElement | null)
+            : (fig.querySelector('.figure-caption') as HTMLElement | null);
         if (!cap) continue;
         if (cap.getAttribute('data-zx-numbered') === '1') continue;
         const currentText = (cap.textContent || '').trim();
@@ -958,11 +1001,15 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
         cap.insertBefore(document.createTextNode(`Figure ${n}. `), cap.firstChild);
         cap.setAttribute('data-zx-numbered', '1');
       }
-    } catch (err) {
-      // Never allow ref-numbering failures to break preview rendering (figures/math).
-      // eslint-disable-next-line no-console
-      console.error('[zx-preview] ref numbering failed', err);
-    }
+      } catch (err) {
+        // Never allow ref-numbering failures to break preview rendering (figures/math).
+        // eslint-disable-next-line no-console
+        console.error('[zx-preview] ref numbering failed', err);
+      }
+    };
+    // Defer so the new HTML is definitely in the DOM before we query/number.
+    const raf = requestAnimationFrame(run);
+    return () => cancelAnimationFrame(raf);
   }, [html]);
 
   // Prevent normal markdown links from navigating away from the editor.
