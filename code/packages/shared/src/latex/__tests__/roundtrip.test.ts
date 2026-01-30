@@ -214,7 +214,7 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     expect(p?.style?.size).toBe('large');
   });
 
-  it('LaTeX abstract environment becomes an "Abstract" section in IR', () => {
+  it('LaTeX abstract environment becomes an abstract node in IR', () => {
     const latex = [
       '\\documentclass{article}',
       '\\title{T}',
@@ -228,8 +228,8 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     ].join('\n');
 
     const ir = parseLatexToIr({ docId: 'doc-abs-1', latex });
-    const titles = ir.children.filter((n) => n.type === 'section').map((n) => (n.type === 'section' ? n.title : ''));
-    expect(titles).toContain('Abstract');
+    const hasAbstract = ir.children.some((n) => n.type === 'abstract');
+    expect(hasAbstract).toBe(true);
   });
 
   it('XMD table -> IR -> LaTeX emits tabularx with caption/label and border color/width (best-effort)', () => {
