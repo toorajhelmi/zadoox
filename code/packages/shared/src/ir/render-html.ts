@@ -29,15 +29,24 @@ function renderNodes(nodes: IrNode[], ctx: RenderCtx): string {
     const n = nodes[i]!;
     if (n.type === 'document_author') {
       const authors: Array<{ text: string }> = [];
+      const authorNotes = new Map<string, string>();
       while (i < nodes.length && nodes[i]!.type === 'document_author') {
-        const a = nodes[i]! as { type: 'document_author'; text?: string };
+        const a = nodes[i]! as any;
         const t = String(a.text ?? '').trim();
         if (t) authors.push({ text: t });
+        const notes = a.authorNotes;
+        if (notes && typeof notes === 'object') {
+          for (const [k, v] of Object.entries(notes as Record<string, string>)) {
+            const kk = String(k ?? '').trim();
+            const vv = String(v ?? '').trim();
+            if (kk && vv && !authorNotes.has(kk)) authorNotes.set(kk, vv);
+          }
+        }
         i++;
       }
       i--; // compensate for for-loop increment
       if (authors.length > 0) {
-        const inner = authors.map((a) => `<div class="doc-author">${renderAuthorTextWithFootnotes(a.text)}</div>`).join('');
+        const inner = authors.map((a) => `<div class="doc-author">${renderAuthorTextWithFootnotes(a.text, authorNotes)}</div>`).join('');
         parts.push(`<div class="doc-authors">${inner}</div>`);
         continue;
       }
@@ -48,7 +57,7 @@ function renderNodes(nodes: IrNode[], ctx: RenderCtx): string {
   return parts.join('');
 }
 
-function renderAuthorTextWithFootnotes(raw: string): string {
+function renderAuthorTextWithFootnotes(raw: string, notesByNum: Map<string, string>): string {
   const s = String(raw ?? '');
   const re = /@@ZXAUTHNOTE\{(\d+)\}@@/g;
   let out = '';
@@ -61,7 +70,10 @@ function renderAuthorTextWithFootnotes(raw: string): string {
     out += escapeHtml(before);
     const n = String(m[1] ?? '').trim();
     if (n) {
-      out += `<sup class="zx-author-footnote-sup"><a href="#author-footnote-${escapeHtml(n)}" class="citation-link zx-author-footnote" data-ref-number="${escapeHtml(n)}">${escapeHtml(n)}</a></sup>`;
+      const noteText = notesByNum.get(n) || '';
+      const noteAttr = noteText ? ` data-zx-footnote-text="${escapeHtml(noteText)}"` : '';
+      // We keep href as a harmless hash so copy/paste remains reasonable; popover uses the data attribute.
+      out += `<sup class="zx-author-footnote-sup"><a href="#author-footnote-${escapeHtml(n)}" class="citation-link zx-author-footnote" data-ref-number="${escapeHtml(n)}"${noteAttr}>${escapeHtml(n)}</a></sup>`;
     }
     last = idx + m[0].length;
   }

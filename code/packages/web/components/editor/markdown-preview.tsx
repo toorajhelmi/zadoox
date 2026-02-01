@@ -941,170 +941,209 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
     const container = containerRef.current;
     if (!container) return;
 
-    const sanitizeDomId = (raw: string): string =>
-      String(raw ?? '')
-        .toLowerCase()
-        .replace(/[^a-z0-9_-]+/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '');
+    // This is UX sugar only; it must never break math/figures/refs rendering.
+    try {
+      const sanitizeDomId = (raw: string): string =>
+        String(raw ?? '')
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
 
-    const pop = document.createElement('div');
-    pop.className = 'zx-citation-popover';
-    pop.setAttribute('role', 'tooltip');
-    pop.style.position = 'fixed';
-    pop.style.zIndex = '9999';
-    pop.style.display = 'none';
+      // Reuse a single popover node across renders to avoid DOM churn.
+      const pop =
+        (document.getElementById('zx-citation-popover') as HTMLDivElement | null) ??
+        (() => {
+          const p = document.createElement('div');
+          p.id = 'zx-citation-popover';
+          p.className = 'zx-citation-popover';
+          p.setAttribute('role', 'tooltip');
+          p.style.position = 'fixed';
+          p.style.zIndex = '9999';
+          p.style.display = 'none';
+          const inner = document.createElement('div');
+          inner.className = 'zx-citation-popover-inner';
+          p.appendChild(inner);
+          document.body.appendChild(p);
+          return p;
+        })();
 
-    const popInner = document.createElement('div');
-    popInner.className = 'zx-citation-popover-inner';
-    pop.appendChild(popInner);
-    document.body.appendChild(pop);
+      const popInner = (pop.querySelector('.zx-citation-popover-inner') as HTMLDivElement | null) ?? pop;
 
-    let activeLink: HTMLAnchorElement | null = null;
-    let hideTimer: number | null = null;
+      let activeLink: HTMLAnchorElement | null = null;
+      let hideTimer: number | null = null;
 
-    const clearHideTimer = () => {
-      if (hideTimer) {
-        window.clearTimeout(hideTimer);
-        hideTimer = null;
-      }
-    };
-
-    const hide = (immediate = false) => {
-      clearHideTimer();
-      const run = () => {
-        pop.style.display = 'none';
-        pop.setAttribute('data-open', '0');
-        activeLink = null;
+      const clearHideTimer = () => {
+        if (hideTimer) {
+          window.clearTimeout(hideTimer);
+          hideTimer = null;
+        }
       };
-      if (immediate) run();
-      else hideTimer = window.setTimeout(run, 80);
-    };
 
-    const normalizeEntryText = (raw: string): string => {
-      const t = String(raw ?? '').replace(/\s+/g, ' ').trim();
-      // Avoid showing the leading numeric token twice if entry text starts with "[n] ".
-      return t.replace(/^\[\d+\]\s*/, '').replace(/^\d+\.\s*/, '').trim();
-    };
+      const hide = (immediate = false) => {
+        clearHideTimer();
+        const run = () => {
+          pop.style.display = 'none';
+          pop.setAttribute('data-open', '0');
+          activeLink = null;
+        };
+        if (immediate) run();
+        else hideTimer = window.setTimeout(run, 80);
+      };
 
-    const resolveReferenceEl = (a: HTMLAnchorElement): HTMLElement | null => {
-      const href = a.getAttribute('href') || '';
-      if (href.startsWith('#') && href.length > 1) {
-        const id = href.slice(1);
-        const el = document.getElementById(id);
-        if (el) return el;
-      }
+      const normalizeEntryText = (raw: string): string => {
+        const t = String(raw ?? '').replace(/\s+/g, ' ').trim();
+        // Avoid showing the leading numeric token twice if entry text starts with "[n] ".
+        return t.replace(/^\[\d+\]\s*/, '').replace(/^\d+\.\s*/, '').trim();
+      };
 
-      const refNumber = a.getAttribute('data-ref-number') || '';
-      if (refNumber) {
-        const el = document.getElementById(`ref-${refNumber}`);
-        if (el) return el;
-      }
+      const resolveReferenceEl = (a: HTMLAnchorElement): HTMLElement | null => {
+        const href = a.getAttribute('href') || '';
+        if (href.startsWith('#') && href.length > 1) {
+          const id = href.slice(1);
+          const el = document.getElementById(id);
+          if (el) return el;
+        }
 
-      const rawKey = a.getAttribute('data-ref-key') || '';
-      if (rawKey) {
-        const el = document.getElementById(`refkey-${sanitizeDomId(rawKey)}`);
-        if (el) return el;
-      }
+        const refNumber = a.getAttribute('data-ref-number') || '';
+        if (refNumber) {
+          const el = document.getElementById(`ref-${refNumber}`);
+          if (el) return el;
+        }
 
-      return null;
-    };
+        const rawKey = a.getAttribute('data-ref-key') || '';
+        if (rawKey) {
+          const el = document.getElementById(`refkey-${sanitizeDomId(rawKey)}`);
+          if (el) return el;
+        }
 
-    const positionNear = (anchor: HTMLElement) => {
-      const r = anchor.getBoundingClientRect();
-      const margin = 10;
-      const maxW = Math.min(520, Math.max(260, Math.floor(window.innerWidth * 0.45)));
-      pop.style.maxWidth = `${maxW}px`;
+        return null;
+      };
 
-      // Measure after content + maxWidth applied.
-      pop.style.left = '0px';
-      pop.style.top = '0px';
-      const pr = pop.getBoundingClientRect();
+      const positionNear = (anchor: HTMLElement) => {
+        const r = anchor.getBoundingClientRect();
+        const margin = 10;
+        const maxW = Math.min(520, Math.max(260, Math.floor(window.innerWidth * 0.45)));
+        pop.style.maxWidth = `${maxW}px`;
 
-      let left = r.left + r.width / 2 - pr.width / 2;
-      left = Math.max(margin, Math.min(left, window.innerWidth - pr.width - margin));
+        // Measure after content + maxWidth applied.
+        pop.style.left = '0px';
+        pop.style.top = '0px';
+        const pr = pop.getBoundingClientRect();
 
-      // Prefer above; fall back below if needed.
-      let top = r.top - pr.height - 10;
-      if (top < margin) top = r.bottom + 10;
-      top = Math.max(margin, Math.min(top, window.innerHeight - pr.height - margin));
+        let left = r.left + r.width / 2 - pr.width / 2;
+        left = Math.max(margin, Math.min(left, window.innerWidth - pr.width - margin));
 
-      pop.style.left = `${Math.round(left)}px`;
-      pop.style.top = `${Math.round(top)}px`;
-    };
+        // Prefer above; fall back below if needed.
+        let top = r.top - pr.height - 10;
+        if (top < margin) top = r.bottom + 10;
+        top = Math.max(margin, Math.min(top, window.innerHeight - pr.height - margin));
 
-    const showFor = (a: HTMLAnchorElement) => {
-      clearHideTimer();
-      if (activeLink === a && pop.style.display !== 'none') {
-        positionNear(a);
-        return;
-      }
-      activeLink = a;
+        pop.style.left = `${Math.round(left)}px`;
+        pop.style.top = `${Math.round(top)}px`;
+      };
 
-      // Do not popover inside the References section itself.
-      if (a.closest('.reference-entry')) {
-        hide(true);
-        return;
-      }
+      const showFor = (a: HTMLAnchorElement) => {
+        try {
+          clearHideTimer();
+          if (activeLink === a && pop.style.display !== 'none') {
+            positionNear(a);
+            return;
+          }
+          activeLink = a;
 
-      const refEl = resolveReferenceEl(a);
-      const txt = normalizeEntryText(refEl?.textContent || '');
-      if (!txt) {
-        hide(true);
-        return;
-      }
+          // Do not popover inside the References section itself.
+          if (a.closest('.reference-entry')) {
+            hide(true);
+            return;
+          }
 
-      popInner.textContent = txt;
-      pop.style.display = 'block';
-      pop.setAttribute('data-open', '1');
-      positionNear(a);
-    };
+          // Prefer explicit popover payload when available (e.g. LaTeX author footnotes).
+          const direct = String(a.getAttribute('data-zx-footnote-text') || '').trim();
+          const refEl = direct ? null : resolveReferenceEl(a);
+          const txt = normalizeEntryText(direct || refEl?.textContent || '');
+          if (!txt) {
+            hide(true);
+            return;
+          }
 
-    const onPointerOver = (e: Event) => {
-      const t = e.target as HTMLElement | null;
-      const a = t?.closest?.('a.citation-link') as HTMLAnchorElement | null;
-      if (!a) return;
-      // Skip touch pointers (hover popovers feel bad on mobile; click still works).
-      const pe = e as PointerEvent;
-      if ((pe as any).pointerType && (pe as any).pointerType !== 'mouse') return;
-      showFor(a);
-    };
+          popInner.textContent = txt;
+          pop.style.display = 'block';
+          pop.setAttribute('data-open', '1');
+          positionNear(a);
+        } catch {
+          // ignore
+        }
+      };
 
-    const onPointerOut = (e: Event) => {
-      const t = e.target as HTMLElement | null;
-      const a = t?.closest?.('a.citation-link') as HTMLAnchorElement | null;
-      if (!a) return;
-      // If moving into the popover itself, keep open.
-      const related = (e as PointerEvent).relatedTarget as HTMLElement | null;
-      if (related && (related === pop || pop.contains(related))) return;
-      hide(false);
-    };
+      const onPointerOver = (e: Event) => {
+        try {
+          const t = e.target as HTMLElement | null;
+          const a = t?.closest?.('a.citation-link') as HTMLAnchorElement | null;
+          if (!a) return;
+          // Skip touch pointers (hover popovers feel bad on mobile; click still works).
+          const pe = e as PointerEvent;
+          if ((pe as any).pointerType && (pe as any).pointerType !== 'mouse') return;
+          showFor(a);
+        } catch {
+          // ignore
+        }
+      };
 
-    const onScroll = () => hide(true);
-    const onResize = () => {
-      if (activeLink && pop.style.display !== 'none') positionNear(activeLink);
-    };
+      const onPointerOut = (e: Event) => {
+        try {
+          const t = e.target as HTMLElement | null;
+          const a = t?.closest?.('a.citation-link') as HTMLAnchorElement | null;
+          if (!a) return;
+          // If moving into the popover itself, keep open.
+          const related = (e as PointerEvent).relatedTarget as HTMLElement | null;
+          if (related && (related === pop || pop.contains(related))) return;
+          hide(false);
+        } catch {
+          // ignore
+        }
+      };
 
-    // Keep open when moving pointer into the popover; hide when leaving it.
-    const onPopEnter = () => clearHideTimer();
-    const onPopLeave = () => hide(false);
+      const onScroll = () => hide(true);
+      const onResize = () => {
+        try {
+          if (activeLink && pop.style.display !== 'none') positionNear(activeLink);
+        } catch {
+          // ignore
+        }
+      };
 
-    container.addEventListener('pointerover', onPointerOver as EventListener);
-    container.addEventListener('pointerout', onPointerOut as EventListener);
-    container.addEventListener('scroll', onScroll, { passive: true } as any);
-    window.addEventListener('resize', onResize);
-    pop.addEventListener('pointerenter', onPopEnter as EventListener);
-    pop.addEventListener('pointerleave', onPopLeave as EventListener);
+      // Keep open when moving pointer into the popover; hide when leaving it.
+      const onPopEnter = () => clearHideTimer();
+      const onPopLeave = () => hide(false);
 
-    return () => {
-      container.removeEventListener('pointerover', onPointerOver as EventListener);
-      container.removeEventListener('pointerout', onPointerOut as EventListener);
-      container.removeEventListener('scroll', onScroll as EventListener);
-      window.removeEventListener('resize', onResize);
-      pop.removeEventListener('pointerenter', onPopEnter as EventListener);
-      pop.removeEventListener('pointerleave', onPopLeave as EventListener);
-      pop.remove();
-    };
+      container.addEventListener('pointerover', onPointerOver as EventListener);
+      container.addEventListener('pointerout', onPointerOut as EventListener);
+      container.addEventListener('scroll', onScroll, { passive: true } as any);
+      window.addEventListener('resize', onResize);
+      pop.addEventListener('pointerenter', onPopEnter as EventListener);
+      pop.addEventListener('pointerleave', onPopLeave as EventListener);
+
+      return () => {
+        container.removeEventListener('pointerover', onPointerOver as EventListener);
+        container.removeEventListener('pointerout', onPointerOut as EventListener);
+        container.removeEventListener('scroll', onScroll as EventListener);
+        window.removeEventListener('resize', onResize);
+        pop.removeEventListener('pointerenter', onPopEnter as EventListener);
+        pop.removeEventListener('pointerleave', onPopLeave as EventListener);
+        // Keep the popover node (reused across renders), but ensure it's hidden.
+        try {
+          pop.style.display = 'none';
+          pop.setAttribute('data-open', '0');
+        } catch {
+          // ignore
+        }
+      };
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[zx-preview] citation popover init failed', err);
+      return;
+    }
   }, [html]);
 
   // Normalize LaTeX-style cross-reference links (tab:..., fig:..., sec:..., eq:...) into nicer labels
@@ -1705,15 +1744,6 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
           color: #6ed4c0;
           border-color: rgba(110, 212, 192, 0.55);
           text-decoration: none;
-        }
-        .markdown-content .zx-author-footnote-entry {
-          margin-top: 6px;
-          color: #9aa0a6;
-          font-size: 0.92em;
-        }
-        .markdown-content .zx-author-footnote-num {
-          color: rgba(255, 255, 255, 0.72);
-          margin-right: 6px;
         }
         .zx-citation-popover {
           pointer-events: auto;

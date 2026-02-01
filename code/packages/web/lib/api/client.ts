@@ -58,17 +58,19 @@ async function getAuthToken(): Promise<string | null> {
   try {
     const { createClient } = await import('@/lib/supabase/client');
     const supabase = createClient();
-    // Best-effort refresh: if this fails (offline), still try to use any cached session.
-    try {
-      // Mirrors middleware behavior; may hit the network.
-      await supabase.auth.getUser();
-    } catch {
-      // ignore
-    }
+    // IMPORTANT:
+    // On hard refresh, we need the cached session token ASAP. `getUser()` may hit the network
+    // (and can be slow/fail transiently), which can cause early requests to go out without auth.
+    // So: read the cached session first, then refresh best-effort in the background.
     const {
       data: { session },
     } = await supabase.auth.getSession();
-    return session?.access_token || null;
+    const token = session?.access_token || null;
+    // Best-effort refresh (do not block token availability).
+    void supabase.auth.getUser().catch(() => {
+      /* ignore */
+    });
+    return token;
   } catch {
     return null;
   }
@@ -101,6 +103,11 @@ async function fetchApi<T>(
   try {
     response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
+      // IMPORTANT:
+      // Our API is typically on a different origin in dev (web:3000, backend:3001).
+      // When the Supabase access token isn't available yet, the backend may rely on
+      // cookie-based auth. Cookies are NOT sent cross-origin unless credentials are included.
+      credentials: options.credentials ?? 'include',
       headers: headers as HeadersInit,
     });
   } catch (error: unknown) {

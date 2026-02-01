@@ -154,6 +154,24 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     expect(xmd).toContain('@^ Bob');
   });
 
+  it('Author blocks without \\thanks do not crash and preserve authors', () => {
+    const latex = [
+      '\\documentclass{article}',
+      '\\title{T}',
+      '\\author{Alice \\AND Bob}',
+      '\\begin{document}',
+      '\\maketitle',
+      '\\end{document}',
+    ].join('\n');
+
+    const ir = parseLatexToIr({ docId: 'doc-author-nonotes', latex });
+    const xmd = irToXmd(ir);
+
+    expect(xmd).toContain('@ T');
+    expect(xmd).toContain('@^ Alice');
+    expect(xmd).toContain('@^ Bob');
+  });
+
   it('NeurIPS-style author separators (\\AND) are cleaned and \\thanks{...} becomes an author footnote', () => {
     const latex = [
       '\\documentclass{article}',
@@ -169,9 +187,10 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     const xmd = irToXmd(ir);
     expect(xmd).toContain('@^ Alice');
     expect(xmd).toContain('@^ Bob');
-    // Author footnote is preserved as a linkable preview target (used by hover popovers in web preview).
-    expect(xmd).toContain('author-footnote-1');
-    expect(xmd).toContain('Equal contribution');
+    // Author footnote text should NOT be surfaced in the text/XMD bridge.
+    // It is carried separately for preview popovers.
+    expect(xmd).not.toContain('author-footnote-1');
+    expect(xmd).not.toContain('Equal contribution');
     expect(xmd).not.toContain('\\AND');
   });
 
@@ -214,9 +233,9 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     expect(xmd).toContain('@^ Bob');
     // Marker is preserved on Bob as a reference to the previous note.
     expect(xmd).toContain('@@ZXAUTHNOTE{1}@@');
-    // The note text itself is preserved as a linkable preview target.
-    expect(xmd).toContain('author-footnote-1');
-    expect(xmd).toContain('Equal contribution');
+    // Note text should not be surfaced in XMD.
+    expect(xmd).not.toContain('author-footnote-1');
+    expect(xmd).not.toContain('Equal contribution');
   });
 
   it('center environment text is extracted and formatting macros are stripped', () => {

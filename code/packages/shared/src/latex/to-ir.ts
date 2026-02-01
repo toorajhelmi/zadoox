@@ -193,6 +193,10 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
           text: b.text,
           source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
         };
+        // Carry extracted author footnote notes through to HTML rendering without surfacing them in XMD.
+        if ((b as any).authorNotes && typeof (b as any).authorNotes === 'object') {
+          (node as any).authorNotes = (b as any).authorNotes;
+        }
         doc.children.push(node);
         return;
       }
@@ -609,6 +613,13 @@ type Block =
   | {
       kind: 'author';
       text: string;
+      /**
+       * Author footnote notes extracted from \thanks/\samethanks/\footnotetext inside \author{...}.
+       * Stored here so IR->HTML can attach hover-popover content without rendering the notes inline.
+       *
+       * Keyed by footnote number as a string (e.g. "1").
+       */
+      authorNotes?: Record<string, string>;
       raw: string;
       blockIndex: number;
       startOffset: number;
@@ -1181,18 +1192,17 @@ function parseBlocks(latex: string): Block[] {
     const authorBlock = parseBracedCommand(i, 'author');
       if (authorBlock) {
       const { authors, authorNotes } = splitAuthorContent(authorBlock.content);
+      const authorNotesMap: Record<string, string> = {};
+      for (const it of authorNotes) {
+        const k = String(it.num);
+        const v = String(it.text ?? '').trim();
+        if (k && v) authorNotesMap[k] = v;
+      }
       for (const a of authors) {
-          blocks.push({ kind: 'author', text: a, raw: authorBlock.raw, blockIndex, startOffset: authorBlock.startOffset, endOffset: authorBlock.endOffset });
-          blockIndex++;
-        }
-      if (authorNotes.length > 0) {
-        for (const it of authorNotes) {
-          const num = it.num;
-          const note = String(it.text ?? '').trim();
-          if (!note) continue;
           blocks.push({
-            kind: 'paragraph',
-            text: `<div id="author-footnote-${num}" class="reference-entry zx-author-footnote-entry"><span class="zx-author-footnote-num">${num}.</span> ${note}</div>`,
+            kind: 'author',
+            text: a,
+            ...(Object.keys(authorNotesMap).length > 0 ? { authorNotes: authorNotesMap } : {}),
             raw: authorBlock.raw,
             blockIndex,
             startOffset: authorBlock.startOffset,
@@ -1200,7 +1210,6 @@ function parseBlocks(latex: string): Block[] {
           });
           blockIndex++;
         }
-      }
         i = authorBlock.endIndex + 1;
         continue;
       }
@@ -1553,27 +1562,23 @@ function parseBlocks(latex: string): Block[] {
     const authorBlock2 = parseBracedCommand(i, 'author');
     if (authorBlock2) {
       const { authors, authorNotes } = splitAuthorContent(authorBlock2.content);
-      for (const a of authors) {
-        blocks.push({ kind: 'author', text: a, raw: authorBlock2.raw, blockIndex, startOffset: authorBlock2.startOffset, endOffset: authorBlock2.endOffset });
-        blockIndex++;
+      const authorNotesMap: Record<string, string> = {};
+      for (const it of authorNotes) {
+        const k = String(it.num);
+        const v = String(it.text ?? '').trim();
+        if (k && v) authorNotesMap[k] = v;
       }
-      if (authorNotes.length > 0) {
-        for (const it of authorNotes) {
-          const num = it.num;
-          const note = String(it.text ?? '').trim();
-          if (!note) continue;
-          // Render as a stable, linkable target so the web preview can show hover popovers.
-          // Avoid "[1]" bracket syntax so citation-link rewriting doesn't touch it.
-          blocks.push({
-            kind: 'paragraph',
-            text: `<div id="author-footnote-${num}" class="reference-entry zx-author-footnote-entry"><span class="zx-author-footnote-num">${num}.</span> ${note}</div>`,
-            raw: authorBlock2.raw,
-            blockIndex,
-            startOffset: authorBlock2.startOffset,
-            endOffset: authorBlock2.endOffset,
-          });
-          blockIndex++;
-        }
+      for (const a of authors) {
+        blocks.push({
+          kind: 'author',
+          text: a,
+          ...(Object.keys(authorNotesMap).length > 0 ? { authorNotes: authorNotesMap } : {}),
+          raw: authorBlock2.raw,
+          blockIndex,
+          startOffset: authorBlock2.startOffset,
+          endOffset: authorBlock2.endOffset,
+        });
+        blockIndex++;
       }
       i = authorBlock2.endIndex + 1;
       continue;

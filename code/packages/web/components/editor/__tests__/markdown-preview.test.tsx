@@ -150,4 +150,55 @@ describe('MarkdownPreview', () => {
       expect(init?.credentials).toBe('include');
     });
   });
+
+  it('should renumber bibkey citations to [n] and attach data-ref-number', async () => {
+    const htmlOverride = [
+      '<div>',
+      '<p>See <a href="#refkey-vaswani2017attention" class="citation-link citation-key" data-ref-key="vaswani2017attention">[vaswani2017attention]</a>.</p>',
+      '<h2>References</h2>',
+      '<p>[vaswani2017attention] Vaswani et al. Attention is all you need.</p>',
+      '</div>',
+    ].join('');
+
+    const { container } = render(<MarkdownPreview content="" htmlOverride={htmlOverride} />);
+
+    await waitFor(() => {
+      const cite = container.querySelector('a.citation-link.citation-key') as HTMLAnchorElement | null;
+      if (!cite) throw new Error('missing citation link');
+      expect(cite.textContent).toBe('[1]');
+      expect(cite.getAttribute('data-ref-number')).toBe('1');
+      expect(cite.getAttribute('href')).toBe('#refkey-vaswani2017attention');
+    });
+
+    await waitFor(() => {
+      const ref = container.querySelector('#refkey-vaswani2017attention') as HTMLElement | null;
+      if (!ref) throw new Error('missing ref entry');
+      expect(ref.getAttribute('data-ref-number')).toBe('1');
+      expect((ref.textContent || '').trim().startsWith('[1]')).toBe(true);
+    });
+  });
+
+  it('should convert numeric citations [1] into clickable links and keep reference entry id=ref-1', async () => {
+    const htmlOverride = [
+      '<div>',
+      '<p>See [1] for details.</p>',
+      '<h2>References</h2>',
+      '<p>[1] Ref text</p>',
+      '</div>',
+    ].join('');
+
+    const { container } = render(<MarkdownPreview content="" htmlOverride={htmlOverride} />);
+
+    await waitFor(() => {
+      const cite = container.querySelector('a.citation-link[href="#ref-1"]') as HTMLAnchorElement | null;
+      if (!cite) throw new Error('missing numeric citation link');
+      expect(cite.textContent).toBe('[1]');
+      expect(cite.getAttribute('data-ref-number')).toBe('1');
+    });
+
+    await waitFor(() => {
+      const ref = container.querySelector('#ref-1') as HTMLElement | null;
+      if (!ref) throw new Error('missing ref-1 entry');
+    });
+  });
 });
