@@ -943,7 +943,11 @@ function parseBlocks(latex: string): Block[] {
     return null;
   };
 
-  const splitAuthorContent = (raw: string): string[] => {
+  const splitAuthorContent = (raw: string): { authors: string[]; authorNotes: Array<{ num: number; text: string }> } => {
+    let nextNoteNum = 1;
+    let lastNoteNum: number | null = null;
+    const notesByNum = new Map<number, string>();
+
     const stripCmdWithArg = (input: string, cmd: string): string => {
       const s = String(input ?? '');
       let out = '';
@@ -992,11 +996,92 @@ function parseBlocks(latex: string): Block[] {
       return out;
     };
 
+    const replaceCmdWithNoteOrMarker = (input: string, cmd: string): string => {
+      const s = String(input ?? '');
+      let out = '';
+      let i = 0;
+      while (i < s.length) {
+        const ch = s[i]!;
+        if (ch !== '\\') {
+          out += ch;
+          i++;
+          continue;
+        }
+        // parse command name
+        let j = i + 1;
+        while (j < s.length && /[a-zA-Z*]/.test(s[j]!)) j++;
+        const name = s.slice(i + 1, j);
+        if (name !== cmd) {
+          out += ch;
+          i++;
+          continue;
+        }
+        // advance past command name
+        i = j;
+
+        // capture optional [..] content (if present)
+        let optRaw = '';
+        if (s[i] === '[') {
+          let depth = 1;
+          i++; // skip "["
+          const startOpt = i;
+          while (i < s.length && depth > 0) {
+            const c = s[i]!;
+            if (c === '[') depth++;
+            else if (c === ']') depth--;
+            i++;
+          }
+          const endOpt = Math.max(startOpt, i - 1); // i is after "]"
+          optRaw = s.slice(startOpt, endOpt);
+        }
+
+        // capture {..} content as the note text (if present)
+        let noteRaw = '';
+        if (s[i] === '{') {
+          let depth = 1;
+          i++; // skip "{"
+          const start = i;
+          while (i < s.length && depth > 0) {
+            const c = s[i]!;
+            if (c === '{') depth++;
+            else if (c === '}') depth--;
+            i++;
+          }
+          const end = Math.max(start, i - 1); // i is after "}", so end is before it
+          noteRaw = s.slice(start, end);
+        }
+
+        const opt = String(optRaw ?? '').trim();
+        const optNum = (() => {
+          const m = /^\s*(\d+)\s*$/.exec(opt);
+          if (!m) return null;
+          const n = Number(m[1]);
+          return Number.isFinite(n) && n > 0 ? n : null;
+        })();
+
+        const noteText = latexInlineToMarkdown(String(noteRaw ?? '').trim()).trim();
+        if (noteText.length > 0) {
+          const n = optNum ?? nextNoteNum++;
+          // Preserve first-seen text for a given n.
+          if (!notesByNum.has(n)) notesByNum.set(n, noteText);
+          lastNoteNum = n;
+          out += ` @@ZXAUTHNOTE{${n}}@@`;
+        } else {
+          // Marker-only commands like \samethanks or \footnotemark: emit a marker if possible.
+          const n = optNum ?? lastNoteNum;
+          if (n) out += ` @@ZXAUTHNOTE{${n}}@@`;
+        }
+        // command replaced
+      }
+      return out;
+    };
+
     let s = String(raw ?? '');
     // NeurIPS-style author blocks often contain \thanks{...} and similar footnote macros.
-    // Strip them so author names remain clean.
-    for (const cmd of ['thanks', 'samethanks', 'footnotemark', 'footnotetext']) {
-      s = stripCmdWithArg(s, cmd);
+    // Instead of stripping them (which hides author footnotes in preview), capture them
+    // and emit stable markers we can render as hoverable footnote indicators.
+    for (const cmd of ['thanks', 'samethanks', 'footnotetext', 'footnotemark']) {
+      s = replaceCmdWithNoteOrMarker(s, cmd);
     }
     // Strip common spacing macros that appear between author tokens in some templates.
     for (const cmd of ['hspace', 'hspace*', 'vspace', 'vspace*']) {
@@ -1021,7 +1106,10 @@ function parseBlocks(latex: string): Block[] {
       .map((p) => latexInlineToMarkdown(String(p ?? '').trim()))
       .map((p) => p.trim())
       .filter(Boolean);
-    return parts.length ? parts : [''];
+    const authorNotes = Array.from(notesByNum.entries())
+      .map(([num, text]) => ({ num, text }))
+      .sort((a, b) => a.num - b.num);
+    return { authors: parts.length ? parts : [''], authorNotes };
   };
 
   const pushParagraph = (startIdx: number, endIdxExclusive: number, blockIndex: number) => {
@@ -1090,13 +1178,29 @@ function parseBlocks(latex: string): Block[] {
         blockIndex++;
         continue;
       }
-      const authorBlock = parseBracedCommand(i, 'author');
+    const authorBlock = parseBracedCommand(i, 'author');
       if (authorBlock) {
-        const authors = splitAuthorContent(authorBlock.content);
-        for (const a of authors) {
+      const { authors, authorNotes } = splitAuthorContent(authorBlock.content);
+      for (const a of authors) {
           blocks.push({ kind: 'author', text: a, raw: authorBlock.raw, blockIndex, startOffset: authorBlock.startOffset, endOffset: authorBlock.endOffset });
           blockIndex++;
         }
+      if (authorNotes.length > 0) {
+        for (const it of authorNotes) {
+          const num = it.num;
+          const note = String(it.text ?? '').trim();
+          if (!note) continue;
+          blocks.push({
+            kind: 'paragraph',
+            text: `<div id="author-footnote-${num}" class="reference-entry zx-author-footnote-entry"><span class="zx-author-footnote-num">${num}.</span> ${note}</div>`,
+            raw: authorBlock.raw,
+            blockIndex,
+            startOffset: authorBlock.startOffset,
+            endOffset: authorBlock.endOffset,
+          });
+          blockIndex++;
+        }
+      }
         i = authorBlock.endIndex + 1;
         continue;
       }
@@ -1448,10 +1552,28 @@ function parseBlocks(latex: string): Block[] {
     }
     const authorBlock2 = parseBracedCommand(i, 'author');
     if (authorBlock2) {
-      const authors = splitAuthorContent(authorBlock2.content);
+      const { authors, authorNotes } = splitAuthorContent(authorBlock2.content);
       for (const a of authors) {
         blocks.push({ kind: 'author', text: a, raw: authorBlock2.raw, blockIndex, startOffset: authorBlock2.startOffset, endOffset: authorBlock2.endOffset });
         blockIndex++;
+      }
+      if (authorNotes.length > 0) {
+        for (const it of authorNotes) {
+          const num = it.num;
+          const note = String(it.text ?? '').trim();
+          if (!note) continue;
+          // Render as a stable, linkable target so the web preview can show hover popovers.
+          // Avoid "[1]" bracket syntax so citation-link rewriting doesn't touch it.
+          blocks.push({
+            kind: 'paragraph',
+            text: `<div id="author-footnote-${num}" class="reference-entry zx-author-footnote-entry"><span class="zx-author-footnote-num">${num}.</span> ${note}</div>`,
+            raw: authorBlock2.raw,
+            blockIndex,
+            startOffset: authorBlock2.startOffset,
+            endOffset: authorBlock2.endOffset,
+          });
+          blockIndex++;
+        }
       }
       i = authorBlock2.endIndex + 1;
       continue;
@@ -2035,15 +2157,19 @@ function latexInlineToMarkdown(text: string): string {
 
   const refTargetId = (labelRaw: string): string => {
     const label = String(labelRaw ?? '').trim();
-    const slug = sanitizeRef(label);
-    const prefix = label.split(':')[0]?.toLowerCase().trim();
-    if (prefix === 'fig') return `figure-${slug}`;
-    if (prefix === 'grid') return `grid-${slug}`;
-    if (prefix === 'tbl' || prefix === 'tab') return `table-${slug}`;
-    if (prefix === 'eq') return `eq-${slug}`;
-    if (prefix === 'sec') return `sec-${slug}`;
-    // Default to section-style id.
-    return `sec-${slug}`;
+    const parts = label.split(':');
+    const prefix = (parts[0] ?? '').toLowerCase().trim();
+    const rest = parts.length >= 2 ? parts.slice(1).join(':') : label;
+    const slugRest = sanitizeRef(rest);
+    const slugFull = sanitizeRef(label);
+    // IMPORTANT: For conventional labels like "sec:foo" we do NOT want "sec-sec-foo".
+    if (prefix === 'fig') return `figure-${slugRest}`;
+    if (prefix === 'grid') return `grid-${slugRest}`;
+    if (prefix === 'tbl' || prefix === 'tab') return `table-${slugRest}`;
+    if (prefix === 'eq') return `eq-${slugRest}`;
+    if (prefix === 'sec') return `sec-${slugRest}`;
+    // Default to section-style id (keep full label for unknown prefixes like "app:foo").
+    return `sec-${slugFull}`;
   };
 
   // Citations:

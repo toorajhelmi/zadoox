@@ -154,7 +154,7 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     expect(xmd).toContain('@^ Bob');
   });
 
-  it('NeurIPS-style author separators (\\AND) and \\thanks{...} are cleaned for authors', () => {
+  it('NeurIPS-style author separators (\\AND) are cleaned and \\thanks{...} becomes an author footnote', () => {
     const latex = [
       '\\documentclass{article}',
       '\\title{T}',
@@ -169,7 +169,9 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     const xmd = irToXmd(ir);
     expect(xmd).toContain('@^ Alice');
     expect(xmd).toContain('@^ Bob');
-    expect(xmd).not.toContain('Equal contribution');
+    // Author footnote is preserved as a linkable preview target (used by hover popovers in web preview).
+    expect(xmd).toContain('author-footnote-1');
+    expect(xmd).toContain('Equal contribution');
     expect(xmd).not.toContain('\\AND');
   });
 
@@ -190,6 +192,31 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     expect(xmd).toContain('@^ Bob');
     expect(xmd).not.toContain('\\And');
     expect(xmd).not.toContain('hspace');
+  });
+
+  it('Author footnote marker macros (\\samethanks, \\footnotemark) are preserved as preview markers', () => {
+    const latex = [
+      '\\documentclass{article}',
+      '\\title{T}',
+      // samethanks macro is often defined in the preamble; we only care that author usage is preserved.
+      '\\newcommand*\\samethanks[1][\\value{footnote}]{\\footnotemark[#1]}',
+      '\\author{Alice\\thanks{Equal contribution.} \\AND Bob\\samethanks}',
+      '\\begin{document}',
+      '\\maketitle',
+      'Hello.',
+      '\\end{document}',
+    ].join('\n');
+
+    const ir = parseLatexToIr({ docId: 'doc-auth-ml-same-1', latex });
+    const xmd = irToXmd(ir);
+    // Both authors present.
+    expect(xmd).toContain('@^ Alice');
+    expect(xmd).toContain('@^ Bob');
+    // Marker is preserved on Bob as a reference to the previous note.
+    expect(xmd).toContain('@@ZXAUTHNOTE{1}@@');
+    // The note text itself is preserved as a linkable preview target.
+    expect(xmd).toContain('author-footnote-1');
+    expect(xmd).toContain('Equal contribution');
   });
 
   it('center environment text is extracted and formatting macros are stripped', () => {

@@ -555,7 +555,13 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
         try {
           const url = `${API_BASE}/documents/${encodeURIComponent(latexDocId)}/latex/file?path=${encodeURIComponent(p)}`;
           const token = accessToken;
-          const res = await fetch(url, { ...(token ? { headers: { Authorization: `Bearer ${token}` } } : { credentials: 'include' }), signal });
+          // Support both auth modes:
+          // - Bearer token when available (most reliable)
+          // - Cookie session fallback when token isn't available yet
+          const res = await fetch(url, {
+            ...(token ? { headers: { Authorization: `Bearer ${token}` } } : { credentials: 'include' }),
+            signal,
+          });
           if (!res.ok) return;
           const blob = await res.blob();
           const objUrl = URL.createObjectURL(blob);
@@ -929,6 +935,178 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
     };
   }, [html]);
 
+  // Footnote-style hover popover for citation indicators.
+  // Shows the referenced entry text when hovering a `.citation-link` (e.g. footnote indicators).
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const sanitizeDomId = (raw: string): string =>
+      String(raw ?? '')
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+
+    const pop = document.createElement('div');
+    pop.className = 'zx-citation-popover';
+    pop.setAttribute('role', 'tooltip');
+    pop.style.position = 'fixed';
+    pop.style.zIndex = '9999';
+    pop.style.display = 'none';
+
+    const popInner = document.createElement('div');
+    popInner.className = 'zx-citation-popover-inner';
+    pop.appendChild(popInner);
+    document.body.appendChild(pop);
+
+    let activeLink: HTMLAnchorElement | null = null;
+    let hideTimer: number | null = null;
+
+    const clearHideTimer = () => {
+      if (hideTimer) {
+        window.clearTimeout(hideTimer);
+        hideTimer = null;
+      }
+    };
+
+    const hide = (immediate = false) => {
+      clearHideTimer();
+      const run = () => {
+        pop.style.display = 'none';
+        pop.setAttribute('data-open', '0');
+        activeLink = null;
+      };
+      if (immediate) run();
+      else hideTimer = window.setTimeout(run, 80);
+    };
+
+    const normalizeEntryText = (raw: string): string => {
+      const t = String(raw ?? '').replace(/\s+/g, ' ').trim();
+      // Avoid showing the leading numeric token twice if entry text starts with "[n] ".
+      return t.replace(/^\[\d+\]\s*/, '').replace(/^\d+\.\s*/, '').trim();
+    };
+
+    const resolveReferenceEl = (a: HTMLAnchorElement): HTMLElement | null => {
+      const href = a.getAttribute('href') || '';
+      if (href.startsWith('#') && href.length > 1) {
+        const id = href.slice(1);
+        const el = document.getElementById(id);
+        if (el) return el;
+      }
+
+      const refNumber = a.getAttribute('data-ref-number') || '';
+      if (refNumber) {
+        const el = document.getElementById(`ref-${refNumber}`);
+        if (el) return el;
+      }
+
+      const rawKey = a.getAttribute('data-ref-key') || '';
+      if (rawKey) {
+        const el = document.getElementById(`refkey-${sanitizeDomId(rawKey)}`);
+        if (el) return el;
+      }
+
+      return null;
+    };
+
+    const positionNear = (anchor: HTMLElement) => {
+      const r = anchor.getBoundingClientRect();
+      const margin = 10;
+      const maxW = Math.min(520, Math.max(260, Math.floor(window.innerWidth * 0.45)));
+      pop.style.maxWidth = `${maxW}px`;
+
+      // Measure after content + maxWidth applied.
+      pop.style.left = '0px';
+      pop.style.top = '0px';
+      const pr = pop.getBoundingClientRect();
+
+      let left = r.left + r.width / 2 - pr.width / 2;
+      left = Math.max(margin, Math.min(left, window.innerWidth - pr.width - margin));
+
+      // Prefer above; fall back below if needed.
+      let top = r.top - pr.height - 10;
+      if (top < margin) top = r.bottom + 10;
+      top = Math.max(margin, Math.min(top, window.innerHeight - pr.height - margin));
+
+      pop.style.left = `${Math.round(left)}px`;
+      pop.style.top = `${Math.round(top)}px`;
+    };
+
+    const showFor = (a: HTMLAnchorElement) => {
+      clearHideTimer();
+      if (activeLink === a && pop.style.display !== 'none') {
+        positionNear(a);
+        return;
+      }
+      activeLink = a;
+
+      // Do not popover inside the References section itself.
+      if (a.closest('.reference-entry')) {
+        hide(true);
+        return;
+      }
+
+      const refEl = resolveReferenceEl(a);
+      const txt = normalizeEntryText(refEl?.textContent || '');
+      if (!txt) {
+        hide(true);
+        return;
+      }
+
+      popInner.textContent = txt;
+      pop.style.display = 'block';
+      pop.setAttribute('data-open', '1');
+      positionNear(a);
+    };
+
+    const onPointerOver = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      const a = t?.closest?.('a.citation-link') as HTMLAnchorElement | null;
+      if (!a) return;
+      // Skip touch pointers (hover popovers feel bad on mobile; click still works).
+      const pe = e as PointerEvent;
+      if ((pe as any).pointerType && (pe as any).pointerType !== 'mouse') return;
+      showFor(a);
+    };
+
+    const onPointerOut = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      const a = t?.closest?.('a.citation-link') as HTMLAnchorElement | null;
+      if (!a) return;
+      // If moving into the popover itself, keep open.
+      const related = (e as PointerEvent).relatedTarget as HTMLElement | null;
+      if (related && (related === pop || pop.contains(related))) return;
+      hide(false);
+    };
+
+    const onScroll = () => hide(true);
+    const onResize = () => {
+      if (activeLink && pop.style.display !== 'none') positionNear(activeLink);
+    };
+
+    // Keep open when moving pointer into the popover; hide when leaving it.
+    const onPopEnter = () => clearHideTimer();
+    const onPopLeave = () => hide(false);
+
+    container.addEventListener('pointerover', onPointerOver as EventListener);
+    container.addEventListener('pointerout', onPointerOut as EventListener);
+    container.addEventListener('scroll', onScroll, { passive: true } as any);
+    window.addEventListener('resize', onResize);
+    pop.addEventListener('pointerenter', onPopEnter as EventListener);
+    pop.addEventListener('pointerleave', onPopLeave as EventListener);
+
+    return () => {
+      container.removeEventListener('pointerover', onPointerOver as EventListener);
+      container.removeEventListener('pointerout', onPointerOut as EventListener);
+      container.removeEventListener('scroll', onScroll as EventListener);
+      window.removeEventListener('resize', onResize);
+      pop.removeEventListener('pointerenter', onPopEnter as EventListener);
+      pop.removeEventListener('pointerleave', onPopLeave as EventListener);
+      pop.remove();
+    };
+  }, [html]);
+
   // Normalize LaTeX-style cross-reference links (tab:..., fig:..., sec:..., eq:...) into nicer labels
   // like "Table 1", "Figure 2", "Section 3", "Eq. (4)" while preserving href/id navigation.
   useEffect(() => {
@@ -1000,6 +1178,19 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
         const id = h.getAttribute('id') || '';
         if (!id.startsWith('sec-')) continue;
         if (h.getAttribute('data-zx-starred') === '1') continue;
+        // If shared renderer already provided a section number, never overwrite it.
+        const existing = String(h.getAttribute('data-zx-secnum') || '').trim();
+        if (existing) {
+          secNums.set(id, existing);
+          // Keep counters roughly aligned so any later computed sections don't restart at 1.
+          const nums = existing
+            .split('.')
+            .map((p) => Number(p))
+            .filter((n) => Number.isFinite(n) && n > 0)
+            .map((n) => Math.floor(n));
+          for (let k = 0; k < secCounters.length; k++) secCounters[k] = nums[k] ?? 0;
+          continue;
+        }
         const tag = (h.tagName || '').toUpperCase();
         const depth = tag === 'H1' ? 0 : tag === 'H2' ? 1 : tag === 'H3' ? 2 : tag === 'H4' ? 3 : tag === 'H5' ? 4 : 5;
         secCounters[depth] += 1;
@@ -1009,6 +1200,21 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
         const num = parts.join('.');
         secNums.set(id, num);
         h.setAttribute('data-zx-secnum', num);
+      }
+      // Ultra-defensive fallback: if for some reason the hierarchical pass didn't yield any numbers,
+      // fall back to sequential numbering so link prettification still works.
+      if (secNums.size === 0) {
+        let n = 1;
+        for (const h of sectionHeadings) {
+          const id = h.getAttribute('id') || '';
+          if (!id.startsWith('sec-')) continue;
+          if (String(h.getAttribute('data-zx-secnum') || '').trim()) continue;
+          if (!secNums.has(id)) {
+            const num = String(n++);
+            secNums.set(id, num);
+            h.setAttribute('data-zx-secnum', num);
+          }
+        }
       }
 
     // Also store computed numbers on table/figure targets so links can look them up.
@@ -1031,7 +1237,15 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
         if (t) return `Table ${t}`;
         const f = el?.getAttribute('data-zx-fignum') || (figNums.get(id) ? String(figNums.get(id)) : '');
         if (f) return `Figure ${f}`;
-        const s = el?.getAttribute('data-zx-secnum') || (secNums.get(id) ?? '');
+        let s = el?.getAttribute('data-zx-secnum') || (secNums.get(id) ?? '');
+        // Fallback: if section numbering map wasn't computed for some reason,
+        // but the heading text already contains a numeric prefix (e.g. "1 Attention"),
+        // extract it so refs can still display "Section 1".
+        if (!s && el && id.startsWith('sec-')) {
+          const txt = String(el.textContent ?? '').trim();
+          const m = /^(\d+(?:\.\d+)*)\b/.exec(txt);
+          if (m) s = String(m[1] ?? '').trim();
+        }
         if (s) return `Section ${s}`;
         const e = el?.getAttribute('data-zx-eqnum') || (eqNums.get(id) ? String(eqNums.get(id)) : '');
         if (e) return `Eq. (${e})`;
@@ -1048,29 +1262,23 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
 
       const refIdFromLabel = (labelRaw: string): string => {
         const label = String(labelRaw ?? '').trim();
-        const slug = sanitizeLabel(label);
-        const prefix = label.split(':')[0]?.toLowerCase().trim();
-        if (prefix === 'fig') return `figure-${slug}`;
-        if (prefix === 'grid') return `grid-${slug}`;
-        if (prefix === 'tbl' || prefix === 'tab') return `table-${slug}`;
-        if (prefix === 'eq') return `eq-${slug}`;
-        if (prefix === 'sec') return `sec-${slug}`;
-        return `sec-${slug}`;
+        const parts = label.split(':');
+        const prefix = (parts[0] ?? '').toLowerCase().trim();
+        const rest = parts.length >= 2 ? parts.slice(1).join(':') : label;
+        const slugRest = sanitizeLabel(rest);
+        const slugFull = sanitizeLabel(label);
+        // Match shared LaTeX -> IR convention: "sec:foo" => id="sec-foo" (not sec-sec-foo).
+        if (prefix === 'fig') return `figure-${slugRest}`;
+        if (prefix === 'grid') return `grid-${slugRest}`;
+        if (prefix === 'tbl' || prefix === 'tab') return `table-${slugRest}`;
+        if (prefix === 'eq') return `eq-${slugRest}`;
+        if (prefix === 'sec') return `sec-${slugRest}`;
+        return `sec-${slugFull}`;
       };
 
       const refIdFromLabelNoDup = (labelRaw: string): string => {
-        const label = String(labelRaw ?? '').trim();
-        const parts = label.split(':');
-        if (parts.length < 2) return refIdFromLabel(label);
-        const prefix = parts[0]!.toLowerCase().trim();
-        const rest = parts.slice(1).join(':');
-        const slug = sanitizeLabel(rest);
-        if (prefix === 'fig') return `figure-${slug}`;
-        if (prefix === 'grid') return `grid-${slug}`;
-        if (prefix === 'tbl' || prefix === 'tab') return `table-${slug}`;
-        if (prefix === 'eq') return `eq-${slug}`;
-        if (prefix === 'sec') return `sec-${slug}`;
-        return `sec-${slug}`;
+        // Kept for backwards compatibility; now equivalent to refIdFromLabel.
+        return refIdFromLabel(labelRaw);
       };
 
     const alreadyPretty = (raw: string): boolean => /^(Table|Figure|Section)\s+\d+\b|^Eq\.\s*\(\d+\)\b/.test(String(raw ?? '').trim());
@@ -1081,8 +1289,38 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
         if (a.classList.contains('citation-link')) continue;
         const href = a.getAttribute('href') || '';
         if (!href.startsWith('#') || href.length < 2) continue;
-        const id = href.slice(1);
+        let id = href.slice(1);
+
+        // First: normalize any duplicated-prefix hrefs *even if* we can already label them.
+        // This keeps navigation stable and avoids regressions when upstream href generation changes.
+        const dedupeHrefId = (rawId: string): string => {
+          if (rawId.startsWith('sec-sec-')) return `sec-${rawId.slice('sec-sec-'.length)}`;
+          if (rawId.startsWith('eq-eq-')) return `eq-${rawId.slice('eq-eq-'.length)}`;
+          if (rawId.startsWith('table-table-')) return `table-${rawId.slice('table-table-'.length)}`;
+          if (rawId.startsWith('figure-figure-')) return `figure-${rawId.slice('figure-figure-'.length)}`;
+          return rawId;
+        };
+        const deduped = dedupeHrefId(id);
+        if (deduped !== id && getById(deduped)) {
+          a.setAttribute('href', `#${deduped}`);
+          id = deduped;
+        }
+
         let friendly = labelForId(id);
+        // Back-compat: some older renderers produced duplicated prefixes (e.g. "sec-sec-foo").
+        // If href points to a missing id but a de-duplicated id exists, rewrite href to the real target.
+        if (!friendly) {
+          const alt = (() => {
+            if (id.startsWith('sec-sec-')) return `sec-${id.slice('sec-sec-'.length)}`;
+            if (id.startsWith('eq-eq-')) return `eq-${id.slice('eq-eq-'.length)}`;
+            if (id.startsWith('table-table-')) return `table-${id.slice('table-table-'.length)}`;
+            return '';
+          })();
+          if (alt && getById(alt)) {
+            a.setAttribute('href', `#${alt}`);
+            friendly = labelForId(alt);
+          }
+        }
         // Fallback: some renderers produce href ids that don't match our target ids.
         // If link text looks like a LaTeX label (e.g. "sec:attention"), resolve via label -> id mapping.
         if (!friendly) {
@@ -1106,6 +1344,36 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
         // For ref links, plain text is correct and avoids any weird DOM issues.
         a.textContent = friendly;
         a.setAttribute('data-zx-ref-pretty', '1');
+      }
+
+      // Ultra-defensive final pass for section refs: if an anchor still shows "sec:foo"
+      // but points at a real section id, rewrite it from the target heading metadata/text.
+      // This avoids regressions when the earlier numbering/indexing logic is disrupted.
+      try {
+        const secLinks = Array.from(container.querySelectorAll('a[href^="#sec-"]')) as HTMLAnchorElement[];
+        for (const a of secLinks) {
+          if (a.classList.contains('citation-link')) continue;
+          const txt = String(a.textContent || '').trim();
+          if (!/^sec:/i.test(txt)) continue;
+          const href = a.getAttribute('href') || '';
+          const id = href.startsWith('#') ? href.slice(1) : '';
+          if (!id) continue;
+          const h = getById(id);
+          if (!h) continue;
+          const secNumAttr = String(h.getAttribute('data-zx-secnum') || '').trim();
+          const secNum =
+            secNumAttr ||
+            (() => {
+              const ht = String(h.textContent || '').trim();
+              const m = /^(\d+(?:\.\d+)*)\b/.exec(ht);
+              return m ? String(m[1] ?? '').trim() : '';
+            })();
+          if (!secNum) continue;
+          a.textContent = `Section ${secNum}`;
+          a.setAttribute('data-zx-ref-pretty', '1');
+        }
+      } catch {
+        // ignore
       }
 
     // Also prefix captions so they match the same numbering used by refs.
@@ -1422,6 +1690,48 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
         .markdown-content .citation-link:hover {
           color: #6ed4c0;
           text-decoration: underline;
+        }
+        .markdown-content .zx-author-footnote-sup {
+          margin-left: 2px;
+        }
+        .markdown-content a.zx-author-footnote {
+          text-decoration: none;
+          padding: 0 2px;
+          border-radius: 4px;
+          border: 1px solid rgba(78, 201, 176, 0.35);
+          color: rgba(78, 201, 176, 0.95);
+        }
+        .markdown-content a.zx-author-footnote:hover {
+          color: #6ed4c0;
+          border-color: rgba(110, 212, 192, 0.55);
+          text-decoration: none;
+        }
+        .markdown-content .zx-author-footnote-entry {
+          margin-top: 6px;
+          color: #9aa0a6;
+          font-size: 0.92em;
+        }
+        .markdown-content .zx-author-footnote-num {
+          color: rgba(255, 255, 255, 0.72);
+          margin-right: 6px;
+        }
+        .zx-citation-popover {
+          pointer-events: auto;
+          border-radius: 10px;
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          background: rgba(20, 20, 22, 0.98);
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+          backdrop-filter: blur(8px);
+        }
+        .zx-citation-popover-inner {
+          padding: 10px 12px;
+          color: rgba(255, 255, 255, 0.92);
+          font-size: 12px;
+          line-height: 1.5;
+          white-space: normal;
+          overflow-wrap: anywhere;
+          max-height: 220px;
+          overflow: auto;
         }
         .markdown-content .reference-entry {
           transition: background-color 0.3s;

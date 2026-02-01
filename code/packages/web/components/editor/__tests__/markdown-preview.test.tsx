@@ -6,7 +6,7 @@
 /// <reference types="vitest" />
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MarkdownPreview } from '../markdown-preview';
 
 // Mock Supabase client (used for token handling). Keep minimal surface.
@@ -64,5 +64,90 @@ describe('MarkdownPreview', () => {
     expect(markdownContent?.innerHTML).toContain('data-asset-key="abc.png"');
     // Should no longer contain the unknown URL scheme
     expect(markdownContent?.innerHTML).not.toContain('zadoox-asset://');
+  });
+
+  it('should show a hover popover for citation links (footnote-style UX)', async () => {
+    const htmlOverride = [
+      '<div>',
+      '<p>See [1] for details.</p>',
+      '<h2>References</h2>',
+      '<p>[1] Ref text</p>',
+      '</div>',
+    ].join('');
+
+    const { container } = render(<MarkdownPreview content="" htmlOverride={htmlOverride} />);
+
+    const cite = await waitFor(() => {
+      const a = container.querySelector('a.citation-link') as HTMLAnchorElement | null;
+      if (!a) throw new Error('missing citation link');
+      return a;
+    });
+
+    // Ensure the popover element is created by the effect.
+    await waitFor(() => {
+      const pop = document.querySelector('.zx-citation-popover') as HTMLElement | null;
+      if (!pop) throw new Error('missing popover');
+    });
+
+    fireEvent.pointerOver(cite);
+
+    await waitFor(() => {
+      const pop = document.querySelector('.zx-citation-popover') as HTMLElement | null;
+      if (!pop) throw new Error('missing popover');
+      expect(pop.style.display).toBe('block');
+      expect(pop.textContent || '').toContain('Ref text');
+    });
+  });
+
+  it('should pretty-print LaTeX-style section refs and fix duplicated sec-sec- hrefs', async () => {
+    const htmlOverride = [
+      '<div>',
+      '<h2 id="sec-attention">Attention</h2>',
+      '<p>See <a href="#sec-sec-attention">sec:attention</a>.</p>',
+      '</div>',
+    ].join('');
+
+    const { container } = render(<MarkdownPreview content="" htmlOverride={htmlOverride} />);
+
+    await waitFor(() => {
+      // After the ref-normalization effect runs, this should be rewritten.
+      const a = container.querySelector('a[href="#sec-attention"]') as HTMLAnchorElement | null;
+      if (!a) throw new Error('missing rewritten anchor');
+      expect((a.textContent || '').toLowerCase()).toContain('section');
+      expect(a.textContent || '').toMatch(/\bsection\s+1\b/i);
+    });
+  });
+
+  it('should rewrite sec: links to Section N even when href already points to #sec-*', async () => {
+    const htmlOverride = [
+      '<div>',
+      '<h2 id="sec-attention" data-zx-secnum="3">3 Attention</h2>',
+      '<p>See <a href="#sec-attention">sec:attention</a>.</p>',
+      '</div>',
+    ].join('');
+
+    const { container } = render(<MarkdownPreview content="" htmlOverride={htmlOverride} />);
+
+    await waitFor(() => {
+      const a = container.querySelector('a[href="#sec-attention"]') as HTMLAnchorElement | null;
+      if (!a) throw new Error('missing anchor');
+      expect(a.textContent).toBe('Section 3');
+    });
+  });
+
+  it('should fetch LaTeX bundle assets with cookie creds when no access token is available (avoid figure regressions)', async () => {
+    const fetchSpy = vi.fn(async () => ({ ok: false, blob: async () => new Blob([]), headers: new Headers() }) as any);
+    // @ts-expect-error - test shim
+    global.fetch = fetchSpy;
+
+    const htmlOverride = '<div><img data-zx-asset-path="Figures/Foo.png" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" /></div>';
+    render(<MarkdownPreview content="" htmlOverride={htmlOverride} latexDocId="doc-1" />);
+
+    await waitFor(() => {
+      // We should at least attempt a request; when no token is present, it must use credentials include.
+      expect(fetchSpy).toHaveBeenCalled();
+      const [, init] = fetchSpy.mock.calls.find((c) => String(c[0] || '').includes('/latex/file')) ?? [];
+      expect(init?.credentials).toBe('include');
+    });
   });
 });

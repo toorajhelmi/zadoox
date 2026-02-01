@@ -37,7 +37,7 @@ function renderNodes(nodes: IrNode[], ctx: RenderCtx): string {
       }
       i--; // compensate for for-loop increment
       if (authors.length > 0) {
-        const inner = authors.map((a) => `<div class="doc-author">${escapeHtml(a.text)}</div>`).join('');
+        const inner = authors.map((a) => `<div class="doc-author">${renderAuthorTextWithFootnotes(a.text)}</div>`).join('');
         parts.push(`<div class="doc-authors">${inner}</div>`);
         continue;
       }
@@ -46,6 +46,27 @@ function renderNodes(nodes: IrNode[], ctx: RenderCtx): string {
     if (rendered) parts.push(rendered);
   }
   return parts.join('');
+}
+
+function renderAuthorTextWithFootnotes(raw: string): string {
+  const s = String(raw ?? '');
+  const re = /@@ZXAUTHNOTE\{(\d+)\}@@/g;
+  let out = '';
+  let last = 0;
+  for (;;) {
+    const m = re.exec(s);
+    if (!m) break;
+    const idx = m.index ?? 0;
+    const before = s.slice(last, idx);
+    out += escapeHtml(before);
+    const n = String(m[1] ?? '').trim();
+    if (n) {
+      out += `<sup class="zx-author-footnote-sup"><a href="#author-footnote-${escapeHtml(n)}" class="citation-link zx-author-footnote" data-ref-number="${escapeHtml(n)}">${escapeHtml(n)}</a></sup>`;
+    }
+    last = idx + m[0].length;
+  }
+  out += escapeHtml(s.slice(last));
+  return out.trim().length ? out : '';
 }
 
 function styleToCss(style?: TextStyle): string {
@@ -199,7 +220,30 @@ function sanitizeDomId(raw: string): string {
 function latexLabelToDomId(labelRaw: string, kind: 'sec' | 'eq' | 'table'): string {
   const label = String(labelRaw ?? '').trim();
   if (!label) return '';
-  return `${kind}-${sanitizeDomId(label)}`;
+  const lower = label.toLowerCase().trim();
+  const core = (() => {
+    if (kind === 'sec') {
+      // Common LaTeX convention: \label{sec:foo} or sometimes \label{sec-foo}
+      if (lower.startsWith('sec:')) return label.slice('sec:'.length);
+      if (lower.startsWith('sec-')) return label.slice('sec-'.length);
+      return label;
+    }
+    if (kind === 'eq') {
+      if (lower.startsWith('eq:')) return label.slice('eq:'.length);
+      if (lower.startsWith('eq-')) return label.slice('eq-'.length);
+      return label;
+    }
+    // kind === 'table'
+    // Common conventions: tab:foo / tbl:foo / table:foo
+    if (lower.startsWith('tab:')) return label.slice('tab:'.length);
+    if (lower.startsWith('tab-')) return label.slice('tab-'.length);
+    if (lower.startsWith('tbl:')) return label.slice('tbl:'.length);
+    if (lower.startsWith('tbl-')) return label.slice('tbl-'.length);
+    if (lower.startsWith('table:')) return label.slice('table:'.length);
+    if (lower.startsWith('table-')) return label.slice('table-'.length);
+    return label;
+  })();
+  return `${kind}-${sanitizeDomId(core)}`;
 }
 
 function renderInlineTextWithMathTokens(textRaw: string): string {
@@ -267,7 +311,9 @@ function renderNode(node: IrNode, ctx: RenderCtx): string {
         const nums = ctx.sectionCounters.slice(0, level).filter((n) => n > 0);
         return nums.length ? `${nums.join('.')} ` : '';
       })();
-      const heading = `<${tag}${idAttr}${starAttr}>${escapeHtml(numPrefix)}${escapeHtml(node.title ?? '')}</${tag}>`;
+      const secNum = numPrefix.trim();
+      const secNumAttr = secNum ? ` data-zx-secnum="${escapeHtml(secNum)}"` : '';
+      const heading = `<${tag}${idAttr}${starAttr}${secNumAttr}>${escapeHtml(numPrefix)}${escapeHtml(node.title ?? '')}</${tag}>`;
       const body = node.children?.length ? renderNodes(node.children, ctx) : '';
       return `${heading}${body}`;
     }
