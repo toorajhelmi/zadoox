@@ -23,6 +23,9 @@ interface RenderCtx {
   sectionCounters: number[]; // index 0 => \section, 1 => \subsection, ...
 }
 
+type AuthorNotesMap = Record<string, string>;
+type DocumentAuthorLike = { type: 'document_author'; text?: string; authorNotes?: AuthorNotesMap };
+
 function renderNodes(nodes: IrNode[], ctx: RenderCtx): string {
   const parts: string[] = [];
   for (let i = 0; i < nodes.length; i++) {
@@ -31,7 +34,7 @@ function renderNodes(nodes: IrNode[], ctx: RenderCtx): string {
       const authors: Array<{ text: string }> = [];
       const authorNotes = new Map<string, string>();
       while (i < nodes.length && nodes[i]!.type === 'document_author') {
-        const a = nodes[i]! as any;
+        const a = nodes[i]! as DocumentAuthorLike;
         const t = String(a.text ?? '').trim();
         if (t) authors.push({ text: t });
         const notes = a.authorNotes;

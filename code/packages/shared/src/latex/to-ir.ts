@@ -194,8 +194,8 @@ export function parseLatexToIr(params: { docId: string; latex: string }): Docume
           source: { blockIndex: b.blockIndex, raw: b.raw, startOffset: b.startOffset, endOffset: b.endOffset },
         };
         // Carry extracted author footnote notes through to HTML rendering without surfacing them in XMD.
-        if ((b as any).authorNotes && typeof (b as any).authorNotes === 'object') {
-          (node as any).authorNotes = (b as any).authorNotes;
+        if (b.authorNotes && typeof b.authorNotes === 'object') {
+          (node as DocumentAuthorNode & { authorNotes: Record<string, string> }).authorNotes = b.authorNotes;
         }
         doc.children.push(node);
         return;
