@@ -30,6 +30,12 @@ function renderNode(node: IrNode): string {
       return (node.text ?? '').trim().length > 0 ? `@^ ${node.text}` : '@^';
     case 'document_date':
       return (node.text ?? '').trim().length > 0 ? `@= ${node.text}` : '@=';
+    case 'abstract': {
+      // Best-effort bridge: represent as an unnumbered "Abstract" heading.
+      const heading = `## Abstract`;
+      const body = node.children.length ? renderNodes(node.children) : '';
+      return body ? `${heading}\n\n${body}` : heading;
+    }
     case 'section': {
       const heading = `${'#'.repeat(Math.max(1, Math.min(6, node.level)))} ${node.title}`;
       const body = node.children.length ? renderNodes(node.children) : '';
@@ -71,7 +77,13 @@ function renderNode(node: IrNode): string {
       const raw = t.source?.raw;
       if (raw && raw.trim().startsWith(':::')) return raw.trimEnd();
 
-      const cols = Math.max(2, t.header.length || 2);
+      const schemaCols = (t.schema?.columns ?? []).map((c) => ({ id: c.id, name: c.name ?? '' }));
+      const headerCells = schemaCols.length ? schemaCols.map((c) => c.name || c.id) : (t.header ?? []);
+      const dataRows = schemaCols.length
+        ? (t.data?.rows ?? []).map((r) => schemaCols.map((c) => String(r.cells?.[c.id] ?? '')))
+        : (t.rows ?? []);
+
+      const cols = Math.max(2, headerCells.length || 2);
       const align = (t.colAlign && t.colAlign.length === cols ? t.colAlign : Array.from({ length: cols }).map(() => 'left')) as Array<
         'left' | 'center' | 'right'
       >;
@@ -109,13 +121,26 @@ function renderNode(node: IrNode): string {
       const hRules =
         t.hRules && t.hRules.length === totalRows + 1 ? t.hRules : Array.from({ length: totalRows + 1 }).map(() => 'none' as const);
 
-      const headerRow = `| ${t.header.join(' | ')} |`;
-      const sep = `| ${t.header.map(() => '---').join(' | ')} |`;
-      const rowLines = (t.rows ?? []).map((r) => `| ${r.join(' | ')} |`);
+      const headerRow = `| ${headerCells.join(' | ')} |`;
+      const sep = `| ${headerCells.map(() => '---').join(' | ')} |`;
+      const rowLines = dataRows.map((r) => `| ${r.join(' | ')} |`);
 
       const lines: string[] = [];
       lines.push(`:::${attrs.length ? ` ${attrs.join(' ')}` : ''}`);
       lines.push(colSpec);
+      // Optional header spanners (layout row 0). This is a minimal XMD extension.
+      // We only emit non-empty synthetic cells with colspan>1.
+      if (t.layout?.header && t.layout.header.length > 1) {
+        const spRow = t.layout.header[0]!;
+        let c = 0;
+        for (const cell of spRow.cells ?? []) {
+          const span = Math.max(1, Number(cell.colSpan ?? cell.columnIds?.length ?? 1) || 1);
+          if (cell.kind === 'synthetic' && span > 1 && String(cell.text ?? '').trim().length > 0) {
+            lines.push(`@span header c=${c} span=${span} text="${escapeAttr(cell.text)}"`);
+          }
+          c += span;
+        }
+      }
       if (hRules[0] && hRules[0] !== 'none') lines.push(ruleChar(hRules[0]));
       lines.push(headerRow);
       lines.push(sep);

@@ -99,6 +99,185 @@ describe('LaTeX <-> IR <-> XMD round-trips (Phase 12)', () => {
     expect(xmd).not.toContain('\\end{document}');
   });
 
+  it('LaTeX comment-only lines are ignored (do not show up in IR/XMD)', () => {
+    const latex = [
+      '\\documentclass{article}',
+      '\\begin{document}',
+      '% this is a comment that should not appear',
+      'Hello.',
+      '% another comment',
+      '\\end{document}',
+    ].join('\n');
+
+    const ir = parseLatexToIr({ docId: 'doc-c1', latex });
+    const xmd = irToXmd(ir);
+    expect(xmd).toContain('Hello.');
+    expect(xmd).not.toContain('this is a comment');
+  });
+
+  it('LaTeX preamble macros are ignored (do not show up in IR/XMD)', () => {
+    const latex = [
+      '\\documentclass{article}',
+      '\\PassOptionsToPackage{numbers, compress}{natbib}',
+      '\\newcommand\\mc[1]{\\mathcal{#1}}',
+      '\\title{T}',
+      '\\begin{document}',
+      'Hello.',
+      '\\end{document}',
+    ].join('\n');
+
+    const ir = parseLatexToIr({ docId: 'doc-pre-1', latex });
+    const xmd = irToXmd(ir);
+    expect(xmd).toContain('@ T');
+    expect(xmd).toContain('Hello.');
+    expect(xmd).not.toContain('PassOptionsToPackage');
+    expect(xmd).not.toContain('newcommand');
+  });
+
+  it('Multi-line \\author{...} is parsed and multiple authors are preserved', () => {
+    const latex = [
+      '\\documentclass{article}',
+      '\\title{T}',
+      '\\author{',
+      'Alice \\\\',
+      'Bob',
+      '}',
+      '\\begin{document}',
+      '\\maketitle',
+      'Hello.',
+      '\\end{document}',
+    ].join('\n');
+
+    const ir = parseLatexToIr({ docId: 'doc-auth-ml-1', latex });
+    const xmd = irToXmd(ir);
+    expect(xmd).toContain('@^ Alice');
+    expect(xmd).toContain('@^ Bob');
+  });
+
+  it('Author blocks without \\thanks do not crash and preserve authors', () => {
+    const latex = [
+      '\\documentclass{article}',
+      '\\title{T}',
+      '\\author{Alice \\AND Bob}',
+      '\\begin{document}',
+      '\\maketitle',
+      '\\end{document}',
+    ].join('\n');
+
+    const ir = parseLatexToIr({ docId: 'doc-author-nonotes', latex });
+    const xmd = irToXmd(ir);
+
+    expect(xmd).toContain('@ T');
+    expect(xmd).toContain('@^ Alice');
+    expect(xmd).toContain('@^ Bob');
+  });
+
+  it('NeurIPS-style author separators (\\AND) are cleaned and \\thanks{...} becomes an author footnote', () => {
+    const latex = [
+      '\\documentclass{article}',
+      '\\title{T}',
+      '\\author{Alice\\thanks{Equal contribution.} \\AND Bob}',
+      '\\begin{document}',
+      '\\maketitle',
+      'Hello.',
+      '\\end{document}',
+    ].join('\n');
+
+    const ir = parseLatexToIr({ docId: 'doc-auth-ml-2', latex });
+    const xmd = irToXmd(ir);
+    expect(xmd).toContain('@^ Alice');
+    expect(xmd).toContain('@^ Bob');
+    // Author footnote text should NOT be surfaced in the text/XMD bridge.
+    // It is carried separately for preview popovers.
+    expect(xmd).not.toContain('author-footnote-1');
+    expect(xmd).not.toContain('Equal contribution');
+    expect(xmd).not.toContain('\\AND');
+  });
+
+  it('Template variants (\\And, \\hspace{...}) are removed from author blocks', () => {
+    const latex = [
+      '\\documentclass{article}',
+      '\\title{T}',
+      '\\author{Alice \\And \\hspace{1em} Bob}',
+      '\\begin{document}',
+      '\\maketitle',
+      'Hello.',
+      '\\end{document}',
+    ].join('\n');
+
+    const ir = parseLatexToIr({ docId: 'doc-auth-ml-3', latex });
+    const xmd = irToXmd(ir);
+    expect(xmd).toContain('@^ Alice');
+    expect(xmd).toContain('@^ Bob');
+    expect(xmd).not.toContain('\\And');
+    expect(xmd).not.toContain('hspace');
+  });
+
+  it('Author footnote marker macros (\\samethanks, \\footnotemark) are preserved as preview markers', () => {
+    const latex = [
+      '\\documentclass{article}',
+      '\\title{T}',
+      // samethanks macro is often defined in the preamble; we only care that author usage is preserved.
+      '\\newcommand*\\samethanks[1][\\value{footnote}]{\\footnotemark[#1]}',
+      '\\author{Alice\\thanks{Equal contribution.} \\AND Bob\\samethanks}',
+      '\\begin{document}',
+      '\\maketitle',
+      'Hello.',
+      '\\end{document}',
+    ].join('\n');
+
+    const ir = parseLatexToIr({ docId: 'doc-auth-ml-same-1', latex });
+    const xmd = irToXmd(ir);
+    // Both authors present.
+    expect(xmd).toContain('@^ Alice');
+    expect(xmd).toContain('@^ Bob');
+    // Marker is preserved on Bob as a reference to the previous note.
+    expect(xmd).toContain('@@ZXAUTHNOTE{1}@@');
+    // Note text should not be surfaced in XMD.
+    expect(xmd).not.toContain('author-footnote-1');
+    expect(xmd).not.toContain('Equal contribution');
+  });
+
+  it('center environment text is extracted and formatting macros are stripped', () => {
+    const latex = [
+      '\\documentclass{article}',
+      '\\begin{document}',
+      '\\begin{center} \\color{red} \\large Provided proper attribution is provided.\\end{center}',
+      '\\end{document}',
+    ].join('\n');
+
+    const ir = parseLatexToIr({ docId: 'doc-center-1', latex });
+    const xmd = irToXmd(ir);
+    expect(xmd).toContain('Provided proper attribution is provided.');
+    expect(xmd).not.toContain('\\begin{center}');
+    expect(xmd).not.toContain('\\color');
+    expect(xmd).not.toContain('\\large');
+
+    // Style hint is preserved in IR (even though it doesn't round-trip to XMD).
+    const p = ir.children.find((n) => n.type === 'paragraph' && String((n as any).text || '').includes('Provided proper attribution')) as any;
+    expect(p?.style?.align).toBe('center');
+    expect(p?.style?.color).toBe('red');
+    expect(p?.style?.size).toBe('large');
+  });
+
+  it('LaTeX abstract environment becomes an abstract node in IR', () => {
+    const latex = [
+      '\\documentclass{article}',
+      '\\title{T}',
+      '\\begin{document}',
+      '\\begin{abstract}',
+      'We propose a method.',
+      '\\end{abstract}',
+      '\\section{Intro}',
+      'Hi.',
+      '\\end{document}',
+    ].join('\n');
+
+    const ir = parseLatexToIr({ docId: 'doc-abs-1', latex });
+    const hasAbstract = ir.children.some((n) => n.type === 'abstract');
+    expect(hasAbstract).toBe(true);
+  });
+
   it('XMD table -> IR -> LaTeX emits tabularx with caption/label and border color/width (best-effort)', () => {
     const xmd = [
       '@ Title',

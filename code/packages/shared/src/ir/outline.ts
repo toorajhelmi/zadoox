@@ -41,7 +41,8 @@ export function extractOutlineItemsFromIr(ir: DocumentNode): OutlineItem[] {
     }
 
     if (n.type === 'section') {
-      const id = slugifyId(n.title);
+      const label = String((n as unknown as { label?: string }).label ?? '').trim();
+      const id = label ? `sec-${sanitizeDomId(label)}` : slugifyId(n.title);
       items.push({ kind: 'heading', level: n.level, text: n.title, id });
       for (const c of n.children ?? []) visit(c, parentGridOutlineId);
       return;

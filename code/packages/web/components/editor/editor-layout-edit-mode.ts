@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api/client';
+import { ApiError } from '@/lib/api/client';
 import type { DocumentNode } from '@zadoox/shared';
 import { irToLatexDocument, irToXmd } from '@zadoox/shared';
 import { computeDocIrHash } from './ir-hash';
@@ -27,6 +28,9 @@ export function useEditorEditMode(params: {
 
   const [editMode, setEditMode] = useState<EditMode>('markdown');
   const [latexDraft, setLatexDraft] = useState<string>('');
+  const [latexEntryLoading, setLatexEntryLoading] = useState(false);
+  const [latexEntryError, setLatexEntryError] = useState<string | null>(null);
+  const [latexEntryReloadNonce, setLatexEntryReloadNonce] = useState(0);
 
   // Important: only initialize editMode from metadata once per document.
   // Otherwise, late metadata refreshes can overwrite explicit user selection
@@ -48,7 +52,13 @@ export function useEditorEditMode(params: {
       setEditMode(last);
       didInitModeRef.current = true;
     }
-  }, [actualDocumentId, documentId, documentMetadata]);
+    // Fallback: imported docs can be LaTeX-first (manifest exists) while XMD content is empty.
+    // If metadata doesn't specify a mode yet, prefer LaTeX when a manifest exists.
+    if (!didInitModeRef.current && !last && documentLatex) {
+      setEditMode('latex');
+      didInitModeRef.current = true;
+    }
+  }, [actualDocumentId, documentId, documentMetadata, documentLatex]);
 
   // If we have a LaTeX manifest, load the entry file via backend.
   useEffect(() => {
@@ -61,17 +71,39 @@ export function useEditorEditMode(params: {
     let cancelled = false;
     (async () => {
       try {
+        setLatexEntryLoading(true);
+        setLatexEntryError(null);
         const res = await api.documents.latexEntryGet(docId);
         if (cancelled) return;
         if (typeof res.text === 'string') setLatexDraft(res.text);
       } catch (e) {
+        const baseMsg = e instanceof Error ? e.message : String(e);
+        const details =
+          e instanceof ApiError && e.details
+            ? (() => {
+                try {
+                  const s = JSON.stringify(e.details);
+                  return s.length > 900 ? `${s.slice(0, 900)}…` : s;
+                } catch {
+                  return null;
+                }
+              })()
+            : null;
+        const msg = details ? `${baseMsg}\n\n${details}` : baseMsg;
         console.error('Failed to load LaTeX entry:', e);
+        if (!cancelled) setLatexEntryError(msg);
+      } finally {
+        if (!cancelled) setLatexEntryLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [actualDocumentId, documentLatex, editMode, latexDraft]);
+  }, [actualDocumentId, documentLatex, editMode, latexDraft, latexEntryReloadNonce]);
+
+  const reloadLatexEntry = useCallback(() => {
+    setLatexEntryReloadNonce((v) => v + 1);
+  }, []);
 
   const handleEditModeChange = useCallback(
     async (next: EditMode) => {
@@ -168,7 +200,7 @@ export function useEditorEditMode(params: {
     [actualDocumentId, content, documentLatex, documentMetadata, editMode, getCurrentIr, latexDraft, setDocumentLatex, setDocumentMetadata, updateContent]
   );
 
-  return { editMode, setEditMode, latexDraft, setLatexDraft, handleEditModeChange };
+  return { editMode, setEditMode, latexDraft, setLatexDraft, handleEditModeChange, latexEntryLoading, latexEntryError, reloadLatexEntry };
 }
 
 

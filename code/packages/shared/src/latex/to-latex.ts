@@ -252,6 +252,11 @@ function renderNode(node: IrNode): string {
       return `\\author{${escapeLatexText(node.text)}}`;
     case 'document_date':
       return `\\date{${escapeLatexText(node.text)}}`;
+    case 'abstract': {
+      const body = node.children.length ? renderNodes(node.children) : '';
+      // Keep abstract unnumbered and in the standard environment.
+      return `\\begin{abstract}\n${body}\n\\end{abstract}`.trimEnd();
+    }
     case 'section': {
       const cmd =
         node.level <= 1
@@ -385,14 +390,20 @@ function tableStyleToLatexSetup(style: TableStyle | undefined): { preambleLines:
 }
 
 function renderTable(t: TableNode): string {
-  const cols = Math.max(0, (t.header ?? []).length);
+  const schemaCols = (t.schema?.columns ?? []).map((c) => ({ id: String(c.id ?? ''), name: String(c.name ?? '') }));
+  const headerCellsRaw = schemaCols.length ? schemaCols.map((c) => c.name || c.id) : (t.header ?? []);
+  const bodyRowsRaw = schemaCols.length
+    ? (t.data?.rows ?? []).map((r) => schemaCols.map((c) => String(r.cells?.[c.id] ?? '')))
+    : (t.rows ?? []);
+
+  const cols = Math.max(0, headerCellsRaw.length);
   if (cols === 0) return '';
 
   const align = (t.colAlign && t.colAlign.length === cols ? t.colAlign : Array.from({ length: cols }).map(() => 'left')) as Array<
     'left' | 'center' | 'right'
   >;
   const vRules = t.vRules && t.vRules.length === cols + 1 ? t.vRules : Array.from({ length: cols + 1 }).map(() => 'none' as const);
-  const totalRows = 1 + (t.rows?.length ?? 0);
+  const totalRows = 1 + (bodyRowsRaw?.length ?? 0);
   const hRules = t.hRules && t.hRules.length === totalRows + 1 ? t.hRules : Array.from({ length: totalRows + 1 }).map(() => 'none' as const);
 
   const styleSetup = tableStyleToLatexSetup(t.style);
@@ -442,15 +453,15 @@ function renderTable(t: TableNode): string {
   emitBoundary(hRules[0] ?? 'none');
 
   // Header row
-  const headerCells = (t.header ?? []).map((c) => `\\textbf{${mdInlineToLatex(String(c ?? ''))}}`);
+  const headerCells = headerCellsRaw.map((c) => `\\textbf{${mdInlineToLatex(String(c ?? ''))}}`);
   out.push(`${headerCells.join(' & ')} \\\\`);
 
   // Boundary between header and first row (boundary 1)
   emitBoundary(hRules[1] ?? 'none');
 
   // Body rows
-  for (let r = 0; r < (t.rows ?? []).length; r++) {
-    const row = t.rows[r] ?? [];
+  for (let r = 0; r < (bodyRowsRaw ?? []).length; r++) {
+    const row = (bodyRowsRaw ?? [])[r] ?? [];
     const cells = Array.from({ length: cols }).map((_, i) => mdInlineToLatex(String(row[i] ?? '')));
     out.push(`${cells.join(' & ')} \\\\`);
     emitBoundary(hRules[2 + r] ?? 'none');

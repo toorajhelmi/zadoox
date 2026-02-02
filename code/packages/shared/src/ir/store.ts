@@ -1,5 +1,5 @@
 import { fnv1a32, hashToId } from './id';
-import type { DocumentNode, GridNode, IrNode, TableNode } from './types';
+import type { DocumentNode, GridNode, IrNode, ParagraphNode, TableNode } from './types';
 
 export interface IrStoreSnapshot {
   ir: DocumentNode;
@@ -28,6 +28,13 @@ function nodeContentForHash(node: IrNode): string {
       return `docauthor:${normalizeWhitespace(node.text)}`;
     case 'document_date':
       return `docdate:${normalizeWhitespace(node.text)}`;
+    case 'abstract': {
+      const text = (node.children ?? [])
+        .filter((c) => c.type === 'paragraph')
+        .map((c) => normalizeWhitespace((c as ParagraphNode).text ?? ''))
+        .join('\n');
+      return `abstract:${normalizeWhitespace(text)}`;
+    }
     case 'section':
       return `sec:${node.level}:${normalizeWhitespace(node.title)}`;
     case 'paragraph':
@@ -42,9 +49,27 @@ function nodeContentForHash(node: IrNode): string {
       return `fig:${normalizeWhitespace(node.src)}:${normalizeWhitespace(node.caption)}:${normalizeWhitespace(node.label ?? '')}`;
     case 'table': {
       const t = node as TableNode;
-      const header = t.header.map(normalizeTableCell).join('|');
-      const rows = t.rows.map((r) => r.map(normalizeTableCell).join('|')).join('\n');
-      return `table:${normalizeWhitespace(t.caption ?? '')}:${normalizeWhitespace(t.label ?? '')}:${header}\n${rows}`;
+      const caption = normalizeWhitespace(t.caption ?? '');
+      const label = normalizeWhitespace(t.label ?? '');
+
+      const schemaCols = (t.schema?.columns ?? []).map((c) => ({
+        id: String(c.id ?? ''),
+        name: normalizeWhitespace(c.name ?? ''),
+      }));
+      const dataRows = t.data?.rows ?? [];
+
+      // Prefer semantic model if present; otherwise fall back to legacy fields.
+      if (schemaCols.length > 0) {
+        const header = schemaCols.map((c) => normalizeTableCell(c.name || c.id)).join('|');
+        const rows = dataRows
+          .map((r) => schemaCols.map((c) => normalizeTableCell(String(r.cells?.[c.id] ?? ''))).join('|'))
+          .join('\n');
+        return `table:${caption}:${label}:${header}\n${rows}`;
+      }
+
+      const legacyHeader = (t.header ?? []).map(normalizeTableCell).join('|');
+      const legacyRows = (t.rows ?? []).map((r) => (r ?? []).map(normalizeTableCell).join('|')).join('\n');
+      return `table:${caption}:${label}:${legacyHeader}\n${legacyRows}`;
     }
     case 'grid': {
       const g = node as GridNode;
@@ -78,7 +103,7 @@ export function* walkIrNodes(root: DocumentNode): Generator<IrNode, void, void> 
     const node = stack.pop()!;
     yield node;
     // Traverse in-order for container nodes.
-    if (node.type === 'document' || node.type === 'section') {
+    if (node.type === 'document' || node.type === 'section' || node.type === 'abstract') {
       const children = node.children ?? [];
       for (let i = children.length - 1; i >= 0; i--) stack.push(children[i]!);
       continue;

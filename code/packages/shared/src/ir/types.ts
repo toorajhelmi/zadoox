@@ -12,6 +12,7 @@ export type IrNodeType =
   | 'document_title'
   | 'document_author'
   | 'document_date'
+  | 'abstract'
   | 'section'
   | 'paragraph'
   | 'list'
@@ -67,16 +68,52 @@ export interface DocumentDateNode extends BaseNode {
   text: string;
 }
 
+export interface AbstractNode extends BaseNode {
+  type: 'abstract';
+  children: IrNode[];
+}
+
 export interface SectionNode extends BaseNode {
   type: 'section';
   level: number;
   title: string;
+  /**
+   * Optional LaTeX/XMD label (e.g. "sec:intro") for linking via \ref.
+   * Renderers may use this to set a stable DOM id.
+   */
+  label?: string;
+  /**
+   * True when this section originated from a starred LaTeX sectioning command
+   * (e.g. \section*{...}). Starred sections should be treated as unnumbered by preview renderers.
+   */
+  starred?: boolean;
   children: IrNode[];
 }
 
 export interface ParagraphNode extends BaseNode {
   type: 'paragraph';
   text: string;
+  /**
+   * Optional styling hints for renderers. This is intentionally small + generic to avoid
+   * exploding IR node types for every LaTeX/XMD visual construct.
+   */
+  style?: TextStyle;
+  /**
+   * Optional inline style ranges within `text` (character offsets in the stored string).
+   * This reuses `TextStyle` but is separate from `style` since inline styling is span-based.
+   * Not all renderers support this yet.
+   */
+  inlineStyles?: Array<{ from: number; to: number; style: TextStyle }>;
+}
+
+/**
+ * Minimal, cross-format styling hints for text blocks/spans.
+ * Keep this very small + whitelist-like.
+ */
+export interface TextStyle {
+  align?: 'left' | 'center' | 'right' | 'justify';
+  color?: string; // CSS color name or #RRGGBB
+  size?: 'small' | 'normal' | 'large';
 }
 
 export interface ListNode extends BaseNode {
@@ -94,6 +131,10 @@ export interface CodeBlockNode extends BaseNode {
 export interface MathBlockNode extends BaseNode {
   type: 'math_block';
   latex: string;
+  /**
+   * Optional LaTeX label (e.g. "eq:attention") for linking via \eqref/\ref.
+   */
+  label?: string;
 }
 
 export interface FigureNode extends BaseNode {
@@ -127,8 +168,25 @@ export interface TableNode extends BaseNode {
   type: 'table';
   caption?: string;
   label?: string;
-  header: string[];
-  rows: string[][];
+
+  /**
+   * Semantic table model (preferred).
+   * This is what downstream reasoning/SG should consume.
+   */
+  schema?: TableSemanticSchema;
+  data?: TableSemanticData;
+  /**
+   * Optional layout model (presentation-only).
+   * Used for spans/rules in renderers and LaTeX round-trips.
+   */
+  layout?: TableLayout;
+
+  /**
+   * Legacy table model (kept for backward compatibility while we migrate).
+   * Prefer `schema` + `data`.
+   */
+  header?: string[];
+  rows?: string[][];
   /**
    * Optional per-column alignment, derived from the table colSpec line (L/C/R).
    * If absent, consumers should treat columns as left-aligned.
@@ -149,6 +207,57 @@ export interface TableNode extends BaseNode {
    */
   style?: TableStyle;
 }
+
+export interface TableSemanticSchema {
+  columns: Array<{
+    id: string;
+    name?: string;
+    kind?: 'text' | 'number' | 'percent' | 'score' | 'bool' | 'id' | 'other';
+    unit?: string;
+    role?: 'key' | 'metric' | 'group' | 'note' | 'other';
+  }>;
+}
+
+export interface TableSemanticData {
+  rows: Array<{
+    id: string;
+    /**
+     * Cell text by column id. Values are raw strings (may contain inline math tokens).
+     */
+    cells: Record<string, string>;
+  }>;
+}
+
+export interface TableLayout {
+  /**
+   * Optional layout header rows (supports multi-row headers / column spanners).
+   */
+  header?: TableLayoutRow[];
+  /**
+   * Optional layout body rows (supports multirow/multicolumn at render time).
+   */
+  body?: TableLayoutRow[];
+}
+
+export interface TableLayoutRow {
+  cells: TableLayoutCell[];
+}
+
+export type TableLayoutCell =
+  | {
+      kind: 'ref';
+      columnIds: string[];
+      colSpan?: number;
+      rowSpan?: number;
+      ref: { rowId: string; columnId: string };
+    }
+  | {
+      kind: 'synthetic';
+      columnIds: string[];
+      colSpan?: number;
+      rowSpan?: number;
+      text: string;
+    };
 
 export interface GridCell {
   children: IrNode[];
@@ -207,6 +316,7 @@ export type IrNode =
   | DocumentTitleNode
   | DocumentAuthorNode
   | DocumentDateNode
+  | AbstractNode
   | SectionNode
   | ParagraphNode
   | ListNode
