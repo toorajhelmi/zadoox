@@ -729,9 +729,11 @@ export function MarkdownPreview({ content, htmlOverride, latexDocId, katexMacros
         try {
           const macros = katexMacros && Object.keys(katexMacros).length > 0 ? katexMacros : undefined;
           if (render) {
-            render(tex, el, { throwOnError: false, displayMode, strict: 'ignore', ...(macros ? { macros } : null) });
+            // Never spread `null` here: some builds transpile spreads into Object.assign(..., null) which throws,
+            // breaking math rendering (and can cascade into other preview passes appearing "broken").
+            render(tex, el, { throwOnError: false, displayMode, strict: 'ignore', ...(macros ? { macros } : {}) });
           } else if (renderToString) {
-            el.innerHTML = renderToString(tex, { throwOnError: false, displayMode, strict: 'ignore', ...(macros ? { macros } : null) });
+            el.innerHTML = renderToString(tex, { throwOnError: false, displayMode, strict: 'ignore', ...(macros ? { macros } : {}) });
           }
           if (!el.getAttribute('data-zx-math-raw')) {
             el.setAttribute('data-zx-math-raw', String(raw));
