@@ -1109,6 +1109,10 @@ Instead, add 1–3 child KPs that elaborate the pinned KP and connect them with 
 Hard requirement for pinned KPs:
 - If UI PINNED KPs is non-empty and you add any new KPs that are responses (e.g., research, examples, details), you MUST emit at least one rel="elaborates" edge
   from a pinned parent label to each such child (parent -> child). Use exact labels.
+Multi-pinned shared-parent rule:
+- If UI PINNED KPs contains 2+ items, interpret whether the latest user message is asking a SHARED question across the selected items (e.g., "across these", "compare", "common themes", "tradeoffs", "how do these relate", "intersection", "both/all").
+  - If SHARED: every newly added child KP that answers the question MUST have an incoming rel="elaborates" edge from EACH pinned parent label (multiple parents allowed).
+  - If NOT shared (the question clearly applies to one pinned item only): attach new child KPs only to the most relevant pinned parent (do NOT force multiple parents).
 Directionality for edges:
 - For rel="elaborates": srcLabel = parent (more general), dstLabel = child (more specific).
 - For rel="supports": srcLabel supports dstLabel (evidence/argument -> claim).
