@@ -453,6 +453,64 @@ export const api = {
       },
     },
 
+    conception: {
+      chat: async (request: {
+        message: string;
+        action: unknown;
+        dr: unknown;
+        model?: 'openai' | 'auto';
+      }): Promise<{ assistantText: string }> => {
+        const response = await fetchApi<{ assistantText: string }>('/ai/conception/chat', {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+        if (!response.data) {
+          throw new ApiError('Failed to process conception chat', 'CONCEPTION_CHAT_FAILED', 500);
+        }
+        return response.data;
+      },
+
+      extractIg: async (request: { message: string; dr: unknown; model?: 'openai' | 'auto' }): Promise<{ nodes: unknown[]; edges: unknown[] }> => {
+        const response = await fetchApi<{ nodes: unknown[]; edges: unknown[] }>('/ai/conception/extract-ig', {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+        if (!response.data) {
+          throw new ApiError('Failed to extract IG', 'CONCEPTION_EXTRACT_IG_FAILED', 500);
+        }
+        return response.data;
+      },
+
+      twoStageStep: async (request: {
+        message: string;
+        dr: unknown;
+        model?: 'openai' | 'auto';
+      }): Promise<{ assistantText: string; stage: 'discovery' | 'conclusion'; convergenceScore: number; kps: unknown }> => {
+        const response = await fetchApi<{ assistantText: string; stage: 'discovery' | 'conclusion'; convergenceScore: number; kps: unknown }>(
+          '/ai/conception/two-stage/step',
+          {
+            method: 'POST',
+            body: JSON.stringify(request),
+          }
+        );
+        if (!response.data) {
+          throw new ApiError('Failed to run two-stage step', 'CONCEPTION_TWO_STAGE_FAILED', 500);
+        }
+        return response.data;
+      },
+
+      simulateUser: async (request: { dr: unknown; model?: 'openai' | 'auto' }): Promise<{ message: string }> => {
+        const response = await fetchApi<{ message: string }>('/ai/conception/two-stage/simulate-user', {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+        if (!response.data) {
+          throw new ApiError('Failed to simulate user message', 'CONCEPTION_SIM_USER_FAILED', 500);
+        }
+        return response.data;
+      },
+    },
+
     draft: {
       transform: async (request: DraftTransformRequest): Promise<DraftTransformResponse> => {
         const response = await fetchApi<DraftTransformResponse>('/ai/draft/transform', {

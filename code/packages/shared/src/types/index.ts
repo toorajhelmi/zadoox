@@ -8,6 +8,7 @@ export * from './document';
 export * from './api';
 export * from './version';
 export * from './editor';
+export * from './conception';
 export * from './semantic-graph';
 export * from './sg-template';
 export * from './block-graph';

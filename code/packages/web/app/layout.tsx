@@ -1,5 +1,6 @@
 import './globals.css';
 import 'katex/dist/katex.min.css';
+import 'reactflow/dist/style.css';
 
 export const metadata = {
   title: 'Zadoox',

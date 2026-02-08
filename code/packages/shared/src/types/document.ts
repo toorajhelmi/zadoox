@@ -48,6 +48,12 @@ export interface DocumentMetadata {
   xmdIrHash?: string;
   // Legacy/experimental field (kept for backward compatibility).
   irHashAtLastSync?: string;
+
+  /**
+   * Phase 18 (Conception): blank-page guided authoring state for Full‑AI mode.
+   * Stored in metadata for v0; may be promoted to a dedicated column later if it grows large.
+   */
+  conception?: import('./conception').ConceptionState;
 }
 
 /**

@@ -20,6 +20,9 @@ import { schemas, security } from '../../config/schemas.js';
 import { z } from 'zod';
 import { getAIService } from '../../services/ai/ai-service-singleton.js';
 
+// NOTE: We intentionally do NOT add server-side fallbacks/repairs for KPs.
+// This endpoint should be driven purely by the LLM output per user request.
+
 export async function aiRoutes(fastify: FastifyInstance) {
   // All routes require authentication
   fastify.addHook('preHandler', authenticateUser);
@@ -576,6 +579,668 @@ ${message.trim()}`
             code: 'INTERNAL_ERROR',
             message: errorMessage,
           },
+        };
+        return reply.status(500).send(response);
+      }
+    }
+  );
+
+  /**
+   * POST /api/v1/ai/conception/chat
+   * Conception chat endpoint (Full‑AI ideation)
+   *
+   * NOTE: Z's response must always come from the LLM (no rule-based responder).
+   * The client provides a compact dialogue representation (DR) + an action spec (DM decision).
+   */
+  fastify.post(
+    '/ai/conception/chat',
+    {
+      schema: {
+        description: 'Conception chat - ideation conversation for Full-AI mode',
+        tags: ['AI'],
+        security,
+        body: {
+          type: 'object',
+          required: ['action', 'dr', 'message'],
+          properties: {
+            message: { type: 'string' }, // raw user message (latest)
+            action: { type: 'object' }, // DM decision (opaque for now)
+            dr: { type: 'object' }, // dialogue representation (opaque JSON)
+            model: { type: 'string', enum: ['openai', 'auto'] },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              data: {
+                type: 'object',
+                properties: {
+                  assistantText: { type: 'string' },
+                },
+              },
+            },
+            required: ['success'],
+          },
+          400: schemas.ApiResponse,
+          500: schemas.ApiResponse,
+        },
+      },
+    },
+    async (request: AuthenticatedRequest, reply) => {
+      try {
+        const body = request.body as {
+          message: string;
+          action: unknown;
+          dr: unknown;
+          model?: AIModel;
+        };
+
+        const message = String(body.message ?? '').trim();
+        if (!message) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: 'Message is required' },
+          };
+          return reply.status(400).send(response);
+        }
+
+        const service = getAIService();
+
+        // The behavior policy below is included as overall guiding principles (not brittle heuristics).
+        const system = `You are Z, the Zadoox ideation agent.
+
+You are collaborating with a user to develop an idea for a document from a blank page.
+
+BEHAVIOR GUIDELINES (apply holistically; do not follow rigid turn-based scripts):
+- Listen-first early: encourage the user to talk; brief, non-salesy acknowledgements; ask a clarifying question only when it materially improves correctness or prevents drift.
+- Expert collaborator vibe: actively listen, help clarify, gently keep the ideation on track.
+- Earned directness later: as alignment builds, you may become more direct—sharpen framing, ask for differentiator/research questions, nudge toward approach/evaluation—without turning it into outline-writing.
+- One good question at a time: avoid interrogating; keep prompts lightweight (often 0–1 questions).
+- Do NOT echo or quote the user's text.
+- Avoid step/checklist language ("Step 1", "Next, fill in...").
+- Do not repeat questions once answered (use DR.dm asked/answered slots).
+- You are NOT writing the document yet. You are helping ideate and clarify.
+
+Output MUST be valid JSON: { "assistantText": string } (no extra keys).`;
+
+        const user = `DIALOGUE REPRESENTATION (DR):
+${JSON.stringify(body.dr ?? {}, null, 2)}
+
+DM ACTION SPEC:
+${JSON.stringify(body.action ?? {}, null, 2)}
+
+LATEST USER MESSAGE:
+${message}
+
+Respond as Z with one concise message that follows the DM action spec and the rules. Return ONLY the JSON object.`;
+
+        const raw = await service.chatJson({ system, user, temperature: 0.35 }, body.model);
+        const parsed = raw as { assistantText?: unknown };
+        const assistantText = typeof parsed?.assistantText === 'string' ? parsed.assistantText.trim() : '';
+        if (!assistantText) throw new Error('AI returned empty assistantText');
+
+        const response: ApiResponse<{ assistantText: string }> = {
+          success: true,
+          data: { assistantText },
+        };
+        return reply.send(response);
+      } catch (error: unknown) {
+        fastify.log.error(error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to process conception chat';
+        const response: ApiResponse<null> = {
+          success: false,
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: errorMessage,
+          },
+        };
+        return reply.status(500).send(response);
+      }
+    }
+  );
+
+  /**
+   * POST /api/v1/ai/conception/extract-ig
+   * Extract high-signal IdeaGraph updates from the latest user message.
+   *
+   * Goal: avoid “junk nodes” by extracting only core topics / questions / constraints that the user
+   * clearly signaled as important.
+   */
+  fastify.post(
+    '/ai/conception/extract-ig',
+    {
+      schema: {
+        description: 'Conception IG extraction - extract IdeaGraph nodes/edges from user message + DR',
+        tags: ['AI'],
+        security,
+        body: {
+          type: 'object',
+          required: ['message', 'dr'],
+          properties: {
+            message: { type: 'string' },
+            dr: { type: 'object' },
+            model: { type: 'string', enum: ['openai', 'auto'] },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              data: {
+                type: 'object',
+                properties: {
+                  nodes: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        label: { type: 'string' },
+                        state: { type: 'string' },
+                        confidence: { type: 'number' },
+                        facets: { type: 'array', items: { type: 'string' } },
+                      },
+                    },
+                  },
+                  edges: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        srcLabel: { type: 'string' },
+                        dstLabel: { type: 'string' },
+                        confidence: { type: 'number' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            required: ['success'],
+          },
+          400: schemas.ApiResponse,
+          500: schemas.ApiResponse,
+        },
+      },
+    },
+    async (request: AuthenticatedRequest, reply) => {
+      try {
+        const body = request.body as { message: string; dr: unknown; model?: AIModel };
+        const message = String(body.message ?? '').trim();
+        if (!message) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: 'Message is required' },
+          };
+          return reply.status(400).send(response);
+        }
+
+        const service = getAIService();
+        const system = `You are extracting a compact IdeaGraph update from a user's message during ideation.
+
+Your job is to extract ONLY high-signal items that the user clearly expressed or clearly cares about.
+
+Rules:
+- Prefer short gists (2–6 words) for labels. No full sentences.
+- Capture core topic(s), key question(s), constraints/assumptions, and explicit goals.
+- Do NOT invent details that are not implied by the user's words.
+- Do NOT return "junk" meta labels like: "idea", "discussion", "thoughts", "help", "question".
+
+Hard requirement:
+- If the latest user message contains any substantive topic (not just "hi/ok/thanks"), you MUST output at least ONE node for the main topic or main question.
+  If you're unsure, output exactly 1 node with state="topic" and confidence=0.55 using the clearest gist from the message.
+
+Examples:
+- Message: "I want to write about how ideas become tangible assets"
+  Nodes: [{label:"ideas → tangible assets", state:"topic", confidence:0.7, facets:[]}]
+- Message: "How do we prevent retrieval from breaking consistency?"
+  Nodes: [{label:"retrieval vs consistency", state:"question", confidence:0.7, facets:[]}]
+
+Return JSON only with this exact shape:
+{
+  "nodes": [
+    { "label": "...", "state": "topic|question|constraint|assumption|hypothesis|requirement|example", "confidence": 0.0-1.0, "facets": ["..."] }
+  ],
+  "edges": [
+    { "srcLabel": "...", "dstLabel": "...", "confidence": 0.0-1.0 }
+  ]
+}`;
+
+        const user = `DR (context, may help avoid repeats):
+${JSON.stringify(body.dr ?? {}, null, 2)}
+
+LATEST USER MESSAGE:
+${message}
+
+Extract IdeaGraph updates. Return ONLY the JSON.`;
+
+        const ExtractIG = z.object({
+          nodes: z
+            .array(
+              z.object({
+                label: z.string().min(1),
+                state: z.string().min(1),
+                confidence: z.number().min(0).max(1),
+                facets: z.array(z.string()).optional().default([]),
+              })
+            )
+            .default([]),
+          edges: z
+            .array(
+              z.object({
+                srcLabel: z.string().min(1),
+                dstLabel: z.string().min(1),
+                confidence: z.number().min(0).max(1),
+              })
+            )
+            .default([]),
+        });
+
+        const raw = await service.chatJson({ system, user, temperature: 0.2 }, body.model);
+        const parsed = ExtractIG.parse(raw);
+        const nodes = parsed.nodes;
+        const edges = parsed.edges;
+
+        const response: ApiResponse<{ nodes: unknown[]; edges: unknown[] }> = {
+          success: true,
+          data: { nodes, edges },
+        };
+        return reply.send(response);
+      } catch (error: unknown) {
+        fastify.log.error(error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to extract IG';
+        const response: ApiResponse<null> = {
+          success: false,
+          error: { code: 'INTERNAL_ERROR', message: errorMessage },
+        };
+        return reply.status(500).send(response);
+      }
+    }
+  );
+
+  /**
+   * POST /api/v1/ai/conception/two-stage/step
+   * Two-stage ideation agent:
+   * - stage controller (Discovery <-> Conclusion) with a convergence score
+   * - scribe extracts Key Points (KPs) into the IdeaGraph with evidence pointers
+   */
+  fastify.post(
+    '/ai/conception/two-stage/step',
+    {
+      schema: {
+        description: 'Conception two-stage step - returns assistant text + stage + KP/IG deltas',
+        tags: ['AI'],
+        security,
+        body: {
+          type: 'object',
+          required: ['message', 'dr'],
+          properties: {
+            message: { type: 'string' },
+            dr: { type: 'object' },
+            model: { type: 'string', enum: ['openai', 'auto'] },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              data: {
+                type: 'object',
+                properties: {
+                  assistantText: { type: 'string' },
+                  stage: { type: 'string', enum: ['discovery', 'conclusion'] },
+                  convergenceScore: { type: 'number' },
+                  kps: {
+                    type: 'object',
+                    properties: {
+                      add: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            label: { type: 'string' },
+                            kpType: { type: 'string' },
+                            status: { type: 'string' },
+                            confidence: { type: 'number' },
+                            facets: { type: 'array', items: { type: 'string' } },
+                            evidenceTurnIds: { type: 'array', items: { type: 'string' } },
+                          },
+                        },
+                      },
+                      strengthen: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            label: { type: 'string' },
+                            confidenceDelta: { type: 'number' },
+                            evidenceTurnIds: { type: 'array', items: { type: 'string' } },
+                          },
+                        },
+                      },
+                      supersede: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            oldLabel: { type: 'string' },
+                            newLabel: { type: 'string' },
+                            evidenceTurnIds: { type: 'array', items: { type: 'string' } },
+                          },
+                        },
+                      },
+                      edges: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            srcLabel: { type: 'string' },
+                            dstLabel: { type: 'string' },
+                            rel: { type: 'string' },
+                            status: { type: 'string' },
+                            confidence: { type: 'number' },
+                            evidenceTurnIds: { type: 'array', items: { type: 'string' } },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            required: ['success'],
+          },
+          400: schemas.ApiResponse,
+          500: schemas.ApiResponse,
+        },
+      },
+    },
+    async (request: AuthenticatedRequest, reply) => {
+      try {
+        const body = request.body as { message: string; dr: unknown; model?: AIModel };
+        const message = String(body.message ?? '').trim();
+        if (!message) {
+          const response: ApiResponse<null> = {
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: 'Message is required' },
+          };
+          return reply.status(400).send(response);
+        }
+
+        const service = getAIService();
+
+        // (1) Dialogue management (DM): stage controller + assistant response.
+        // IMPORTANT: DM is separate from Key Point extraction.
+        const dmSystem = `You are Z, the Zadoox ideation agent for article-like documents.
+
+You must run TWO coupled processes per turn:
+1) Stage controller: choose stage = Discovery or Conclusion, and update convergenceScore in [0,1].
+   - Discovery: maximize idea throughput without interrogating; suggest angles; optional forks; 0-1 questions max.
+   - Conclusion: shape toward a document; be more direct; ask only missing material questions; 0-2 questions max.
+   - This is NOT time-based. Use conversational signals (decisive language, novelty rate drops, outline/summary requests, adoption of synthesis).
+   - Allow reversals (if user explores new branches, shift toward Discovery).
+
+Behavior rules:
+- Do NOT expose mechanics ("should I save X?").
+- Do NOT echo/quote the user.
+- Avoid checklist tone.
+
+Return ONLY valid JSON with this exact shape:
+{
+  "assistantText": string,
+  "stage": "discovery"|"conclusion",
+  "convergenceScore": number
+}
+`;
+
+        const dmUser = `DR (recent transcript + current KPs, may include uiPinnedKps with explicit references):
+${JSON.stringify(body.dr ?? {}, null, 2)}
+
+LATEST USER MESSAGE:
+${message}
+
+Produce the JSON response.`;
+
+        const DMResponse = z.object({
+          assistantText: z.string().min(1),
+          stage: z.enum(['discovery', 'conclusion']),
+          convergenceScore: z.number().min(0).max(1),
+        });
+
+        const dmRaw = await service.chatJson({ system: dmSystem, user: dmUser, temperature: 0.35 }, body.model);
+        const dm = DMResponse.parse(dmRaw);
+
+        const assistantText = dm.assistantText.trim();
+        const stage = dm.stage;
+        const convergenceScore = dm.convergenceScore;
+
+        // (2) Key Point extraction (stage-agnostic): extract KPs from the turns (including the new assistant turn).
+        const drAny = (body.dr ?? {}) as any;
+        const lastTurns = Array.isArray(drAny?.lastTurns) ? drAny.lastTurns : [];
+        const kpTurns = [
+          ...lastTurns,
+          { id: 't-assistant-latest', role: 'assistant', content: assistantText },
+        ];
+
+        const kpSystem = `You are a Key Point extractor for an ideation chat.
+
+Extract Key Points (KPs) from the dialogue turns. KPs do NOT depend on dialogue stage.
+
+Rules:
+- Labels should be meaningful short sentences/claims/questions when possible (aim 6–14 words). Avoid tiny fragments unless the input is tiny.
+- Prefer capturing: core topic(s), goals, constraints, questions, approaches, and concrete proposed angles.
+- If a turn contains multiple distinct concrete items (examples, named methods/tech, enumerations), split them into multiple KPs rather than one generic KP.
+- Tag provenance with facets:
+  - User-origin KPs MUST include "src:user"
+  - Assistant-origin KPs MUST include "src:assistant"
+- Mark user-origin KPs as "accepted" only when the user clearly asserts/adopts them; otherwise "proposed".
+- Assistant-origin KPs should usually be "proposed" (unless the user explicitly adopts them later).
+- Every KP and edge MUST include evidenceTurnIds. Use the most relevant turn id(s) from the provided turns.
+- Output multiple KPs when the turns contain multiple clear signals (typically 2–6).
+- RELATIONS: when a new KP clearly relates to existing KPs, add edges to connect them using rel in:
+  supports | depends_on | contrasts_with | elaborates
+  If the user responds *about* a prior KP, add an edge from the new KP to that prior KP (usually elaborates/supports).
+- Edge confidence: if you emit an edge, set confidence in [0.55, 0.85] depending on how explicit the relation is.
+
+Hard requirements:
+- If you output 2+ KPs in add, you MUST emit at least 1 edge in edges linking two KPs (use the most obvious relation).
+- Use srcLabel/dstLabel that match the exact label text of KPs (either from EXISTING KP LABELS or from your add list). Do not invent new labels only for edges.
+- If the provided turns include an assistant turn with substantive content, you MUST include at least 1 "src:assistant" proposed KP derived from it.
+- If the latest assistant turn is substantive and contains 2+ distinct concrete details (e.g., "AI", "big data analytics", "collaborative platforms", examples, specific mechanisms),
+  you MUST output at least 2 assistant-origin KPs (src:assistant) capturing those distinct details (not one generic umbrella).
+ - Content-driven granularity (IMPORTANT): Create ONE assistant-origin KP per distinct concrete item/mechanism/example mentioned in the latest assistant turn.
+   - If the assistant mentions multiple tools/technologies (e.g., AI, data analytics, collaboration platforms), each should become its own KP (unless two are truly inseparable in the text).
+   - If the assistant gives an explicit mechanism ("by providing insights into consumer behavior"), extract that mechanism as its own KP.
+   - Do NOT collapse multiple distinct items into an umbrella label like "Research on X" when the paragraph contains multiple concrete claims.
+ - Avoid generic prefixes in labels (unless the text is actually generic): do NOT start every assistant KP with "Research on" / "Exploring" / "Analyzing". Prefer the actual claim.
+ - Evidence IDs: Any KP derived from the latest assistant turn MUST include "t-assistant-latest" in evidenceTurnIds.
+
+Example (illustrative only — do not copy text verbatim):
+Assistant says: "AI and data analytics can spark new ideas by identifying market trends. Open innovation platforms enable collaboration and idea sharing."
+Expected assistant KPs reflect each distinct concrete item/mechanism, e.g.:
+- "AI can inspire ideas by surfacing emerging market trends"
+- "Data analytics reveals consumer behavior to guide ideation"
+- "Open innovation platforms enable collaboration and idea sharing"
+and at least one edge connecting them (often elaborates/supports).
+
+Return ONLY JSON with this exact shape:
+{
+  "add": [{ "label": string, "kpType": string, "status": "accepted"|"proposed", "confidence": number, "facets": string[], "evidenceTurnIds": string[] }],
+  "strengthen": [{ "label": string, "confidenceDelta": number, "evidenceTurnIds": string[] }],
+  "supersede": [{ "oldLabel": string, "newLabel": string, "evidenceTurnIds": string[] }],
+  "edges": [{ "srcLabel": string, "dstLabel": string, "rel": "supports"|"depends_on"|"contrasts_with"|"elaborates", "status": "accepted"|"proposed", "confidence": number, "evidenceTurnIds": string[] }]
+}`;
+
+        const existingLabels =
+          Array.isArray((drAny as any)?.ideaGraph?.nodes) ? (drAny as any).ideaGraph.nodes.map((n: any) => String(n?.label ?? '').trim()).filter(Boolean) : [];
+
+        const uiPinnedKps =
+          Array.isArray((drAny as any)?.uiPinnedKps)
+            ? (drAny as any).uiPinnedKps
+                .map((x: any) => ({
+                  id: String(x?.id ?? '').trim(),
+                  label: String(x?.label ?? '').trim(),
+                }))
+                .filter((x: any) => x.id && x.label)
+                .slice(0, 6)
+            : [];
+
+        const kpUser = `EXISTING KP LABELS (if any):
+${JSON.stringify(existingLabels.slice(0, 60), null, 2)}
+
+UI PINNED KPs (explicit references from the chat composer, if any):
+${JSON.stringify(uiPinnedKps, null, 2)}
+
+TURNS (most recent last):
+${JSON.stringify(kpTurns, null, 2)}
+
+NOTE: The DR may include uiPinnedKps (explicit user-selected references). If present, treat those as the intended targets of "this/that/the selected item",
+and prefer emitting edges that connect new KPs to those pinned KPs when relevant.
+When uiPinnedKps is present and the latest user turn is discussing that referenced KP, DO NOT create a brand-new unrelated root topic.
+Instead, add 1–3 child KPs that elaborate the pinned KP and connect them with rel="elaborates" (or supports/depends_on if more precise).
+Hard requirement for pinned KPs:
+- If UI PINNED KPs is non-empty and you add any new KPs that are responses (e.g., research, examples, details), you MUST emit at least one rel="elaborates" edge
+  from a pinned parent label to each such child (parent -> child). Use exact labels.
+Directionality for edges:
+- For rel="elaborates": srcLabel = parent (more general), dstLabel = child (more specific).
+- For rel="supports": srcLabel supports dstLabel (evidence/argument -> claim).
+- For rel="depends_on": srcLabel depends on dstLabel (thing -> prerequisite).
+
+Extract KPs from these turns. Return ONLY the JSON.`;
+
+        const KP = z.object({
+          add: z.array(
+            z.object({
+              label: z.string().min(1),
+              kpType: z.string().min(1),
+              status: z.enum(['accepted', 'proposed']),
+              confidence: z.number().min(0).max(1),
+              facets: z.array(z.string()).default([]),
+              evidenceTurnIds: z.array(z.string()).min(1),
+            })
+          ),
+          strengthen: z.array(z.any()).default([]),
+          supersede: z.array(z.any()).default([]),
+          edges: z
+            .array(
+              z.object({
+                srcLabel: z.string().min(1),
+                dstLabel: z.string().min(1),
+                rel: z.enum(['supports', 'depends_on', 'contrasts_with', 'elaborates']),
+                status: z.enum(['accepted', 'proposed']),
+                confidence: z.number().min(0).max(1),
+                evidenceTurnIds: z.array(z.string()).min(1),
+              })
+            )
+            .default([]),
+        });
+
+        const kpRaw = await service.chatJson({ system: kpSystem, user: kpUser, temperature: 0.25 }, body.model);
+        const kps = KP.parse(kpRaw);
+
+        const response: ApiResponse<{ assistantText: string; stage: 'discovery' | 'conclusion'; convergenceScore: number; kps: unknown }> = {
+          success: true,
+          data: { assistantText, stage, convergenceScore, kps },
+        };
+        return reply.send(response);
+      } catch (error: unknown) {
+        fastify.log.error(error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to process two-stage step';
+        const response: ApiResponse<null> = {
+          success: false,
+          error: { code: 'INTERNAL_ERROR', message: errorMessage },
+        };
+        return reply.status(500).send(response);
+      }
+    }
+  );
+
+  /**
+   * POST /api/v1/ai/conception/two-stage/simulate-user
+   * Generate a simulated USER message (for the Sim button).
+   *
+   * The simulator should:
+   * - be consistent with the conversation so far
+   * - usually answer the last assistant question if one was asked
+   * - occasionally introduce a small new detail, but not derail the thread
+   */
+  fastify.post(
+    '/ai/conception/two-stage/simulate-user',
+    {
+      schema: {
+        description: 'Conception two-stage simulate user - generate next user message',
+        tags: ['AI'],
+        security,
+        body: {
+          type: 'object',
+          required: ['dr'],
+          properties: {
+            dr: { type: 'object' },
+            model: { type: 'string', enum: ['openai', 'auto'] },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              data: {
+                type: 'object',
+                properties: {
+                  message: { type: 'string' },
+                },
+              },
+            },
+            required: ['success'],
+          },
+          400: schemas.ApiResponse,
+          500: schemas.ApiResponse,
+        },
+      },
+    },
+    async (request: AuthenticatedRequest, reply) => {
+      try {
+        const body = request.body as { dr: unknown; model?: AIModel };
+        const service = getAIService();
+
+        const system = `You are simulating the USER in an ideation chat with an assistant named Z.
+
+Goal: produce ONE realistic next user message that continues the conversation naturally.
+
+Rules:
+- Do NOT mention that you are simulated.
+- Keep it 1–3 sentences.
+- If Z asked a direct question most recently, answer it.
+- Otherwise, add one concrete detail or preference that advances the ideation.
+- Do not derail into a new unrelated topic.
+- No meta-commentary about prompts, LLMs, or the system.
+
+Return ONLY JSON: { "message": string }`;
+
+        const user = `DIALOGUE REPRESENTATION (DR):
+${JSON.stringify(body.dr ?? {}, null, 2)}
+
+Generate the next user message as JSON only.`;
+
+        const raw = await service.chatJson({ system, user, temperature: 0.6 }, body.model);
+        const parsed = raw as { message?: unknown };
+        const message = typeof parsed?.message === 'string' ? parsed.message.trim() : '';
+        if (!message) throw new Error('AI returned empty simulated user message');
+
+        const response: ApiResponse<{ message: string }> = {
+          success: true,
+          data: { message },
+        };
+        return reply.send(response);
+      } catch (error: unknown) {
+        fastify.log.error(error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to simulate user message';
+        const response: ApiResponse<null> = {
+          success: false,
+          error: { code: 'INTERNAL_ERROR', message: errorMessage },
         };
         return reply.status(500).send(response);
       }
