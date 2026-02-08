@@ -125,10 +125,24 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const conception = conceptionFromMeta ?? fallbackConception;
   const isIdeation = Boolean(isFullAI && conception && conception.phase === 'ideation');
   const [kpInsertReq, setKpInsertReq] = useState<{ nonce: string; id: string; label: string } | null>(null);
+  const [kpInsertQueue, setKpInsertQueue] = useState<Array<{ id: string; label: string }>>([]);
+  const [ideationSelectedKps, setIdeationSelectedKps] = useState<Array<{ id: string; label: string }>>([]);
   useEffect(() => {
     // reset pending KP insert when switching documents
     setKpInsertReq(null);
+    setKpInsertQueue([]);
+    setIdeationSelectedKps([]);
   }, [documentId]);
+
+  // Process queued KP chip insertions sequentially (ChatPanel consumes one insertKpRef per nonce).
+  useEffect(() => {
+    if (kpInsertReq) return;
+    if (kpInsertQueue.length === 0) return;
+    const [head, ...rest] = kpInsertQueue;
+    setKpInsertQueue(rest);
+    setKpInsertReq({ nonce: crypto?.randomUUID?.() ?? String(Date.now()), id: head!.id, label: head!.label });
+    requestAnimationFrame(() => rightAiInputRef.current?.focus());
+  }, [kpInsertReq, kpInsertQueue]);
 
   useEffect(() => {
     // Auto-open once on load if this is a Full-AI project (or deep-link).
@@ -1111,9 +1125,16 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                     saveMetadataPatch({ conception: next }, changeType ?? 'ai-action');
                   }}
                   onPinKp={(kp) => {
-                    setKpInsertReq({ nonce: crypto?.randomUUID?.() ?? String(Date.now()), id: kp.id, label: kp.label });
-                    requestAnimationFrame(() => rightAiInputRef.current?.focus());
+                    setKpInsertQueue((prev) => [...prev, { id: kp.id, label: kp.label }]);
                   }}
+                  onSelectionKpsChange={(kps) =>
+                    setIdeationSelectedKps((prev) => {
+                      const a = prev ?? [];
+                      const b = kps ?? [];
+                      if (a.length === b.length && a.every((x, i) => x.id === b[i]?.id && x.label === b[i]?.label)) return prev;
+                      return b;
+                    })
+                  }
                 />
               ) : (
                 <ActiveEditorSurface
@@ -1290,6 +1311,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             inputRef={rightAiInputRef}
             semanticGraph={semanticGraph ?? null}
             conception={conception}
+            contextPinnedKps={isIdeation ? ideationSelectedKps : []}
             onSaveConception={(next, changeType) => {
               saveMetadataPatch({ conception: next }, changeType ?? 'auto-save');
             }}

@@ -943,6 +943,7 @@ Extract IdeaGraph updates. Return ONLY the JSON.`;
                             status: { type: 'string' },
                             confidence: { type: 'number' },
                             evidenceTurnIds: { type: 'array', items: { type: 'string' } },
+                            facets: { type: 'array', items: { type: 'string' } },
                           },
                         },
                       },
@@ -1073,7 +1074,7 @@ Return ONLY JSON with this exact shape:
   "add": [{ "label": string, "kpType": string, "status": "accepted"|"proposed", "confidence": number, "facets": string[], "evidenceTurnIds": string[] }],
   "strengthen": [{ "label": string, "confidenceDelta": number, "evidenceTurnIds": string[] }],
   "supersede": [{ "oldLabel": string, "newLabel": string, "evidenceTurnIds": string[] }],
-  "edges": [{ "srcLabel": string, "dstLabel": string, "rel": "supports"|"depends_on"|"contrasts_with"|"elaborates", "status": "accepted"|"proposed", "confidence": number, "evidenceTurnIds": string[] }]
+  "edges": [{ "srcLabel": string, "dstLabel": string, "rel": "supports"|"depends_on"|"contrasts_with"|"elaborates", "status": "accepted"|"proposed", "confidence": number, "evidenceTurnIds": string[], "facets": string[] }]
 }`;
 
         const ideaGraph = isRecord(drAny.ideaGraph) ? drAny.ideaGraph : null;
@@ -1099,6 +1100,10 @@ ${JSON.stringify(existingLabels.slice(0, 60), null, 2)}
 UI PINNED KPs (explicit references from the chat composer, if any):
 ${JSON.stringify(uiPinnedKps, null, 2)}
 
+CONTEXT GROUP (if present): when the user selected 2+ KPs in the IdeaGraph UI, we create a group id for this message.
+If provided, you MUST create a synthetic GROUP node and attach new KPs under it.
+${JSON.stringify(isRecord(drAny.contextGroup) ? drAny.contextGroup : null, null, 2)}
+
 TURNS (most recent last):
 ${JSON.stringify(kpTurns, null, 2)}
 
@@ -1113,6 +1118,37 @@ Multi-pinned shared-parent rule:
 - If UI PINNED KPs contains 2+ items, interpret whether the latest user message is asking a SHARED question across the selected items (e.g., "across these", "compare", "common themes", "tradeoffs", "how do these relate", "intersection", "both/all").
   - If SHARED: every newly added child KP that answers the question MUST have an incoming rel="elaborates" edge from EACH pinned parent label (multiple parents allowed).
   - If NOT shared (the question clearly applies to one pinned item only): attach new child KPs only to the most relevant pinned parent (do NOT force multiple parents).
+Comparison-specific extraction:
+- If the user asks to "compare" / "contrast" / "commonalities" / "differences" across 2+ pinned KPs, prefer emitting KPs that explicitly encode:
+  - 1+ shared/common theme(s), and/or
+  - 1+ key difference(s) in mechanism/strengths/risks.
+  Avoid outputting only a rephrasing of a single pinned parent (that is not a comparison).
+
+Context Group (generic multi-anchor intent):
+- If CONTEXT GROUP is present (non-null) and has:
+  - id: string (group id like "g-...")
+  - anchorKps: [{id,label}...] with length >= 2
+  then you MUST:
+  1) Add EXACTLY ONE synthetic GROUP node in "add":
+     - label: a short title that reflects the user's intent over these anchors (e.g. "Compare: A ↔ B", "Synthesize: A + B", "Research: A & B", etc.)
+     - kpType: "group"
+     - status: "accepted"
+     - confidence: 0.85
+     - facets MUST include: "GROUP:context", "ctx:group:<id>", and "groupType:<inferred>" (e.g. groupType:compare|synthesize|research|plan|critique|decide|other)
+     - evidenceTurnIds MUST include the latest user turn id (from CONTEXT GROUP.latestUserTurnId if present; otherwise use the most relevant user turn id)
+  2) Add anchor -> group edges (one per anchor) in "edges":
+     - srcLabel = anchor label (must match an EXISTING KP label)
+     - dstLabel = group label (must match the group label you added)
+     - rel = "elaborates" (anchor -> group is a structural/context edge)
+     - facets MUST include: "ctx:group:<id>" and "REL:anchors"
+  3) For every NEW KP you add that responds to this message, you MUST:
+     - include facets: "ctx:group:<id>" and optionally "side:<anchorId>" when clearly about one anchor only
+     - add an edge group -> newKP with rel="elaborates" and facets include "ctx:group:<id>" and "REL:in_group"
+  4) Precedence rule (IMPORTANT): If CONTEXT GROUP is present, it overrides the multi-pinned shared-parent rule.
+     - Do NOT emit anchor -> child edges for newly added KPs (except anchor -> group).
+     - All newly added KPs should be children of the group via group -> child edges.
+     - You MAY optionally add anchor -> child edges ONLY if the user explicitly asks for per-anchor expansions *outside* the shared context (rare).
+  5) Do NOT scatter children under individual anchors when CONTEXT GROUP is present; group is the primary container.
 Directionality for edges:
 - For rel="elaborates": srcLabel = parent (more general), dstLabel = child (more specific).
 - For rel="supports": srcLabel supports dstLabel (evidence/argument -> claim).
@@ -1142,6 +1178,7 @@ Extract KPs from these turns. Return ONLY the JSON.`;
                 status: z.enum(['accepted', 'proposed']),
                 confidence: z.number().min(0).max(1),
                 evidenceTurnIds: z.array(z.string()).min(1),
+                facets: z.array(z.string()).optional(),
               })
             )
             .default([]),
@@ -1149,6 +1186,33 @@ Extract KPs from these turns. Return ONLY the JSON.`;
 
         const kpRaw = await service.chatJson({ system: kpSystem, user: kpUser, temperature: 0.25 }, body.model);
         const kps = KP.parse(kpRaw);
+
+        // Enforce Context Group structure: keep anchors->group and group->children; drop any anchor->child edges if model emits them.
+        const cg = isRecord(drAny.contextGroup) ? (drAny.contextGroup as Record<string, unknown>) : null;
+        const cgId = cg && typeof cg.id === 'string' ? cg.id.trim() : '';
+        const cgAnchors = cg && Array.isArray(cg.anchorKps) ? cg.anchorKps : [];
+        if (cgId && cgAnchors.length >= 2) {
+          const anchorLabels = new Set(
+            cgAnchors
+              .map((x) => (isRecord(x) ? String(x.label ?? '').trim() : ''))
+              .filter(Boolean)
+              .slice(0, 12)
+          );
+          const groupAdd = (kps.add ?? []).find((a) => Array.isArray(a.facets) && a.facets.includes('GROUP:context') && a.facets.some((f) => String(f).startsWith(`ctx:group:${cgId}`)));
+          const groupLabel = String(groupAdd?.label ?? '').trim();
+          if (groupLabel) {
+            kps.edges = (kps.edges ?? []).filter((e) => {
+              const src = String((e as { srcLabel?: unknown }).srcLabel ?? '').trim();
+              const dst = String((e as { dstLabel?: unknown }).dstLabel ?? '').trim();
+              if (!src || !dst) return true;
+              // Keep anchor -> group
+              if (anchorLabels.has(src) && dst === groupLabel) return true;
+              // Drop anchor -> anything else (prevents children being attached to anchors in group mode)
+              if (anchorLabels.has(src) && dst !== groupLabel) return false;
+              return true;
+            });
+          }
+        }
 
         const response: ApiResponse<{ assistantText: string; stage: 'discovery' | 'conclusion'; convergenceScore: number; kps: unknown }> = {
           success: true,

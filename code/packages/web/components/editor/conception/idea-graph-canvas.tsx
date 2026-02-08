@@ -1,14 +1,18 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { IdeaGraph } from '@zadoox/shared';
 import ReactFlow, {
+  applyNodeChanges,
   Background,
   Controls,
   Handle,
   MarkerType,
+  Panel,
   Position,
   ReactFlowProvider,
+  SelectionMode,
+  type NodeChange,
   type Edge,
   type Node,
   type NodeProps,
@@ -28,23 +32,30 @@ function relFromFacets(facets: unknown): string {
 type KpNodeData = {
   label: string;
   isAssistant: boolean;
+  multiSelectActive?: boolean;
+  isGroup?: boolean;
+  onSelect?: (opts: { additive: boolean }) => void;
   onInspect?: () => void;
   onAddToChat?: () => void;
   onDelete?: () => void;
 };
 
+const EMPTY_IDS: string[] = [];
+
 function KpNode(props: NodeProps<KpNodeData>) {
   const { data, selected } = props;
   const [hover, setHover] = useState(false);
   // Match chat bubble styling for Z (assistant) nodes.
+  // Context/analysis group nodes should look like user-origin KPs (purple), not a separate visual type.
   const fill = data.isAssistant ? '#1e1e1e' : 'rgba(168,85,247,0.18)';
   const stroke = data.isAssistant ? '#3e3e42' : 'rgba(168,85,247,0.75)';
+  const selectedRing = data.isAssistant ? 'rgba(229,229,229,0.22)' : 'rgba(233,213,255,0.30)';
   const showTooltip = hover && (data.label?.length ?? 0) > 34;
   return (
     <div
       style={{
         background: fill,
-        border: `1.5px solid ${stroke}`,
+        border: `${selected ? 2 : 1.5}px solid ${stroke}`,
         borderRadius: 10,
         padding: '10px 12px',
         minWidth: 220,
@@ -52,8 +63,16 @@ function KpNode(props: NodeProps<KpNodeData>) {
         color: data.isAssistant ? '#e5e5e5' : 'rgba(229,229,229,0.95)',
         fontSize: 12,
         lineHeight: 1.2,
-        boxShadow: selected ? '0 0 0 2px rgba(255,255,255,0.07)' : 'none',
+        // Make selection state unmistakable (especially during multi-select).
+        boxShadow: selected ? `0 0 0 3px ${selectedRing}, 0 10px 26px rgba(0,0,0,0.22)` : 'none',
         position: 'relative',
+      }}
+      onClick={(e) => {
+        // Support Cmd/Ctrl-click additive selection reliably (even when React Flow's internal
+        // click selection doesn't play well with controlled nodes).
+        e.stopPropagation();
+        const additive = Boolean((e as any).metaKey || (e as any).ctrlKey);
+        data.onSelect?.({ additive });
       }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
@@ -96,7 +115,7 @@ function KpNode(props: NodeProps<KpNodeData>) {
         </div>
       ) : null}
 
-      {selected ? (
+      {selected && !data.multiSelectActive ? (
         <div style={{ position: 'absolute', right: 8, top: -12, display: 'flex', gap: 6 }}>
           <button
             type="button"
@@ -142,24 +161,83 @@ function KpNode(props: NodeProps<KpNodeData>) {
 
 const nodeTypes = { kp: KpNode } as const;
 
-export function IdeaGraphCanvas(props: {
+function sameSortedIds(a: string[], b: string[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+function IdeaGraphCanvasInner(props: {
   ig: IdeaGraph | null | undefined;
-  selectedId?: string | null;
-  onSelectId?: (id: string | null) => void;
+  selectedIds?: string[] | null;
+  onSelectIds?: (ids: string[]) => void;
+  clearSelectionNonce?: number;
   onInspectSelected?: () => void;
   onAddSelectedToChat?: (kp: { id: string; label: string }) => void;
   onDeleteSelectedCascade?: (id: string) => void;
+  onDeleteSelectedManyCascade?: (ids: string[]) => void;
 }) {
   const ig = props.ig;
-  const selectedId = props.selectedId ?? null;
-  const onSelectId = props.onSelectId;
+  const selectedIds = props.selectedIds ?? EMPTY_IDS;
+  const onSelectIds = props.onSelectIds;
+  const clearSelectionNonce = Number(props.clearSelectionNonce ?? 0);
   const onInspectSelected = props.onInspectSelected;
   const onAddSelectedToChat = props.onAddSelectedToChat;
   const onDeleteSelectedCascade = props.onDeleteSelectedCascade;
+  const onDeleteSelectedManyCascade = props.onDeleteSelectedManyCascade;
   const [rfNodes, setRfNodes] = useState<Node<KpNodeData>[]>([]);
   const [rfEdges, setRfEdges] = useState<Edge[]>([]);
   const didFitRef = useRef(false);
   const rfInstanceRef = useRef<ReactFlowInstance | null>(null);
+  const lastSelectionKeyRef = useRef<string>(''); // last selection sent upward
+  const onSelectIdsRef = useRef<typeof onSelectIds>(onSelectIds);
+  const onInspectSelectedRef = useRef<typeof onInspectSelected>(onInspectSelected);
+  const onAddSelectedToChatRef = useRef<typeof onAddSelectedToChat>(onAddSelectedToChat);
+  const onDeleteSelectedCascadeRef = useRef<typeof onDeleteSelectedCascade>(onDeleteSelectedCascade);
+  const onDeleteSelectedManyCascadeRef = useRef<typeof onDeleteSelectedManyCascade>(onDeleteSelectedManyCascade);
+  useEffect(() => {
+    onSelectIdsRef.current = onSelectIds;
+    onInspectSelectedRef.current = onInspectSelected;
+    onAddSelectedToChatRef.current = onAddSelectedToChat;
+    onDeleteSelectedCascadeRef.current = onDeleteSelectedCascade;
+    onDeleteSelectedManyCascadeRef.current = onDeleteSelectedManyCascade;
+  }, [onSelectIds, onInspectSelected, onAddSelectedToChat, onDeleteSelectedCascade, onDeleteSelectedManyCascade]);
+
+  const propagateSelection = useCallback((nodes: Array<Node<KpNodeData>>) => {
+    const ids = nodes
+      .filter((n) => Boolean(n.selected))
+      .map((n) => n.id)
+      .filter(Boolean)
+      .sort();
+    const key = ids.join('|');
+    if (key === lastSelectionKeyRef.current) return;
+    lastSelectionKeyRef.current = key;
+    onSelectIdsRef.current?.(ids);
+  }, []);
+
+  const applySelection = useCallback(
+    (nodeId: string, opts: { additive: boolean }) => {
+      setRfNodes((prev) => {
+        let next = prev;
+        if (opts.additive) {
+          next = prev.map((n) => (n.id === nodeId ? { ...n, selected: !n.selected } : n));
+        } else {
+          next = prev.map((n) => ({ ...n, selected: n.id === nodeId }));
+        }
+        const selCount = next.filter((n) => Boolean(n.selected)).length;
+        const multi = selCount > 1;
+        next = next.map((n) => {
+          const cur = (n.data as KpNodeData | undefined)?.multiSelectActive ?? false;
+          if (cur === multi) return n;
+          return { ...n, data: { ...(n.data as KpNodeData), multiSelectActive: multi } };
+        });
+        propagateSelection(next);
+        return next;
+      });
+    },
+    [propagateSelection]
+  );
 
   // Per ideation.md: keep the *visible* graph conservative and high-trust.
   // Proposed nodes/edges remain in state; hide only low-confidence noise by default.
@@ -189,6 +267,35 @@ export function IdeaGraphCanvas(props: {
     );
   }, [ig?.edges, visibleNodeIds]);
 
+  const selectedIdsLocal = useMemo(
+    () => rfNodes.filter((n) => Boolean(n.selected)).map((n) => n.id).filter(Boolean).sort(),
+    [rfNodes]
+  );
+  const selectedCountLocal = selectedIdsLocal.length;
+  const labelById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const n of visibleNodes) m.set(n.id, String(n.label ?? '').trim());
+    return m;
+  }, [visibleNodes]);
+
+  // Always keep parent selection in sync with what we render as selected.
+  // This is the most robust path with controlled nodes + box-select, and it does not create feedback loops
+  // because parent selection does not mutate `rfNodes`.
+  useEffect(() => {
+    propagateSelection(rfNodes);
+  }, [rfNodes, propagateSelection]);
+
+  // Explicit clear request from parent (e.g., bulk toolbar Clear).
+  useEffect(() => {
+    if (!clearSelectionNonce) return;
+    setRfNodes((prev) => {
+      if (!prev.some((n) => n.selected)) return prev;
+      return prev.map((n) => (n.selected ? { ...n, selected: false, data: { ...(n.data as KpNodeData), multiSelectActive: false } } : n));
+    });
+    // Also reset lastSelectionKey so we propagate the cleared selection.
+    lastSelectionKeyRef.current = '';
+  }, [clearSelectionNonce]);
+
   // Build React Flow nodes/edges and run ELK layout whenever graph changes.
   // IMPORTANT: this hook must run unconditionally (no early returns before it) to avoid hook-order crashes.
   useEffect(() => {
@@ -211,6 +318,7 @@ export function IdeaGraphCanvas(props: {
     const rfN: Node<KpNodeData>[] = visibleNodes.map((n) => {
       const facets = Array.isArray(n.facets) ? n.facets.map(String) : [];
       const isAssistant = facets.includes('src:assistant');
+      const isGroup = facets.includes('GROUP:context');
       const label = String(n.label ?? '').trim();
       return {
         id: n.id,
@@ -219,16 +327,21 @@ export function IdeaGraphCanvas(props: {
         data: {
           label,
           isAssistant,
-          onInspect: () => onInspectSelected?.(),
+          isGroup,
+          multiSelectActive: false,
+          onSelect: (opts) => applySelection(n.id, opts),
+          onInspect: () => {
+            onSelectIdsRef.current?.([n.id]);
+            onInspectSelectedRef.current?.();
+          },
           onAddToChat: () => {
             if (!label) return;
-            onAddSelectedToChat?.({ id: n.id, label });
+            onAddSelectedToChatRef.current?.({ id: n.id, label });
           },
           onDelete: () => {
-            onDeleteSelectedCascade?.(n.id);
+            onDeleteSelectedCascadeRef.current?.(n.id);
           },
         },
-        selected: selectedId === n.id,
       };
     });
 
@@ -287,7 +400,7 @@ export function IdeaGraphCanvas(props: {
     return () => {
       cancelled = true;
     };
-  }, [ig, visibleNodes, visibleEdges, selectedId, onInspectSelected, onAddSelectedToChat, onDeleteSelectedCascade]);
+  }, [ig, visibleNodes, visibleEdges, applySelection]);
 
   if (!ig) {
     return (
@@ -324,29 +437,141 @@ export function IdeaGraphCanvas(props: {
         inst.zoomTo(nextZoom, { duration: 0 });
       }}
     >
-      <ReactFlowProvider>
-        <ReactFlow
-          nodes={rfNodes}
-          edges={rfEdges}
-          nodeTypes={nodeTypes}
-          fitView={!didFitRef.current}
-          onInit={(inst) => {
-            didFitRef.current = true;
-            rfInstanceRef.current = inst;
-          }}
-          onPaneClick={() => onSelectId?.(null)}
-          onNodeClick={(_evt, node) => onSelectId?.(node.id)}
-          proOptions={{ hideAttribution: true }}
-          panOnScroll
-          zoomOnScroll={false}
-          zoomOnPinch
-          zoomOnDoubleClick={false}
-        >
-          <Background color="rgba(255,255,255,0.04)" gap={18} />
-          <Controls />
-        </ReactFlow>
-      </ReactFlowProvider>
+      <ReactFlow
+        nodes={rfNodes}
+        edges={rfEdges}
+        nodeTypes={nodeTypes}
+        fitView={!didFitRef.current}
+        onInit={(inst) => {
+          didFitRef.current = true;
+          rfInstanceRef.current = inst;
+        }}
+        onPaneClick={() => {
+          setRfNodes((prev) => {
+            const next = prev.map((n) =>
+              n.selected ? { ...n, selected: false, data: { ...(n.data as KpNodeData), multiSelectActive: false } } : n
+            );
+            // Ensure parent selection state updates immediately.
+            propagateSelection(next);
+            return next;
+          });
+        }}
+        onNodesChange={(changes: NodeChange[]) => {
+          // React Flow selection (including box-select) updates nodes via onNodesChange.
+          // Since we pass controlled `nodes`, we must apply these changes for selection to work.
+          setRfNodes((prev) => {
+            const next = applyNodeChanges(changes, prev);
+            const selCount = next.filter((n) => Boolean(n.selected)).length;
+            const multi = selCount > 1;
+            let changed = false;
+            const next2 = next.map((n) => {
+              const cur = (n.data as KpNodeData | undefined)?.multiSelectActive ?? false;
+              if (cur === multi) return n;
+              changed = true;
+              return { ...n, data: { ...(n.data as KpNodeData), multiSelectActive: multi } };
+            });
+            const out = changed ? next2 : next;
+            propagateSelection(out);
+            return out;
+          });
+        }}
+        onSelectionChange={(sel) => {
+          // Some React Flow versions do not always emit selection changes via onNodesChange
+          // in a way that updates our controlled `nodes`. Use this as an additional signal
+          // to keep the parent bulk-toolbar selection in sync with what the user sees.
+          const ids = (sel.nodes ?? []).map((n) => n.id).filter(Boolean).sort();
+          const key = ids.join('|');
+          if (key === lastSelectionKeyRef.current) return;
+          lastSelectionKeyRef.current = key;
+          onSelectIdsRef.current?.(ids);
+        }}
+        proOptions={{ hideAttribution: true }}
+        panOnScroll
+        // Enable box selection (drag rectangle on the pane). Keep panning available on middle/right mouse.
+        selectionOnDrag
+        selectionMode={SelectionMode.Partial}
+        panOnDrag={[1, 2]}
+        zoomOnScroll={false}
+        zoomOnPinch
+        zoomOnDoubleClick={false}
+        nodesDraggable={false}
+      >
+        {selectedCountLocal > 1 ? (
+          <Panel position="top-right">
+            <div className="flex items-center gap-2 rounded border border-[#3e3e42] bg-[#111111] px-2 py-1 shadow">
+              <div className="text-[10px] font-mono uppercase text-[#cccccc]">{selectedCountLocal} selected</div>
+              <button
+                type="button"
+                className="px-2 py-1 rounded border border-[#3e3e42] bg-[#111111] hover:bg-[#222222] text-[#bfe3ff] text-[10px] font-mono uppercase"
+                onClick={() => {
+                  for (const id of selectedIdsLocal) {
+                    const label = labelById.get(id) ?? '';
+                    if (!label) continue;
+                    onAddSelectedToChatRef.current?.({ id, label });
+                  }
+                }}
+                aria-label="Add all selected KPs to chat"
+                title="Add all selected to chat"
+              >
+                Add
+              </button>
+              <button
+                type="button"
+                className="px-2 py-1 rounded border border-[#3e3e42] bg-[#111111] hover:bg-[#222222] text-[#ffb4b4] text-[10px] font-mono uppercase"
+                onClick={() => {
+                  if (onDeleteSelectedManyCascadeRef.current) {
+                    onDeleteSelectedManyCascadeRef.current(selectedIdsLocal);
+                    return;
+                  }
+                  // Fallback: delete one-by-one (less ideal than a union delete).
+                  for (const id of selectedIdsLocal) onDeleteSelectedCascadeRef.current?.(id);
+                }}
+                aria-label="Delete all selected KPs (cascade)"
+                title="Delete all selected (cascade)"
+              >
+                Delete
+              </button>
+              <button
+                type="button"
+                className="px-2 py-1 rounded border border-[#3e3e42] bg-[#111111] hover:bg-[#222222] text-[#c5c5c5] text-[10px] font-mono uppercase"
+                onClick={() => {
+                  setRfNodes((prev) =>
+                    prev.map((n) => (n.selected ? { ...n, selected: false, data: { ...(n.data as KpNodeData), multiSelectActive: false } } : n))
+                  );
+                  lastSelectionKeyRef.current = '';
+                  onSelectIdsRef.current?.([]);
+                }}
+                aria-label="Clear selection"
+                title="Clear selection"
+              >
+                Clear
+              </button>
+            </div>
+          </Panel>
+        ) : null}
+        <Background color="rgba(255,255,255,0.04)" gap={18} />
+        <Controls />
+      </ReactFlow>
     </div>
+  );
+}
+
+export function IdeaGraphCanvas(props: {
+  ig: IdeaGraph | null | undefined;
+  selectedIds?: string[] | null;
+  onSelectIds?: (ids: string[]) => void;
+  clearSelectionNonce?: number;
+  onInspectSelected?: () => void;
+  onAddSelectedToChat?: (kp: { id: string; label: string }) => void;
+  onDeleteSelectedCascade?: (id: string) => void;
+  onDeleteSelectedManyCascade?: (ids: string[]) => void;
+}) {
+  // React Flow hooks (useStore/useReactFlow) require a provider ancestor.
+  // Wrap the inner canvas so hooks run under ReactFlowProvider.
+  return (
+    <ReactFlowProvider>
+      <IdeaGraphCanvasInner {...props} />
+    </ReactFlowProvider>
   );
 }
 

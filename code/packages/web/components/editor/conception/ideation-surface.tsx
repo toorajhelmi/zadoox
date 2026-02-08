@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ConceptionState } from '@zadoox/shared';
 import { IdeaGraphCanvas } from './idea-graph-canvas';
 import { IdeaGraphPropertiesPanel } from './idea-graph-properties-panel';
@@ -23,16 +23,45 @@ export function IdeationSurface(props: {
   conception: ConceptionState | undefined;
   onSaveConception: (next: ConceptionState, changeType?: 'auto-save' | 'ai-action') => void;
   onPinKp: (kp: { id: string; label: string }) => void;
+  onSelectionKpsChange?: (kps: Array<{ id: string; label: string }>) => void;
 }) {
-  const { conception, onSaveConception, onPinKp } = props;
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { conception, onSaveConception, onPinKp, onSelectionKpsChange } = props;
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [clearSelectionNonce, setClearSelectionNonce] = useState(0);
   const [propsMode, setPropsMode] = useState<'closed' | 'open' | 'minimized'>('closed');
+
+  const EMPTY_NODES: Array<{ id: string; label: string }> = [];
+  const ideaNodes = (conception?.ideaGraph?.nodes ?? EMPTY_NODES) as Array<{ id: string; label: string }>;
+  const byId = useMemo(() => new Map(ideaNodes.map((n) => [n.id, n])), [ideaNodes]);
+  const selectedIdsRef = useRef<string[]>([]);
+  useEffect(() => {
+    selectedIdsRef.current = selectedIds;
+  }, [selectedIds]);
+
+  const handleSelectIds = useCallback((ids: string[]) => {
+    const next = Array.from(new Set(ids)).filter(Boolean).sort();
+    const prev = selectedIdsRef.current;
+    if (prev.length === next.length && prev.every((x, i) => x === next[i])) return;
+    // Update ref immediately to avoid repeated identical setState during drag-select.
+    selectedIdsRef.current = next;
+    setSelectedIds(next);
+    if (onSelectionKpsChange) {
+      const kps = next
+        .map((id) => byId.get(id))
+        .filter(Boolean)
+        .map((n) => ({ id: n!.id, label: n!.label }));
+      onSelectionKpsChange(kps);
+    }
+    // Auto-close properties when switching away from single-select.
+    if (next.length !== 1) setPropsMode('closed');
+  }, [byId, onSelectionKpsChange]);
 
   useEffect(() => {
     // Reset local UI state when conception instance changes.
-    setSelectedId(null);
-    setPropsMode('closed');
-  }, [conception?.updatedAt]);
+    setSelectedIds((prev) => (prev.length === 0 ? prev : []));
+    setPropsMode((prev) => (prev === 'closed' ? prev : 'closed'));
+    onSelectionKpsChange?.([]);
+  }, [conception?.updatedAt, onSelectionKpsChange]);
 
   if (!conception) {
     return (
@@ -53,9 +82,32 @@ export function IdeationSurface(props: {
     };
     const next = { ...conception, ideaGraph: nextIg, updatedAt: new Date().toISOString() };
     onSaveConception(next, 'ai-action');
-    setSelectedId(null);
+    setSelectedIds([]);
+    setClearSelectionNonce((n) => n + 1);
     setPropsMode('closed');
   };
+
+  const handleDeleteCascadeMany = (rootIds: string[]) => {
+    const ig = conception.ideaGraph;
+    if (!ig) return;
+    const del = new Set<string>();
+    for (const id of rootIds) {
+      for (const x of cascadeDeleteIds(ig, id)) del.add(x);
+    }
+    const nextIg = {
+      ...ig,
+      nodes: (ig.nodes ?? []).filter((n) => !del.has(n.id)),
+      edges: (ig.edges ?? []).filter((e) => !del.has(e.src) && !del.has(e.dst)),
+    };
+    const next = { ...conception, ideaGraph: nextIg, updatedAt: new Date().toISOString() };
+    onSaveConception(next, 'ai-action');
+    setSelectedIds([]);
+    setClearSelectionNonce((n) => n + 1);
+    setPropsMode('closed');
+  };
+
+  const primarySelectedId = selectedIds.length === 1 ? selectedIds[0]! : null;
+  const selectedCount = selectedIds.length;
 
   return (
     <div className="h-full w-full border border-vscode-border bg-[#1e1e1e] overflow-hidden">
@@ -64,10 +116,10 @@ export function IdeationSurface(props: {
       </div>
 
       <div className="h-[calc(100%-44px)] flex min-w-0 min-h-0 overflow-hidden">
-        {selectedId && propsMode === 'open' ? (
+        {primarySelectedId && propsMode === 'open' ? (
           <IdeaGraphPropertiesPanel
             ig={conception.ideaGraph}
-            selectedId={selectedId}
+            selectedId={primarySelectedId}
             onMinimize={() => setPropsMode('minimized')}
             onAddToChat={(kp) => onPinKp(kp)}
             onDeleteCascade={(nextIg) => {
@@ -78,7 +130,7 @@ export function IdeationSurface(props: {
         ) : null}
 
         <div className="flex-1 relative min-w-0 min-h-0 overflow-hidden">
-          {selectedId && propsMode === 'minimized' ? (
+          {primarySelectedId && propsMode === 'minimized' ? (
             <button
               type="button"
               className="absolute left-0 top-14 z-30 w-[34px] h-[140px] rounded-r border border-l-0 border-vscode-border bg-[#111111] hover:bg-[#222222] text-[#e9d5ff] transition-colors flex flex-col items-center justify-center gap-2"
@@ -95,11 +147,15 @@ export function IdeationSurface(props: {
 
           <IdeaGraphCanvas
             ig={conception.ideaGraph}
-            selectedId={selectedId}
-            onSelectId={setSelectedId}
-            onInspectSelected={() => setPropsMode('open')}
+            selectedIds={selectedIds}
+            onSelectIds={handleSelectIds}
+            clearSelectionNonce={clearSelectionNonce}
+            onInspectSelected={() => {
+              if (selectedIds.length === 1) setPropsMode('open');
+            }}
             onAddSelectedToChat={(kp) => onPinKp(kp)}
             onDeleteSelectedCascade={(id) => handleDeleteCascade(id)}
+            onDeleteSelectedManyCascade={(ids) => handleDeleteCascadeMany(ids)}
           />
         </div>
       </div>

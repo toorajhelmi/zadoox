@@ -21,6 +21,8 @@ export function ChatPanel(props: {
   inputRef?: React.MutableRefObject<HTMLElement | null>;
   semanticGraph?: SemanticGraph | null;
   conception?: ConceptionState | undefined;
+  // KPs selected in the IdeaGraph UI (not necessarily inserted as chips).
+  contextPinnedKps?: Array<{ id: string; label: string }>;
   onSaveConception?: (next: ConceptionState, changeType?: 'auto-save' | 'ai-action') => void;
   onResetConception?: () => void;
 }) {
@@ -37,6 +39,7 @@ export function ChatPanel(props: {
     inputRef,
     semanticGraph,
     conception,
+    contextPinnedKps,
     onSaveConception,
     onResetConception,
   } = props;
@@ -193,9 +196,26 @@ export function ChatPanel(props: {
     // Full‑AI Conception: sending updates conception state + IG (and generates Z response).
     const latestConception = conceptionRef.current;
     if (isFullAI && latestConception && onSaveConception) {
+      const extra = Array.isArray(contextPinnedKps) ? contextPinnedKps : [];
+      const mergedPinned = Array.from(
+        new Map([...parsed.uiPinnedKps, ...extra].map((kp) => [kp.id, { id: kp.id, label: kp.label }])).values()
+      );
+      const contextGroup =
+        mergedPinned.length >= 2
+          ? {
+              id: `g-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+              anchorKps: mergedPinned,
+            }
+          : undefined;
       void (async () => {
         try {
-          await sendConceptionMessage({ conception: latestConception, message: msg, onSaveConception, uiPinnedKps: parsed.uiPinnedKps });
+          await sendConceptionMessage({
+            conception: latestConception,
+            message: msg,
+            onSaveConception,
+            uiPinnedKps: mergedPinned,
+            contextGroup,
+          });
         } finally {
           setSending(false);
         }
@@ -205,7 +225,7 @@ export function ChatPanel(props: {
 
     // AI‑Assist / fallback: stop "sending" immediately (old stub behavior).
     setTimeout(() => setSending(false), 150);
-  }, [isFullAI, onSaveConception, sending]);
+  }, [contextPinnedKps, isFullAI, onSaveConception, sending]);
 
   if (!isOpen) {
     return (
@@ -236,7 +256,7 @@ export function ChatPanel(props: {
       >
         <span className="text-xs leading-none">‹</span>
         <span style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
-          {isFullAI ? 'Full‑AI' : 'Chat'}
+          {isFullAI ? 'Chat with Z' : 'Chat'}
         </span>
       </button>
     );
