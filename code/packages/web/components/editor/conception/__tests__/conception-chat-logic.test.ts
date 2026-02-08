@@ -5,7 +5,14 @@ vi.mock('@/lib/api/client', () => ({
   api: {
     ai: {
       conception: {
-        chat: vi.fn(async () => ({ assistantText: 'LLM response' })),
+        twoStageStep: vi.fn(async () => ({
+          assistantText: 'LLM response',
+          stage: 'discovery',
+          convergenceScore: 0.2,
+          kps: { add: [], strengthen: [], supersede: [], edges: [] },
+        })),
+        // Not used in this test, but present in the real client shape.
+        chat: vi.fn(async () => ({ assistantText: 'SHOULD_NOT_BE_CALLED' })),
       },
     },
   },
@@ -34,9 +41,11 @@ describe('sendConceptionMessage (Conception)', () => {
     const onSaveConception = vi.fn();
     await sendConceptionMessage({ conception, message: 'hello', onSaveConception });
 
-    expect(api.ai.conception.chat).toHaveBeenCalledTimes(1);
-    const saved = onSaveConception.mock.calls[0]?.[0] as ConceptionState;
-    expect(saved.turns.some((t) => t.role === 'assistant' && t.content === 'LLM response')).toBe(true);
+    expect(api.ai.conception.twoStageStep).toHaveBeenCalledTimes(1);
+    expect(api.ai.conception.chat).toHaveBeenCalledTimes(0);
+    const savedStates = onSaveConception.mock.calls.map((c) => c[0] as ConceptionState);
+    const sawAssistant = savedStates.some((s) => (s.turns ?? []).some((t) => t.role === 'assistant' && t.content === 'LLM response'));
+    expect(sawAssistant).toBe(true);
   });
 });
 
