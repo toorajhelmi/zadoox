@@ -78,12 +78,12 @@ export function ChatPanel(props: {
     return { text: parts.join(''), uiPinnedKps };
   }
 
-  function syncDraftFromDom() {
+  const syncDraftFromDom = useCallback(() => {
     const el = composerRef.current;
     if (!el) return;
     const parsed = parseComposer(el, { quoteKpLabels: false });
     setDraftText(parsed.text);
-  }
+  }, []);
 
   function captureComposerSelection() {
     const el = composerRef.current;
