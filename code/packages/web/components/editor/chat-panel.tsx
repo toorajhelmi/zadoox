@@ -177,7 +177,7 @@ export function ChatPanel(props: {
       }
       onInsertedKpRef?.();
     });
-  }, [insertKpRef?.nonce]);
+  }, [insertKpRef?.nonce, insertKpRef, onInsertedKpRef, syncDraftFromDom]);
 
   const handleSend = useCallback(() => {
     const el = composerRef.current;
@@ -205,7 +205,7 @@ export function ChatPanel(props: {
 
     // AI‑Assist / fallback: stop "sending" immediately (old stub behavior).
     setTimeout(() => setSending(false), 150);
-  }, [conception, isFullAI, onSaveConception, sending]);
+  }, [isFullAI, onSaveConception, sending]);
 
   if (!isOpen) {
     return (

@@ -151,8 +151,6 @@ export function IdeaGraphCanvas(props: {
   onDeleteSelectedCascade?: (id: string) => void;
 }) {
   const ig = props.ig;
-  const nodes = ig?.nodes ?? [];
-  const edges = ig?.edges ?? [];
   const selectedId = props.selectedId ?? null;
   const onSelectId = props.onSelectId;
   const onInspectSelected = props.onInspectSelected;
@@ -166,6 +164,7 @@ export function IdeaGraphCanvas(props: {
   // Per ideation.md: keep the *visible* graph conservative and high-trust.
   // Proposed nodes/edges remain in state; hide only low-confidence noise by default.
   const visibleNodes = useMemo(() => {
+    const nodes = ig?.nodes ?? [];
     return nodes.filter((n) => {
       if (n.status === 'deprecated') return false;
       if (n.status === 'proposed') {
@@ -177,9 +176,10 @@ export function IdeaGraphCanvas(props: {
       }
       return true; // accepted or unspecified
     });
-  }, [nodes]);
+  }, [ig?.nodes]);
   const visibleNodeIds = useMemo(() => new Set(visibleNodes.map((n) => n.id)), [visibleNodes]);
   const visibleEdges = useMemo(() => {
+    const edges = ig?.edges ?? [];
     return edges.filter(
       (e) =>
         e.status !== 'deprecated' &&
@@ -187,7 +187,7 @@ export function IdeaGraphCanvas(props: {
         visibleNodeIds.has(e.src) &&
         visibleNodeIds.has(e.dst)
     );
-  }, [edges, visibleNodeIds]);
+  }, [ig?.edges, visibleNodeIds]);
 
   // Build React Flow nodes/edges and run ELK layout whenever graph changes.
   // IMPORTANT: this hook must run unconditionally (no early returns before it) to avoid hook-order crashes.
@@ -287,7 +287,7 @@ export function IdeaGraphCanvas(props: {
     return () => {
       cancelled = true;
     };
-  }, [visibleNodes, visibleEdges, selectedId, onInspectSelected, onAddSelectedToChat]);
+  }, [ig, visibleNodes, visibleEdges, selectedId, onInspectSelected, onAddSelectedToChat, onDeleteSelectedCascade]);
 
   if (!ig) {
     return (
