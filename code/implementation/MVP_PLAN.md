@@ -1408,6 +1408,19 @@ Goal: support an open-ended “brainstorm with Z” flow (like GPT) **before any
   - [ ] Map `IdeaGraph` nodes to SG nodes once blocks exist (or keep dual representation with links)
   - [ ] After first draft is materialized, switch to Phase 15 incremental SG updates from BG slices
 
+#### Phase 18.1: Derivations from IdeaGraph (IG → IR, IG → SG) 🧩
+**Status**: Not Started
+
+Goal: treat the Conception `IdeaGraph` as a first-class planning substrate and provide deterministic derivations:
+- [ ] **IG → IR (Draft Skeleton)**:
+  - [ ] Convert a selected IG Context Group (multi-anchor intent) into an IR outline skeleton
+  - [ ] Create headings/sections and seed paragraphs/TODOs based on grouped KPs
+  - [ ] Preserve provenance: IR nodes link back to IG node IDs + chat turn IDs
+- [ ] **IG → SG (SemanticGraph seed)**:
+  - [ ] Produce an initial SG snapshot from IG nodes/edges (typed mapping + provenance)
+  - [ ] Keep links so SG nodes can reference their originating IG nodes
+  - [ ] Allow Phase 15 SG pipeline to continue incrementally from this seed (no rebuild required)
+
 - [ ] **Regression tests (stability)**:
   - [ ] Tests: chat→brief/outline extraction determinism (snapshot tests of structured state)
   - [ ] Tests: materialization creates stable block IDs + predictable outline headings
