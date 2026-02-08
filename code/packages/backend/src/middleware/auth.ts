@@ -42,6 +42,15 @@ export async function authenticateUser(
       });
     }
 
+    // Dev-only escape hatch for local debugging tools (e.g., curl) without requiring a real Supabase JWT.
+    // Enable explicitly via env var to avoid accidental exposure.
+    // Usage: set ZADOOX_DEV_BYPASS_AUTH=1 and send `Authorization: Bearer dev`.
+    if (process.env.ZADOOX_DEV_BYPASS_AUTH === '1' && token === 'dev') {
+      request.userId = 'dev-user';
+      request.supabase = createUserClient(token);
+      return;
+    }
+
     // Verify token with Supabase
     const supabaseAdmin = getSupabaseAdmin();
     const {

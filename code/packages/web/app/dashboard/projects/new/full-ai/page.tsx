@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { CreateProjectInput } from '@zadoox/shared';
 import { api } from '@/lib/api/client';
+import { buildInitialConceptionContent, buildInitialConceptionState } from '@/components/editor/conception/conception-scaffold';
 
 export default function NewProjectFullAIPage() {
   const router = useRouter();
@@ -42,8 +43,8 @@ export default function NewProjectFullAIPage() {
               await api.documents.create({
                 projectId: project.id,
                 title: 'Untitled Document',
-                content: '',
-                metadata: { type: 'standalone' },
+                content: buildInitialConceptionContent(),
+                metadata: { type: 'standalone', conception: buildInitialConceptionState() },
               })
             ).id;
 

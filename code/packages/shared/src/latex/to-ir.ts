@@ -1379,13 +1379,13 @@ function parseBlocks(latex: string): Block[] {
             const s = { ...blockStyle, ...(style || {}) };
             return Object.keys(s).length ? s : undefined;
           })();
-          blocks.push({
+      blocks.push({
             kind: 'paragraph',
             text,
             raw,
-            blockIndex,
+        blockIndex,
             startOffset,
-            endOffset: end,
+        endOffset: end,
             ...(merged ? { style: merged } : null),
           } as Extract<Block, { kind: 'paragraph' }>);
         }
@@ -3157,20 +3157,20 @@ function parseFigureGridFromLatexRaw(raw: string): {
     const row: Array<{ src: string; caption: string; width?: string } | null> = [];
     for (const cellRaw of cellsRaw) {
       const cellText = cellRaw.split('\n').map((l) => l.trim()).filter(Boolean);
-      let src = '';
+    let src = '';
       let width: string | undefined;
       for (const l of cellText) {
         const ig = parseIncludegraphicsLine(l);
-        if (ig.src) {
-          src = ig.src;
+      if (ig.src) {
+        src = ig.src;
           if (!width && ig.width) width = latexWidthToXmdWidth(ig.width);
-          break;
-        }
+        break;
       }
-      if (!src) {
+    }
+    if (!src) {
         row.push(null);
-        continue;
-      }
+      continue;
+    }
       const cap = parseCellCaptionFromTabularCell(cellText);
       row.push({ src, caption: cap, ...(width ? { width } : null) });
     }

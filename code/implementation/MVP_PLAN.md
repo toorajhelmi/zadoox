@@ -1309,6 +1309,11 @@ We will implement Phase 15 in small vertical slices (each phase ends with a work
 ### Phase 16: Cleanup / Data Model Hardening 🧹
 **Status**: Not Started
 
+- [ ] **Fix preview rendering regressions (refs + LaTeX preview stability)**:
+  - [ ] Fix section/cross-reference rendering so `sec:` links reliably show **Section N** (currently still broken in some flows)
+  - [ ] Refactor the LaTeX preview/rendering pipeline to be less fragile (changes to one preview feature should not break math/figures/refs)
+  - [ ] Add regression tests that cover: hard refresh, LaTeX-first docs, math typesetting, figure asset loading, and section ref rewriting
+
 - [ ] **Revisit/replace legacy AI analysis (`/ai/analyze`)**:
   - [ ] Keep background `/ai/analyze` disabled (SG should drive AI decisions/metrics instead)
   - [ ] Decide whether to delete `/ai/analyze`, or re-implement metrics as SG-derived signals (or keep only for specialized cases)
@@ -1357,6 +1362,61 @@ We will implement Phase 15 in small vertical slices (each phase ends with a work
 - ✅ LaTeX is no longer stored in `documents.metadata`
 - ✅ Imported LaTeX projects (arXiv) are reproducible from Storage (multi-file)
 - ✅ Storage layout is project-scoped and future-proof for Overleaf/Google Docs/Word imports
+
+---
+
+### Phase 18: Guided Authoring v0 — Blank Page → Structure (Chat-first) 🧭💬
+**Status**: Not Started
+
+Goal: support an open-ended “brainstorm with Z” flow (like GPT) **before any document blocks exist**, while still incrementally producing a structured representation (outline + semantic/idea graph) that can later be materialized into IR blocks and the Phase 15 SG pipeline.
+
+- [ ] **Define the “Doc Genesis” state model (structured memory from chat)**:
+  - [ ] `DocPlan` (outline hypothesis):
+    - [ ] hierarchical sections/subsections with short “why this section exists” goals
+    - [ ] per-section notes: claims, evidence needed, open questions, TODOs
+  - [ ] `IdeaGraph` (pre-document semantic graph):
+    - [ ] nodes: concepts/claims/questions/requirements; edges: supports/depends-on/contradicts/scope-of
+    - [ ] provenance: pointer to chat turn(s) that introduced/modified each node
+  - [ ] Store these separately from `documents.metadata` (avoid bloat; follow SG storage rules from Phase 15)
+
+- [ ] **Conversation capture + provenance**:
+  - [ ] Persist chat turns with stable IDs + timestamps + role + optional tool outputs (structured updates)
+  - [ ] Every update to `DocPlan/IdeaGraph` must include provenance back to turns
+  - [ ] Add “confirmed by user” flags for decisions (avoid the agent silently rewriting intent)
+
+- [ ] **Inference loop (from chat → structure)**:
+  - [ ] Classify doc intent continuously (doc type, target format, level of rigor, audience)
+  - [ ] Extract and update:
+    - [ ] key decisions (purpose/audience/stance/constraints)
+    - [ ] candidate outline sections + section goals
+    - [ ] claims + supporting evidence needs
+    - [ ] open questions / missing info (what the agent must ask next)
+  - [ ] Prefer “hypothesis + confirm” UX: show evolving structure and ask for confirmation at milestones
+
+- [ ] **UX: show structure while the chat stays open-ended**:
+  - [ ] Add an “Outline (Draft)” panel that updates as the conversation evolves
+  - [ ] Add an “Open Questions / Next Prompts” panel (agent agenda for what to ask next)
+  - [ ] Provide explicit actions: “Accept outline”, “Edit outline”, “Pin decision”, “Mark as open question”
+
+- [ ] **Materialize structure into the editor (create blocks without user writing yet)**:
+  - [ ] When user clicks “Start Draft”, generate an initial IR skeleton:
+    - [ ] title placeholder, section headings, optional abstract, references placeholder
+    - [ ] each section seeded with short scaffold text (or empty) + TODO markers from `DocPlan`
+  - [ ] Ensure stable IDs for these blocks so Phase 15 SG provenance can attach cleanly
+
+- [ ] **Bridge Phase 18 → Phase 15 (SG from “born” blocks)**:
+  - [ ] Map `IdeaGraph` nodes to SG nodes once blocks exist (or keep dual representation with links)
+  - [ ] After first draft is materialized, switch to Phase 15 incremental SG updates from BG slices
+
+- [ ] **Regression tests (stability)**:
+  - [ ] Tests: chat→brief/outline extraction determinism (snapshot tests of structured state)
+  - [ ] Tests: materialization creates stable block IDs + predictable outline headings
+  - [ ] Tests: “refresh” does not lose DocGenesis state (persist/load correctly)
+
+**Deliverables**:
+- ✅ User can brainstorm with Z on an empty doc and see a live-updating brief + outline
+- ✅ System can create an initial structured draft (IR/blocks) from the agreed outline
+- ✅ Provenance exists from chat → structured state → initial blocks (enables Phase 15 SG)
 
 ---
 

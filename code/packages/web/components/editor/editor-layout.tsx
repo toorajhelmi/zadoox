@@ -19,7 +19,7 @@ import { useSgRefresh } from './sg/use-sg-refresh';
 import { extractBlockGraphFromIr } from './sg/bg-extract';
 import { api } from '@/lib/api/client';
 import type { FormatType } from './floating-format-menu';
-import type { ResearchSource, DocumentStyle, DocumentNode, EditingMode } from '@zadoox/shared';
+import type { ConceptionState, ResearchSource, DocumentStyle, DocumentNode, EditingMode } from '@zadoox/shared';
 import type { InlineEditBlock, InlineEditOperation } from '@zadoox/shared';
 import type { QuickOption } from '@/lib/services/context-options';
 import { irToLatexDocument, irToXmd } from '@zadoox/shared';
@@ -38,6 +38,8 @@ import { rollbackToVersion, selectVersionForViewing } from './editor-layout-vers
 import { previewInsertAtCursor } from './editor-layout-inline-preview';
 import { ensureLatexPreambleForLatexContent } from './latex-preamble';
 import { ActiveEditorSurface } from './active-editor-surface';
+import { IdeationSurface } from './conception/ideation-surface';
+import { buildInitialConceptionState } from './conception/conception-scaffold';
 import { useCanonicalIrState } from './editor-layout-canonical-ir';
 import { getActiveEditorText, getCursorScopeText, getSurfaceCapabilities, getSurfaceSyntax, getTypingHistoryAdapter, pickUndoRedo } from './editor-surface';
 // SG is stored separately on the Document (not in metadata).
@@ -112,9 +114,35 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [cursorScreenPosition, setCursorScreenPosition] = useState<{ top: number; left: number } | null>(null);
   const [thinkPanelOpen, setThinkPanelOpen] = useState(false);
   const [rightAiChatOpen, setRightAiChatOpen] = useState(false);
-  const rightAiInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [rightAiChatMinimized, setRightAiChatMinimized] = useState(false);
+  const rightAiInputRef = useRef<HTMLElement | null>(null);
 
   const isFullAI = fullAssist || projectEditingMode === 'full-ai';
+  const conceptionFromMeta = (documentMetadata as any)?.conception as ConceptionState | undefined;
+  // Prevent initial-load flicker: if this is a Full‑AI doc and we don't have conception loaded yet,
+  // start in ideation with an empty conception state (UI-only until the real metadata arrives).
+  const fallbackConception = useMemo(() => (isFullAI ? buildInitialConceptionState() : undefined), [isFullAI]);
+  const conception = conceptionFromMeta ?? fallbackConception;
+  const isIdeation = Boolean(isFullAI && conception && conception.phase === 'ideation');
+  const [kpInsertReq, setKpInsertReq] = useState<{ nonce: string; id: string; label: string } | null>(null);
+  const [kpInsertQueue, setKpInsertQueue] = useState<Array<{ id: string; label: string }>>([]);
+  const [ideationSelectedKps, setIdeationSelectedKps] = useState<Array<{ id: string; label: string }>>([]);
+  useEffect(() => {
+    // reset pending KP insert when switching documents
+    setKpInsertReq(null);
+    setKpInsertQueue([]);
+    setIdeationSelectedKps([]);
+  }, [documentId]);
+
+  // Process queued KP chip insertions sequentially (ChatPanel consumes one insertKpRef per nonce).
+  useEffect(() => {
+    if (kpInsertReq) return;
+    if (kpInsertQueue.length === 0) return;
+    const [head, ...rest] = kpInsertQueue;
+    setKpInsertQueue(rest);
+    setKpInsertReq({ nonce: crypto?.randomUUID?.() ?? String(Date.now()), id: head!.id, label: head!.label });
+    requestAnimationFrame(() => rightAiInputRef.current?.focus());
+  }, [kpInsertReq, kpInsertQueue]);
 
   useEffect(() => {
     // Auto-open once on load if this is a Full-AI project (or deep-link).
@@ -122,6 +150,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     if (!isFullAI) return;
     didAutoOpenRightChatRef.current = true;
     setRightAiChatOpen(true);
+    setRightAiChatMinimized(false);
   }, [isFullAI]);
 
   useEffect(() => {
@@ -655,7 +684,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
             <ChevronRightIcon className="w-5 h-5 text-vscode-text-secondary" />
           </button>
         )}
-        {sidebarOpen && (
+        {sidebarOpen && !isIdeation && (
           <div style={{ width: `${sidebarWidth}px`, minWidth: `${sidebarWidth}px` }} className="relative h-full">
             <EditorSidebar
           isOpen={sidebarOpen}
@@ -693,7 +722,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           </div>
         )}
       {/* Resizable Splitter with Chevron */}
-      {sidebarOpen && (
+      {sidebarOpen && !isIdeation && (
         <div className="flex-shrink-0 relative group h-full">
           {/* Chevron button attached to splitter */}
           <button
@@ -720,7 +749,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
       </div>
 
       {/* Main Editor Area */}
-      <div className="flex-1 flex flex-col relative">
+      <div className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden">
         {/* Overlay for toolbars and editor - prevents interaction when inline chat or think panel is open */}
         {(inlineAIChatOpen || thinkPanelOpen) && (
           <div className="absolute inset-0 bg-black/30 pointer-events-auto" style={{ zIndex: 45 }} />
@@ -742,43 +771,46 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           </div>
         )}
         
-        {/* Toolbar */}
-        <EditorToolbar
-          projectId={projectId}
-          documentTitle={documentTitle}
-          isSaving={isSaving}
-          lastSaved={lastSaved}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          editMode={editMode}
-          onEditModeChange={handleEditModeChangeStable}
-          canUndo={activeUndoRedo.canUndo}
-          canRedo={activeUndoRedo.canRedo}
-          onUndo={() => {
-            if (changeTracking.isTracking) {
-              changeTracking.cancelTracking();
-            }
-            activeUndoRedo.undo();
-          }}
-          onRedo={() => {
-            if (changeTracking.isTracking) {
-              changeTracking.cancelTracking();
-            }
-            activeUndoRedo.redo();
-          }}
-        />
+        {/* Toolbars (only for the editor surface; hidden during Conception ideation) */}
+        {!isIdeation && (
+          <>
+            <EditorToolbar
+              projectId={projectId}
+              documentTitle={documentTitle}
+              isSaving={isSaving}
+              lastSaved={lastSaved}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              editMode={editMode}
+              onEditModeChange={handleEditModeChangeStable}
+              canUndo={activeUndoRedo.canUndo}
+              canRedo={activeUndoRedo.canRedo}
+              onUndo={() => {
+                if (changeTracking.isTracking) {
+                  changeTracking.cancelTracking();
+                }
+                activeUndoRedo.undo();
+              }}
+              onRedo={() => {
+                if (changeTracking.isTracking) {
+                  changeTracking.cancelTracking();
+                }
+                activeUndoRedo.redo();
+              }}
+            />
 
-        {/* Formatting Toolbar */}
-        <FormattingToolbar
-          onFormat={handleFormat}
-          viewMode={viewMode}
-          currentStyle={currentTextStyle}
-          showFullAiChatButton={isFullAI && !rightAiChatOpen}
-          onOpenFullAiChat={() => {
-            setRightAiChatOpen(true);
-            requestAnimationFrame(() => rightAiInputRef.current?.focus());
-          }}
-        />
+            <FormattingToolbar
+              onFormat={handleFormat}
+              viewMode={viewMode}
+              currentStyle={currentTextStyle}
+              showFullAiChatButton={isFullAI && !rightAiChatOpen}
+              onOpenFullAiChat={() => {
+                setRightAiChatOpen(true);
+                requestAnimationFrame(() => rightAiInputRef.current?.focus());
+              }}
+            />
+          </>
+        )}
 
         {/* Change Tracking Banner - shown at top when tracking is active */}
         {changeTracking.isTracking && (
@@ -810,13 +842,13 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
         )}
 
         {/* Editor/Preview */}
-        <div className="flex-1 overflow-hidden flex relative" ref={editorContainerRef}>
+        <div className="flex-1 overflow-hidden flex relative min-w-0 min-h-0" ref={editorContainerRef}>
           {(viewMode === 'edit' || viewMode === 'split') && (
             <div
               className={
                 viewMode === 'split'
-                  ? 'overflow-hidden relative'
-                  : 'flex-1 overflow-hidden relative'
+                  ? 'overflow-hidden relative min-w-0 min-h-0'
+                  : 'flex-1 overflow-hidden relative min-w-0 min-h-0'
               }
               style={
                 viewMode === 'split'
@@ -1086,67 +1118,87 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                 />
               )}
 
-              <ActiveEditorSurface
-                editMode={editMode}
-                markdown={{
-                  value: pendingChangeContent?.new ?? content,
-                  onChange: handleContentChange,
-                  onSelectionChange: handleSelectionChange,
-                  onCursorPositionChange: handleCursorPositionChange,
-                  onDocumentAIMetricsChange: (payload) => setDocAIMetrics(payload),
-                  paragraphModes,
-                  documentId: actualDocumentId,
-                  aiAnalysisEnabled,
-                  thinkPanelOpen,
-                  openParagraphId,
-                  onOpenPanel: handleOpenPanel,
-                  onEditorViewReady: (view) => {
-                    editorViewRef.current = view;
-                  },
-                  readOnly: (() => {
-                    if (changeTracking.isTracking) return true;
-                    if (thinkPanelOpen) return true;
-                    if (inlineAIChatOpen) return true;
-                    let safeLatestVersion: number | null = null;
-                    if (latestVersion !== undefined && latestVersion !== null && !isNaN(Number(latestVersion))) {
-                      safeLatestVersion = Number(latestVersion);
-                    }
-                    return (
-                      selectedVersion !== null &&
-                      safeLatestVersion !== null &&
-                      Number(selectedVersion) !== Number(safeLatestVersion)
-                    );
-                  })(),
-                  changes: changeTracking.mappedChanges,
-                  onAcceptChange: changeTracking.acceptChange,
-                  onRejectChange: changeTracking.rejectChange,
-                  onSaveWithType: async (contentToSave, changeType) => {
-                    await saveDocument(contentToSave, changeType);
-                  },
-                }}
-                latex={{
-                  value: latexDraft,
-                  onChange: handleContentChange,
-                  onCursorPositionChange: handleCursorPositionChange,
-                  onEditorViewReady: (view) => {
-                    editorViewRef.current = view;
-                  },
-                  readOnly: (() => {
-                    if (changeTracking.isTracking) return true;
-                    if (thinkPanelOpen) return true;
-                    if (inlineAIChatOpen) return true;
-                    let safeLatestVersion: number | null = null;
-                    if (latestVersion !== undefined && latestVersion !== null && !isNaN(Number(latestVersion))) {
-                      safeLatestVersion = Number(latestVersion);
-                    }
-                    return (
-                      selectedVersion !== null &&
-                      safeLatestVersion !== null &&
-                      Number(selectedVersion) !== Number(safeLatestVersion)
-                    );
-                  })(),
-                }}
-              />
+              {isIdeation ? (
+                <IdeationSurface
+                  conception={conception}
+                  onSaveConception={(next, changeType) => {
+                    saveMetadataPatch({ conception: next }, changeType ?? 'ai-action');
+                  }}
+                  onPinKp={(kp) => {
+                    setKpInsertQueue((prev) => [...prev, { id: kp.id, label: kp.label }]);
+                  }}
+                  onSelectionKpsChange={(kps) =>
+                    setIdeationSelectedKps((prev) => {
+                      const a = prev ?? [];
+                      const b = kps ?? [];
+                      if (a.length === b.length && a.every((x, i) => x.id === b[i]?.id && x.label === b[i]?.label)) return prev;
+                      return b;
+                    })
+                  }
+                />
+              ) : (
+                <ActiveEditorSurface
+                  editMode={editMode}
+                  markdown={{
+                    value: pendingChangeContent?.new ?? content,
+                    onChange: handleContentChange,
+                    onSelectionChange: handleSelectionChange,
+                    onCursorPositionChange: handleCursorPositionChange,
+                    onDocumentAIMetricsChange: (payload) => setDocAIMetrics(payload),
+                    paragraphModes,
+                    documentId: actualDocumentId,
+                    aiAnalysisEnabled,
+                    thinkPanelOpen,
+                    openParagraphId,
+                    onOpenPanel: handleOpenPanel,
+                    onEditorViewReady: (view) => {
+                      editorViewRef.current = view;
+                    },
+                    readOnly: (() => {
+                      if (changeTracking.isTracking) return true;
+                      if (thinkPanelOpen) return true;
+                      if (inlineAIChatOpen) return true;
+                      let safeLatestVersion: number | null = null;
+                      if (latestVersion !== undefined && latestVersion !== null && !isNaN(Number(latestVersion))) {
+                        safeLatestVersion = Number(latestVersion);
+                      }
+                      return (
+                        selectedVersion !== null &&
+                        safeLatestVersion !== null &&
+                        Number(selectedVersion) !== Number(safeLatestVersion)
+                      );
+                    })(),
+                    changes: changeTracking.mappedChanges,
+                    onAcceptChange: changeTracking.acceptChange,
+                    onRejectChange: changeTracking.rejectChange,
+                    onSaveWithType: async (contentToSave, changeType) => {
+                      await saveDocument(contentToSave, changeType);
+                    },
+                  }}
+                  latex={{
+                    value: latexDraft,
+                    onChange: handleContentChange,
+                    onCursorPositionChange: handleCursorPositionChange,
+                    onEditorViewReady: (view) => {
+                      editorViewRef.current = view;
+                    },
+                    readOnly: (() => {
+                      if (changeTracking.isTracking) return true;
+                      if (thinkPanelOpen) return true;
+                      if (inlineAIChatOpen) return true;
+                      let safeLatestVersion: number | null = null;
+                      if (latestVersion !== undefined && latestVersion !== null && !isNaN(Number(latestVersion))) {
+                        safeLatestVersion = Number(latestVersion);
+                      }
+                      return (
+                        selectedVersion !== null &&
+                        safeLatestVersion !== null &&
+                        Number(selectedVersion) !== Number(safeLatestVersion)
+                      );
+                    })(),
+                  }}
+                />
+              )}
               
             </div>
           )}
@@ -1248,13 +1300,33 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
           <ChatPanel
             isOpen={rightAiChatOpen}
             isFullAI={isFullAI}
-            inputRef={rightAiInputRef}
-            semanticGraph={semanticGraph ?? null}
-            onOpen={() => {
-              setRightAiChatOpen(true);
+            minimized={rightAiChatMinimized}
+            onMinimize={() => setRightAiChatMinimized(true)}
+            onExpand={() => {
+              setRightAiChatMinimized(false);
               requestAnimationFrame(() => rightAiInputRef.current?.focus());
             }}
-            onClose={() => setRightAiChatOpen(false)}
+            insertKpRef={kpInsertReq}
+            onInsertedKpRef={() => setKpInsertReq(null)}
+            inputRef={rightAiInputRef}
+            semanticGraph={semanticGraph ?? null}
+            conception={conception}
+            contextPinnedKps={isIdeation ? ideationSelectedKps : []}
+            onSaveConception={(next, changeType) => {
+              saveMetadataPatch({ conception: next }, changeType ?? 'auto-save');
+            }}
+            onResetConception={() => {
+              saveMetadataPatch({ conception: buildInitialConceptionState() }, 'ai-action');
+            }}
+            onOpen={() => {
+              setRightAiChatOpen(true);
+              setRightAiChatMinimized(false);
+              requestAnimationFrame(() => rightAiInputRef.current?.focus());
+            }}
+            onClose={() => {
+              setRightAiChatOpen(false);
+              setRightAiChatMinimized(false);
+            }}
           />
         </div>
 

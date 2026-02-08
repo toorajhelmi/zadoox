@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { CreateProjectInput, Project, ProjectType } from '@zadoox/shared';
 import { ProjectTypeIcon, SparkleIcon, WandIcon, LoaderIcon } from './icons';
 import { api } from '@/lib/api/client';
+import { buildInitialConceptionContent, buildInitialConceptionState } from '../editor/conception/conception-scaffold';
 
 interface CreateProjectModalProps {
   isOpen: boolean;
@@ -106,8 +107,8 @@ export function CreateProjectModal({ isOpen, onClose, onCreate, initialStartMode
               await api.documents.create({
                 projectId: project.id,
                 title: 'Untitled Document',
-                content: '',
-                metadata: { type: 'standalone' },
+                content: buildInitialConceptionContent(),
+                metadata: { type: 'standalone', conception: buildInitialConceptionState() },
               })
             ).id;
 
