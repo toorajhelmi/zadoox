@@ -1018,8 +1018,10 @@ Produce the JSON response.`;
         const convergenceScore = dm.convergenceScore;
 
         // (2) Key Point extraction (stage-agnostic): extract KPs from the turns (including the new assistant turn).
-        const drAny = (body.dr ?? {}) as any;
-        const lastTurns = Array.isArray(drAny?.lastTurns) ? drAny.lastTurns : [];
+        const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+
+        const drAny: Record<string, unknown> = isRecord(body.dr) ? body.dr : {};
+        const lastTurns = Array.isArray(drAny.lastTurns) ? drAny.lastTurns : [];
         const kpTurns = [
           ...lastTurns,
           { id: 't-assistant-latest', role: 'assistant', content: assistantText },
@@ -1074,17 +1076,20 @@ Return ONLY JSON with this exact shape:
   "edges": [{ "srcLabel": string, "dstLabel": string, "rel": "supports"|"depends_on"|"contrasts_with"|"elaborates", "status": "accepted"|"proposed", "confidence": number, "evidenceTurnIds": string[] }]
 }`;
 
-        const existingLabels =
-          Array.isArray((drAny as any)?.ideaGraph?.nodes) ? (drAny as any).ideaGraph.nodes.map((n: any) => String(n?.label ?? '').trim()).filter(Boolean) : [];
+        const ideaGraph = isRecord(drAny.ideaGraph) ? drAny.ideaGraph : null;
+        const ideaNodes = ideaGraph && Array.isArray(ideaGraph.nodes) ? ideaGraph.nodes : [];
+        const existingLabels = ideaNodes
+          .map((n) => (isRecord(n) ? String(n.label ?? '').trim() : ''))
+          .filter(Boolean);
 
         const uiPinnedKps =
-          Array.isArray((drAny as any)?.uiPinnedKps)
-            ? (drAny as any).uiPinnedKps
-                .map((x: any) => ({
-                  id: String(x?.id ?? '').trim(),
-                  label: String(x?.label ?? '').trim(),
+          Array.isArray(drAny.uiPinnedKps)
+            ? drAny.uiPinnedKps
+                .map((x) => ({
+                  id: isRecord(x) ? String(x.id ?? '').trim() : '',
+                  label: isRecord(x) ? String(x.label ?? '').trim() : '',
                 }))
-                .filter((x: any) => x.id && x.label)
+                .filter((x) => x.id && x.label)
                 .slice(0, 6)
             : [];
 
