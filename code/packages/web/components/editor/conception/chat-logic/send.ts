@@ -69,6 +69,9 @@ export async function sendConceptionMessage(args: {
       stage: step.stage,
       convergenceScore: step.convergenceScore,
     };
+    // Surface switch: the UI uses conception.phase to choose IdeationSurface vs editor.
+    // We keep this mapping deterministic but *driven by the LLM's stage output*.
+    out.next.phase = step.stage === 'formalization' ? 'formalization' : 'ideation';
     mergeTwoStageKps(out.next, userTurn.id, step.kps);
     const assistantTurn: ConceptionChatTurn = {
       id: `t-${generateId()}`,

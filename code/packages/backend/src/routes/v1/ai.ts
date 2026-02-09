@@ -817,7 +817,7 @@ ${message.trim()}`
                 type: 'object',
                 properties: {
                   assistantText: { type: 'string' },
-                  stage: { type: 'string', enum: ['discovery', 'conclusion'] },
+                  stage: { type: 'string', enum: ['discovery', 'formalization'] },
                   convergenceScore: { type: 'number' },
                   kps: {
                     type: 'object',
@@ -947,7 +947,7 @@ ${message.trim()}`
         const kps = KpExtractorSchema.parse(kpRaw);
         enforceContextGroupNoAnchorChildEdges({ dr: body.dr, kps });
 
-        const response: ApiResponse<{ assistantText: string; stage: 'discovery' | 'conclusion'; convergenceScore: number; kps: unknown }> = {
+        const response: ApiResponse<{ assistantText: string; stage: 'discovery' | 'formalization'; convergenceScore: number; kps: unknown }> = {
           success: true,
           data: { assistantText, stage, convergenceScore, kps },
         };

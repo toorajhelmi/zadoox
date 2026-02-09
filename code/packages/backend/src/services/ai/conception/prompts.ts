@@ -105,7 +105,7 @@ Extract IdeaGraph updates. Return ONLY the JSON.`;
 
 export const TwoStageDmSchema = z.object({
   assistantText: z.string().min(1),
-  stage: z.enum(['discovery', 'conclusion']),
+  stage: z.enum(['discovery', 'formalization']),
   convergenceScore: z.number().min(0).max(1),
 });
 
@@ -114,9 +114,9 @@ export function buildConceptionTwoStageDmPrompt(input: { dr: unknown; message: s
   const system = `You are Z, the Zadoox ideation agent for article-like documents.
 
 You must run TWO coupled processes per turn:
-1) Stage controller: choose stage = Discovery or Conclusion, and update convergenceScore in [0,1].
+1) Stage controller: choose stage = Discovery or Formalization, and update convergenceScore in [0,1].
    - Discovery: maximize idea throughput without interrogating; suggest angles; optional forks; 0-1 questions max.
-   - Conclusion: shape toward a document; be more direct; ask only missing material questions; 0-2 questions max.
+   - Formalization: shape toward producing a first draft; be more direct; ask only missing material questions; 0-2 questions max.
    - This is NOT time-based. Use conversational signals (decisive language, novelty rate drops, outline/summary requests, adoption of synthesis).
    - Allow reversals (if user explores new branches, shift toward Discovery).
 
@@ -128,7 +128,7 @@ Behavior rules:
 Return ONLY valid JSON with this exact shape:
 {
   "assistantText": string,
-  "stage": "discovery"|"conclusion",
+  "stage": "discovery"|"formalization",
   "convergenceScore": number
 }
 `;
