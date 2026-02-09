@@ -7,7 +7,7 @@ vi.mock('@/lib/api/client', () => ({
       conception: {
         twoStageStep: vi.fn(async () => ({
           assistantText: 'LLM response',
-          stage: 'discovery',
+          phase: 'ideation',
           convergenceScore: 0.2,
           kps: { add: [], strengthen: [], supersede: [], edges: [] },
         })),
@@ -46,6 +46,32 @@ describe('sendConceptionMessage (Conception)', () => {
     const savedStates = onSaveConception.mock.calls.map((c) => c[0] as ConceptionState);
     const sawAssistant = savedStates.some((s) => (s.turns ?? []).some((t) => t.role === 'assistant' && t.content === 'LLM response'));
     expect(sawAssistant).toBe(true);
+  });
+
+  it('persists phase changes when the backend DM switches to formalization', async () => {
+    (api.ai.conception.twoStageStep as any).mockImplementationOnce(async () => ({
+      assistantText: 'OK, let’s switch to planning.',
+      phase: 'formalization',
+      convergenceScore: 0.86,
+      kps: { add: [], strengthen: [], supersede: [], edges: [] },
+    }));
+
+    const conception: ConceptionState = {
+      version: 1,
+      phase: 'ideation',
+      turns: [],
+      ideaGraph: { nodes: [], edges: [] },
+      docPlan: { sections: [], docType: 'unknown' },
+      goalHypotheses: [],
+      updatedAt: new Date().toISOString(),
+    };
+
+    const onSaveConception = vi.fn();
+    await sendConceptionMessage({ conception, message: 'Let’s start writing.', onSaveConception });
+
+    const savedStates = onSaveConception.mock.calls.map((c) => c[0] as ConceptionState);
+    const final = savedStates[savedStates.length - 1];
+    expect(final?.phase).toBe('formalization');
   });
 });
 

@@ -863,14 +863,14 @@ Extract IdeaGraph updates. Return ONLY the JSON.`;
   /**
    * POST /api/v1/ai/conception/two-stage/step
    * Two-stage ideation agent:
-   * - stage controller (Discovery <-> Conclusion) with a convergence score
+   * - phase controller (ideation <-> formalization) with a convergence score
    * - scribe extracts Key Points (KPs) into the IdeaGraph with evidence pointers
    */
   fastify.post(
     '/ai/conception/two-stage/step',
     {
       schema: {
-        description: 'Conception two-stage step - returns assistant text + stage + KP/IG deltas',
+        description: 'Conception two-stage step - returns assistant text + phase + KP/IG deltas',
         tags: ['AI'],
         security,
         body: {
@@ -891,7 +891,7 @@ Extract IdeaGraph updates. Return ONLY the JSON.`;
                 type: 'object',
                 properties: {
                   assistantText: { type: 'string' },
-                  stage: { type: 'string', enum: ['discovery', 'conclusion'] },
+                  phase: { type: 'string', enum: ['ideation', 'formalization'] },
                   convergenceScore: { type: 'number' },
                   kps: {
                     type: 'object',
@@ -973,16 +973,16 @@ Extract IdeaGraph updates. Return ONLY the JSON.`;
 
         const service = getAIService();
 
-        // (1) Dialogue management (DM): stage controller + assistant response.
+        // (1) Dialogue management (DM): phase controller + assistant response.
         // IMPORTANT: DM is separate from Key Point extraction.
         const dmSystem = `You are Z, the Zadoox ideation agent for article-like documents.
 
 You must run TWO coupled processes per turn:
-1) Stage controller: choose stage = Discovery or Conclusion, and update convergenceScore in [0,1].
-   - Discovery: maximize idea throughput without interrogating; suggest angles; optional forks; 0-1 questions max.
-   - Conclusion: shape toward a document; be more direct; ask only missing material questions; 0-2 questions max.
-   - This is NOT time-based. Use conversational signals (decisive language, novelty rate drops, outline/summary requests, adoption of synthesis).
-   - Allow reversals (if user explores new branches, shift toward Discovery).
+1) Phase controller: choose phase = ideation or formalization, and update convergenceScore in [0,1].
+   - ideation: maximize idea throughput without interrogating; suggest angles; optional forks; 0-1 questions max.
+   - formalization: shift toward preparing the first draft; ask only missing material questions; 0-2 questions max.
+   - This is NOT time-based. Use conversational signals (decisive language, novelty rate drops, outline/summary/draft requests, adoption of synthesis).
+   - Allow reversals (if user explores new branches, shift back to ideation).
 
 Behavior rules:
 - Do NOT expose mechanics ("should I save X?").
@@ -992,7 +992,7 @@ Behavior rules:
 Return ONLY valid JSON with this exact shape:
 {
   "assistantText": string,
-  "stage": "discovery"|"conclusion",
+  "phase": "ideation"|"formalization",
   "convergenceScore": number
 }
 `;
@@ -1007,7 +1007,7 @@ Produce the JSON response.`;
 
         const DMResponse = z.object({
           assistantText: z.string().min(1),
-          stage: z.enum(['discovery', 'conclusion']),
+          phase: z.enum(['ideation', 'formalization']),
           convergenceScore: z.number().min(0).max(1),
         });
 
@@ -1015,7 +1015,7 @@ Produce the JSON response.`;
         const dm = DMResponse.parse(dmRaw);
 
         const assistantText = dm.assistantText.trim();
-        const stage = dm.stage;
+        const phase = dm.phase;
         const convergenceScore = dm.convergenceScore;
 
         // (2) Key Point extraction (stage-agnostic): extract KPs from the turns (including the new assistant turn).
@@ -1214,9 +1214,9 @@ Extract KPs from these turns. Return ONLY the JSON.`;
           }
         }
 
-        const response: ApiResponse<{ assistantText: string; stage: 'discovery' | 'conclusion'; convergenceScore: number; kps: unknown }> = {
+        const response: ApiResponse<{ assistantText: string; phase: 'ideation' | 'formalization'; convergenceScore: number; kps: unknown }> = {
           success: true,
-          data: { assistantText, stage, convergenceScore, kps },
+          data: { assistantText, phase, convergenceScore, kps },
         };
         return reply.send(response);
       } catch (error: unknown) {

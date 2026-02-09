@@ -617,9 +617,12 @@ export async function sendConceptionMessage(args: {
     const step = await api.ai.conception.twoStageStep({ message: msg, dr, model: 'auto' });
     (out.next as any).dm = {
       ...(out.next as any).dm,
-      stage: step.stage,
+      phase: step.phase,
       convergenceScore: step.convergenceScore,
     };
+    // Phase transition is decided by the same LLM call that generated assistantText.
+    // This ensures Z knows whether to keep ideating or start formalization.
+    out.next.phase = step.phase;
     mergeTwoStageKps(out.next, userTurn.id, step.kps);
     const assistantTurn: ConceptionChatTurn = {
       id: `t-${generateId()}`,
