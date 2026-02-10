@@ -52,6 +52,14 @@ function findField(template: DocPlanTemplate, id: string): DocPlanTemplateField 
   return template.fields.find((f) => f.id === id) ?? null;
 }
 
+function questionForFieldLabel(label: string): string {
+  const raw = String(label ?? '').trim();
+  const cleaned = raw.replace(/[?]+$/g, '').trim();
+  if (!cleaned) return 'Quick question:';
+  const lower = cleaned.charAt(0).toLowerCase() + cleaned.slice(1);
+  return `What is the document’s ${lower}?`;
+}
+
 /**
  * Formalization state machine (no phase decision prompt).
  * - Applies user's answer to the previously asked slot (if any)
@@ -235,12 +243,12 @@ export async function runConceptionFormalizationStep(args: {
     };
   }
 
-  let assistantText = `${field.label}?\n`;
+  let assistantText = `Quick question for the Doc Plan:\n\n${questionForFieldLabel(field.label)}\n`;
   if (field.inputKind === 'dropdown' && field.options) {
     const shortlist = await shortlistFieldOptions({ service: args.service, dr: args.dr, field, model: args.model });
     assistantText += `\n${shortlist.map((x) => `- ${x}`).join('\n')}`;
   } else {
-    assistantText += `\n- Other (type it)`;
+    assistantText += `\nReply in one sentence.`;
   }
 
   return {
