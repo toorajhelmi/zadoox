@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MicIcon, ArrowRightIcon } from '@/components/icons';
 import { SemanticGraphPanel } from './sg/semantic-graph-panel';
-import type { ConceptionState, SemanticGraph } from '@zadoox/shared';
+import type { ConceptionChatTurn, ConceptionState, SemanticGraph } from '@zadoox/shared';
+import { api } from '@/lib/api/client';
 import { ConceptionChat } from './conception/conception-chat';
 import { deleteTurnsFrom } from './conception/conception-chat-logic';
 import { generateSimulatedUserMessage, sendConceptionMessage } from './conception/conception-chat-logic';
@@ -50,6 +51,29 @@ export function ChatPanel(props: {
   const [sending, setSending] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'sg' | 'agenda' | 'suggestions'>('chat');
   const lastComposerRangeRef = useRef<Range | null>(null);
+  const showDebug = process.env.NODE_ENV !== 'production';
+
+  function newTurnId(prefix = 't') {
+    try {
+      return `${prefix}-${crypto.randomUUID()}`;
+    } catch {
+      return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    }
+  }
+
+  function stripFormalizationKickoffs(turns: ConceptionChatTurn[]): ConceptionChatTurn[] {
+    // Remove previously injected debug kickoff turns so "Re‑formalize" is idempotent.
+    // We only strip assistant turns that are clearly our formalization kickoff markers.
+    return (turns ?? []).filter((t) => {
+      if (t.role !== 'assistant') return true;
+      if (t.meta?.source !== 'system') return true;
+      const c = String(t.content ?? '');
+      if (!c) return true;
+      // Signature phrases for the injected kickoff.
+      if (c.includes("switch to planning the document") && c.includes('What kind of document are we writing?')) return false;
+      return true;
+    });
+  }
 
   function parseComposer(
     el: HTMLDivElement,
@@ -227,6 +251,21 @@ export function ChatPanel(props: {
     setTimeout(() => setSending(false), 150);
   }, [contextPinnedKps, isFullAI, onSaveConception, sending]);
 
+  const sendQuickReply = useCallback((msg: string) => {
+    const text = String(msg ?? '').trim();
+    if (!text || sending) return;
+    const latestConception = conceptionRef.current;
+    if (!isFullAI || !latestConception || !onSaveConception) return;
+    setSending(true);
+    void (async () => {
+      try {
+        await sendConceptionMessage({ conception: latestConception, message: text, onSaveConception });
+      } finally {
+        setSending(false);
+      }
+    })();
+  }, [isFullAI, onSaveConception, sending]);
+
   if (!isOpen) {
     return (
       <button
@@ -351,6 +390,7 @@ export function ChatPanel(props: {
                       const next = deleteTurnsFrom(conception, turnId);
                       onSaveConception(next, 'ai-action');
                     }}
+                    onSelectOption={(opt) => sendQuickReply(opt)}
                   />
                 ) : (
                   <div>Open chat to ask for help, generate structure, or draft content.</div>
@@ -424,6 +464,22 @@ export function ChatPanel(props: {
               <div className="flex items-center gap-2">
                 {isFullAI && conception && onSaveConception && onResetConception ? (
                   <>
+                    {conception.phase !== 'ideation' ? (
+                      <button
+                        type="button"
+                        className="text-[10px] font-mono uppercase px-2 py-1 rounded border border-[#3e3e42] text-[#cccccc] hover:bg-[#1e1e1e] transition-colors disabled:opacity-50"
+                        disabled={sending}
+                        title="Go back to the IdeaGraph view"
+                        onClick={() => {
+                          onSaveConception(
+                            { ...conception, phase: 'ideation', updatedAt: new Date().toISOString() },
+                            'ai-action'
+                          );
+                        }}
+                      >
+                        Back to IG
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="text-[10px] font-mono uppercase px-2 py-1 rounded border border-[#a855f7]/30 text-[#e9d5ff] hover:bg-[#a855f7]/10 transition-colors disabled:opacity-50"
@@ -444,6 +500,137 @@ export function ChatPanel(props: {
                     >
                       Sim
                     </button>
+                    {showDebug ? (
+                      <button
+                        type="button"
+                        className="text-[10px] font-mono uppercase px-2 py-1 rounded border border-[#3e3e42] text-[#cccccc] hover:bg-[#1e1e1e] transition-colors disabled:opacity-50"
+                        disabled={sending}
+                        title="Debug: re-initiate formalization and clear turns since last formalization start"
+                        onClick={() => {
+                          if (!onSaveConception) return;
+                          const dmAny = (conception as unknown as { dm?: unknown }).dm;
+                          const dm = dmAny && typeof dmAny === 'object' ? (dmAny as Record<string, unknown>) : {};
+                          const startId = String(dm.formalizationStartTurnId ?? '').trim();
+                          const hasStart = !!startId && (conception.turns ?? []).some((t) => t.id === startId);
+                          const truncated0 = hasStart ? deleteTurnsFrom(conception, startId) : conception;
+                          const truncated: ConceptionState = {
+                            ...truncated0,
+                            turns: stripFormalizationKickoffs(truncated0.turns ?? []),
+                          };
+
+                          // Clear DP fields: restart with the minimal blank DP.
+                          const clearedDocPlan = { docType: 'unknown' as const, sections: [] as any[] };
+
+                          const resetBase: ConceptionState = {
+                            ...truncated,
+                            docPlan: clearedDocPlan as any,
+                            dm: {
+                              phase: 'formalization',
+                              convergenceScore: Math.max(Number((dm as any).convergenceScore ?? 0), 0.9),
+                              allowIgUpdates: false,
+                              askedSlots: [],
+                              answeredSlots: [],
+                              lastAskedSlot: null,
+                              formalizationStartTurnId: undefined,
+                            },
+                            updatedAt: new Date().toISOString(),
+                          };
+                          // Persist reset immediately, then fetch a kickoff question from backend (shortlisted from DR).
+                          onSaveConception(resetBase, 'ai-action');
+                          setSending(true);
+                          void (async () => {
+                            try {
+                              // Minimal DR snapshot for the backend: enough for formalization shortlisting.
+                              const lastTurns = (resetBase.turns ?? []).slice(-12).map((t) => ({
+                                id: t.id,
+                                role: t.role,
+                                content: t.content,
+                                createdAt: t.createdAt,
+                              }));
+                              const ig = resetBase.ideaGraph ?? { nodes: [], edges: [] };
+                              const igCompact = {
+                                nodes: (ig.nodes ?? []).slice(0, 25).map((n: any) => ({
+                                  id: n.id,
+                                  label: n.label,
+                                  state: n.state,
+                                  weight: n.weight,
+                                  confidence: n.confidence,
+                                  status: n.status,
+                                  facets: n.facets,
+                                })),
+                                edges: (ig.edges ?? []).slice(0, 40).map((e: any) => ({
+                                  src: e.src,
+                                  dst: e.dst,
+                                  weight: e.weight,
+                                  confidence: e.confidence,
+                                  status: e.status,
+                                  facets: e.facets,
+                                })),
+                              };
+                              const drKickoff = {
+                                phase: 'formalization',
+                                turnCount: (resetBase.turns ?? []).length,
+                                dm: resetBase.dm ?? {},
+                                docPlan: resetBase.docPlan ?? {},
+                                ideaGraph: igCompact,
+                                lastTurns,
+                              };
+                              const step = await api.ai.conception.twoStageStep({
+                                message: "Let's plan the document.",
+                                dr: drKickoff,
+                                model: 'auto',
+                              });
+                              const kickoff: ConceptionChatTurn = {
+                                id: newTurnId('t'),
+                                role: 'assistant',
+                                createdAt: new Date().toISOString(),
+                                meta: { source: 'system' },
+                                content: step.assistantText,
+                              };
+                              const next: ConceptionState = {
+                                ...resetBase,
+                                dm: {
+                                  ...(resetBase.dm ?? {}),
+                                  phase: step.phase,
+                                  convergenceScore: step.convergenceScore,
+                                  allowIgUpdates: step.allowIgUpdates,
+                                  ...(((step as any).dmPatch && typeof (step as any).dmPatch === 'object') ? (step as any).dmPatch : {}),
+                                  formalizationStartTurnId: kickoff.id,
+                                } as any,
+                                ...(step.docPlanPatch ? { docPlan: { ...(resetBase.docPlan ?? {}), ...(step.docPlanPatch as any) } } : {}),
+                                turns: [...(resetBase.turns ?? []), kickoff],
+                                updatedAt: new Date().toISOString(),
+                              };
+                              onSaveConception(next, 'ai-action');
+                            } catch (err: unknown) {
+                              const message = err instanceof Error ? err.message : String(err);
+                              const fallback: ConceptionChatTurn = {
+                                id: newTurnId('t'),
+                                role: 'assistant',
+                                createdAt: new Date().toISOString(),
+                                meta: { source: 'system' },
+                                content:
+                                  `I couldn’t start Doc Plan planning because templates aren’t available yet.\n\n` +
+                                  `${message}\n\n` +
+                                  `Run:\n- pnpm --filter @zadoox/backend db:migrate`,
+                              };
+                              onSaveConception(
+                                {
+                                  ...resetBase,
+                                  turns: [...(resetBase.turns ?? []), fallback],
+                                  updatedAt: new Date().toISOString(),
+                                },
+                                'ai-action'
+                              );
+                            } finally {
+                              setSending(false);
+                            }
+                          })();
+                        }}
+                      >
+                        Re‑formalize
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="text-[10px] font-mono uppercase px-2 py-1 rounded border border-[#3e3e42] text-[#cccccc] hover:bg-[#1e1e1e] transition-colors disabled:opacity-50"

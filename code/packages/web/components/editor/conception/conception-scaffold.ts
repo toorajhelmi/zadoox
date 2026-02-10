@@ -4,15 +4,8 @@ export function buildInitialConceptionState(now = new Date()): ConceptionState {
   const updatedAt = now.toISOString();
   const docPlan: DocPlan = {
     docType: 'unknown',
-    workingTitle: '',
-    oneLiner: '',
-    toneGuess: [],
-    sections: [
-      { id: 'S1', title: 'Introduction', intent: 'Set context and motivation', bullets: [] },
-      { id: 'S2', title: 'Main Ideas', intent: 'List and expand the core ideas', bullets: [] },
-      { id: 'S3', title: 'Structure / Outline', intent: 'Propose an outline that matches the intent', bullets: [] },
-      { id: 'S4', title: 'Next Steps', intent: 'Open questions + what to do next', bullets: [] },
-    ],
+    prefs: {},
+    sections: [],
     openQuestions: [],
   };
 

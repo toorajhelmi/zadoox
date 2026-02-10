@@ -1,4 +1,33 @@
-# 0) Definitions 
+
+# Foundations
+Zadoox has a core intellgent agent call Z that acts as the editor for the document and assists the user throughout journey to produce the document. When the user starts in Full-AI mode, Z starts in conception. Conception is the process of starting with an idea and end with a concept that can be flesh out and editted to produce a document. It consists of two phases ideations and formalization.
+
+# 1) Ideation
+
+When trying to write a doc, most people start with **idea** that is:
+
+* partially articulated (“something about X…”)
+* underspecified (“not sure if this is a paper or story yet”)
+* unstable (new angles appear as they talk)
+
+A useful system should therefore treat the early session as **ideation**, not planning.
+
+**Ideation loop (what the chat is doing):**
+
+1. **Externalize**: get the idea out of their head into language.
+2. **Differentiate**: split the idea into sub-ideas.
+3. **Expand**: relate to other ideas 
+4. **Organize**: cluster and order ideas and sub-ideas.
+5. **Prioritize**: decide what matters most (weights).
+6. **Commit**: freeze a first structure (DocPlan), then shift into drafting.
+
+IdeaGraph (IG) captures steps 1–5; DocPlan (DP) is step 6 which acts as bridge to formalization phase. There is a implicit commit momment, where Z decides we idea has been developed enough and we could start formization.
+
+# 2) Formalziation
+
+Here we try ot map IG and DP into template, SG and IR. We have already defined and implemented IR (almost fully) and template and SG to some extennt. 
+
+## Definitions
 ### IdeaGraph (IG)
 
 A **dynamic, exploratory graph** that represents the *space of ideas* a user is considering **before** they commit to a document structure.
@@ -62,36 +91,16 @@ SG answers:** “What does this document *mean*, and does it hang together logic
 * **DP** = *commit to a writing scaffold* (sections/scope/tone)
 * **SG** = *encode semantic commitments* (reasoning about coherence/support)
 
-
-# 1) Core thesis: how people develop ideas
-
-Most users don’t start with a “goal.” They start with **a mental seed** that is:
-
-* partially articulated (“something about X…”)
-* underspecified (“not sure if this is a paper or story yet”)
-* unstable (new angles appear as they talk)
-
-A useful system should therefore treat the early session as **sensemaking**, not planning.
-
-**Sensemaking loop (what the chat is doing):**
-
-1. **Externalize**: get the seed out of their head into language.
-2. **Differentiate**: split the seed into sub-ideas.
-3. **Organize**: cluster and order sub-ideas.
-4. **Prioritize**: decide what matters most (weights).
-5. **Commit**: freeze a first structure (DocPlan), then shift into drafting.
-
-Your IG captures steps 2–4; DocPlan is step 5.
-
 ---
 
-# 2) Goal as a latent variable
+# 3) Goal as a latent variable
 
-You’re right: don’t ask for goal explicitly at the start. Instead, infer a **GoalProfile** gradually and only surface it when moving into formation.
+Most users don’t start having a “goal. in mind. But goal is sharped as the ideation moves forward.
+Don’t ask for goal explicitly at the start. Instead, infer the goal gradually and only surface it when moving into formation. 
 
-## 2.1 GoalProfile dimensions (latent → explicit later)
+## 2.1 Goal dimensions (latent → explicit later)
 
-Treat “goal” as a vector of dimensions. Many can be `unknown` initially.
+Treat “goal” as a vector of dimensions. Many can be `unknown` initially. We don't need value for all dimensions and we could have other dimnesions not listed below based on how ideation unfolds. We could start with a few dimension that should exist in most docs and add others from the below list or even other not exiting as the ideation continues.
 
 ### A) Artifact intent
 
@@ -150,11 +159,11 @@ During ideation, you can ask *non-goal-feeling* disambiguations:
 
 ---
 
-# 3) Data artifacts
+# 4) Data artifacts
 
-## 3.1 IdeaGraph (IG) — phase 1 artifact (visible)
+## 4.1 IdeaGraph (IG) — 
 
-**Purpose:** model idea space + importance.
+**Purpose:** model idea space + importance. In ideation phase we would like to show IG instead of the editor and user continues chating. Seeting IG can help the user consolidate their mind, avoid forgetting, and also see the whole picture rahter than getting into the weeds.
 
 Minimal structure:
 
@@ -173,9 +182,9 @@ Minimal structure:
 * Keep **one edge weight** for v0 (as you want).
 * Keep **provenance** (chat message ranges) and **confidence** internally.
 
-## 3.2 DocPlan (DP) — bridge artifact (visible)
+## 4.2 DocPlan (DP) — bridge artifact (visible)
 
-**Purpose:** the first “contract” the user can recognize as *their intended document*.
+**Purpose:** the first “contract” the user can recognize as *their intended document*. This could be used the derive the template and preliminary IR.
 
 Minimal DP:
 
@@ -197,13 +206,6 @@ Minimal DP:
 }
 ```
 
-## 3.3 SG + IR — phase 2 artifacts (hidden)
-
-* SG: semantic primitives + support weight in [-1,1], confidence+provenance
-* IR: block graph (sections/figures/tables/refs), generated directly from DP skeleton
-
----
-
 # 4) Why IG → DP → (SG/IR) and not IG → (SG/IR)
 
 You *can* go IG → SG/IR, but DP is still needed implicitly because:
@@ -217,7 +219,7 @@ So: DP is not extra work; it is the explicit version of the decision you must ma
 
 ---
 
-# 5) Phase 1 chat behavior (ideation)
+# 5) Chat behavior (ideation)
 
 ## 5.1 What the chat must do
 
@@ -227,7 +229,7 @@ So: DP is not extra work; it is the explicit version of the decision you must ma
 4. Track goal hypotheses silently.
 5. Decide when to “commit moment.”
 
-## 5.2 Weight update (simple v0)
+## 5.2 Weight update
 
 Maintain node weight as a blend of:
 
@@ -311,38 +313,3 @@ Don’t ask permission; just make reversal cheap:
 * Maintain `mode = formation` but allow “drift”:
 
   * if node churn spikes again for M turns, auto-relax back into ideation mode (DP updates but is marked “drafting outline” not “drafting prose”).
-
----
-
-# 7) Event-driven pipeline (for code)
-
-## 7.1 Core services (conceptual)
-
-* **ChatIngestor**: receives message, assigns msg_id
-* **IGBuilder**: extract/update nodes, edges, weights, provenance
-* **GoalInferencer**: update goal_hypotheses
-* **CommitDetector**: computes metrics + triggers DP generation
-* **DPGenerator**: IG → DP draft (sections, scope, tone_guess)
-* **IRBuilder**: DP → IR skeleton (sections/blocks)
-* **ModeController**: ideation ↔ formation
-
-## 7.2 Events
-
-* `message_received(msg_id)`
-* `ig_updated(ig_delta, metrics)`
-* `goal_updated(goal_hypotheses_delta)`
-* `commit_triggered(reason, metrics_snapshot)`
-* `dp_generated(dp_v1)`
-* `mode_changed(ideation|formation)`
-
----
-
-# 8) What phase 2 looks like (brief)
-
-* DP becomes the visible scaffold (outline in the editor).
-* As user writes paragraphs, SG nodes are extracted **per block** and used for:
-
-  * contradiction detection
-  * missing-support warnings
-  * scope drift detection (writing about out_of_scope IG nodes)
-* The user sees only actionable guidance, not SG/IR internals.

@@ -86,7 +86,15 @@ export interface DocPlanSection {
 }
 
 export interface DocPlan {
-  docType?: 'unknown' | 'academic_paper' | 'novel' | 'blog' | 'spec' | 'proposal' | 'notes' | 'mixed';
+  docType?: 'unknown' | 'academic_paper' | 'whitepaper' | 'novel' | 'blog' | 'spec' | 'proposal' | 'notes' | 'mixed' | 'other';
+  /**
+   * Non-content planning preferences/constraints.
+   * Keyed by template field ids (e.g. "blog.platform", "academic.venueType").
+   */
+  prefs?: Record<string, unknown>;
+  /**
+   * Deprecated content-oriented fields (kept for backward compatibility; do not rely on them for DP).
+   */
   workingTitle?: string;
   oneLiner?: string;
   toneGuess?: string[];
@@ -108,9 +116,31 @@ export interface ConceptionGoalHypothesis {
 }
 
 export interface ConceptionDmState {
+  /**
+   * LLM-detected dialogue phase (decoupled from UI surface `conception.phase`).
+   */
+  phase?: ConceptionPhase;
+  convergenceScore?: number; // [0,1]
+  allowIgUpdates?: boolean;
   askedSlots?: string[]; // e.g. ["docType", "oneLiner", "audience"]
   answeredSlots?: string[];
   lastAskedSlot?: string | null;
+  formalizationState?: string;
+  docPlanCompleteness?: number; // [0,1]
+  docPlanReady?: boolean;
+  suggestedDocTypeOptions?: string[];
+  suggestedWorkingTitles?: string[];
+  suggestedOneLiners?: string[];
+  suggestedSections?: string[];
+  docPlanTemplate?: unknown;
+  selectedMediumFieldIds?: string[];
+  askedFieldIds?: string[];
+  answeredFieldIds?: string[];
+  /**
+   * The user turn id that first triggered formalization (for debug reset).
+   * Used to truncate turns back to pre-formalization ideation.
+   */
+  formalizationStartTurnId?: string;
 }
 
 export interface ConceptionState {

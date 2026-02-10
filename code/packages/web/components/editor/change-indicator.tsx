@@ -78,3 +78,4 @@ export function ChangeIndicator({ change, onAccept, onReject }: ChangeIndicatorP
   );
 }
 
+
