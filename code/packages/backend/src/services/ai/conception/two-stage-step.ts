@@ -38,7 +38,7 @@ export async function runConceptionTwoStageStep(args: {
     convergenceScore: dm.convergenceScore,
     allowIgUpdates: dm.allowIgUpdates,
     docPlanPatch: dm.docPlanPatch,
-    dmPatch: (dm as any).dmPatch,
+    dmPatch: (dm as { dmPatch?: unknown }).dmPatch,
     kps,
   };
 }

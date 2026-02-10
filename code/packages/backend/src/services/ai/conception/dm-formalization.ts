@@ -32,8 +32,9 @@ function parseDocTypeValueFromUser(message: string): string | null {
 }
 
 function getPrefs(dp: Record<string, unknown> | null): Record<string, unknown> {
-  const prefs = dp && isRecord((dp as any).prefs) ? ((dp as any).prefs as Record<string, unknown>) : {};
-  return prefs;
+  if (!dp) return {};
+  const prefs = (dp as { prefs?: unknown }).prefs;
+  return isRecord(prefs) ? prefs : {};
 }
 
 function setPrefPatch(prefs: Record<string, unknown>, fieldId: string, value: unknown): Record<string, unknown> {
@@ -45,18 +46,6 @@ function answered(prefs: Record<string, unknown>, fieldId: string): boolean {
   if (v === null || v === undefined) return false;
   if (typeof v === 'string') return v.trim().length > 0;
   return true;
-}
-
-function computeCompleteness(args: {
-  template: DocPlanTemplate;
-  prefs: Record<string, unknown>;
-  selectedMediumFieldIds: string[];
-}): { score: number; ready: boolean; requiredIds: string[]; answeredIds: string[] } {
-  const highIds = args.template.fields.filter((f) => f.priority === 'high').map((f) => f.id);
-  const requiredIds = [...highIds, ...args.selectedMediumFieldIds];
-  const answeredIds = requiredIds.filter((id) => answered(args.prefs, id));
-  const score = requiredIds.length === 0 ? 1 : answeredIds.length / requiredIds.length;
-  return { score, ready: score >= 0.99, requiredIds, answeredIds };
 }
 
 function findField(template: DocPlanTemplate, id: string): DocPlanTemplateField | null {
@@ -87,10 +76,19 @@ export async function runConceptionFormalizationStep(args: {
   const dmAny = isRecord(drAny.dm) ? (drAny.dm as Record<string, unknown>) : {};
 
   const msg = String(args.message ?? '').trim();
-  const prevLastAskedFieldId = typeof (dmAny as any).lastAskedFieldId === 'string' ? String((dmAny as any).lastAskedFieldId) : null;
-  const askedFieldIds = Array.isArray((dmAny as any).askedFieldIds) ? ((dmAny as any).askedFieldIds as unknown[]).map(String) : [];
-  const answeredFieldIds = Array.isArray((dmAny as any).answeredFieldIds) ? ((dmAny as any).answeredFieldIds as unknown[]).map(String) : [];
-  const selectedMediumFieldIds = Array.isArray((dmAny as any).selectedMediumFieldIds) ? ((dmAny as any).selectedMediumFieldIds as unknown[]).map(String) : [];
+  const prevLastAskedFieldId =
+    typeof (dmAny as { lastAskedFieldId?: unknown }).lastAskedFieldId === 'string'
+      ? String((dmAny as { lastAskedFieldId?: unknown }).lastAskedFieldId)
+      : null;
+  const askedFieldIds = Array.isArray((dmAny as { askedFieldIds?: unknown }).askedFieldIds)
+    ? ((dmAny as { askedFieldIds?: unknown }).askedFieldIds as unknown[]).map(String)
+    : [];
+  const answeredFieldIds = Array.isArray((dmAny as { answeredFieldIds?: unknown }).answeredFieldIds)
+    ? ((dmAny as { answeredFieldIds?: unknown }).answeredFieldIds as unknown[]).map(String)
+    : [];
+  const selectedMediumFieldIds = Array.isArray((dmAny as { selectedMediumFieldIds?: unknown }).selectedMediumFieldIds)
+    ? ((dmAny as { selectedMediumFieldIds?: unknown }).selectedMediumFieldIds as unknown[]).map(String)
+    : [];
 
   let docPlanPatch: Record<string, unknown> | null = null;
   let prefs = getPrefs(dpAny);
@@ -104,7 +102,7 @@ export async function runConceptionFormalizationStep(args: {
       }
     } else {
       // Template field
-      const templateDocType = String((dpAny as any)?.docType ?? '').trim();
+      const templateDocType = String((dpAny as { docType?: unknown } | null)?.docType ?? '').trim();
       const template = templateDocType ? await loadDocPlanTemplate(templateDocType) : null;
       const field = template ? findField(template, prevLastAskedFieldId) : null;
       if (field) {
@@ -127,7 +125,9 @@ export async function runConceptionFormalizationStep(args: {
   }
 
   // Effective docType after patch.
-  const docTypeEffective = String(((docPlanPatch as any)?.docType ?? (dpAny as any)?.docType ?? 'unknown')).trim() || 'unknown';
+  const patchedDocType = (docPlanPatch as { docType?: unknown } | null)?.docType;
+  const priorDocType = (dpAny as { docType?: unknown } | null)?.docType;
+  const docTypeEffective = String(patchedDocType ?? priorDocType ?? 'unknown').trim() || 'unknown';
   if (docTypeEffective === 'unknown') {
     const s = await suggestFormalizationForSlot({ service: args.service, dr: args.dr, slot: 'docType', model: args.model });
     const options = (s.options.length > 0 ? s.options : DOC_PLAN_DOC_TYPE_PRIMARY_CHOICES.map((c) => c.label))

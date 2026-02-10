@@ -66,6 +66,23 @@ export function IdeationSurface(props: {
     onSelectionKpsChange?.([]);
   }, [conception?.updatedAt, onSelectionKpsChange]);
 
+  const dmPhase = (conception as any)?.dm?.phase as string | undefined;
+  const showDocPlanTab =
+    dmPhase === 'formalization' || (conception?.docPlan?.docType && conception.docPlan.docType !== 'unknown') || false;
+  useEffect(() => {
+    if (!showDocPlanTab && activeTab === 'docplan') setActiveTab('ideagraph');
+  }, [showDocPlanTab, activeTab]);
+
+  const prevDmPhaseRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const prev = prevDmPhaseRef.current;
+    prevDmPhaseRef.current = dmPhase;
+    // Auto-switch to Doc Plan when formalization begins, unless user explicitly chose IG.
+    if (dmPhase === 'formalization' && prev !== 'formalization') {
+      if (manualTab !== 'ideagraph') setActiveTab('docplan');
+    }
+  }, [dmPhase, manualTab]);
+
   if (!conception) {
     return (
       <div className="h-full w-full border border-vscode-border bg-[#1e1e1e] overflow-hidden flex items-center justify-center text-sm text-[#969696]">
@@ -111,22 +128,6 @@ export function IdeationSurface(props: {
 
   const primarySelectedId = selectedIds.length === 1 ? selectedIds[0]! : null;
   const selectedCount = selectedIds.length;
-  const dmPhase = (conception as any)?.dm?.phase as string | undefined;
-  const showDocPlanTab =
-    dmPhase === 'formalization' || (conception?.docPlan?.docType && conception.docPlan.docType !== 'unknown') || false;
-  useEffect(() => {
-    if (!showDocPlanTab && activeTab === 'docplan') setActiveTab('ideagraph');
-  }, [showDocPlanTab, activeTab]);
-
-  const prevDmPhaseRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    const prev = prevDmPhaseRef.current;
-    prevDmPhaseRef.current = dmPhase;
-    // Auto-switch to Doc Plan when formalization begins, unless user explicitly chose IG.
-    if (dmPhase === 'formalization' && prev !== 'formalization') {
-      if (manualTab !== 'ideagraph') setActiveTab('docplan');
-    }
-  }, [dmPhase, manualTab]);
 
   return (
     <div className="h-full w-full border border-vscode-border bg-[#1e1e1e] overflow-hidden">

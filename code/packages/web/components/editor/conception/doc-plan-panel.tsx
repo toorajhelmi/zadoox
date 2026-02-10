@@ -104,19 +104,19 @@ export function DocPlanPanel(props: {
     setField('prefs', nextPrefs as any);
   };
 
-  const visibleFields: DocPlanTemplateField[] = useMemo(() => {
+  const visibleFields: DocPlanTemplateField[] = (() => {
     if (!template) return [];
     const highs = template.fields.filter((f) => f && f.priority === 'high');
     const meds = template.fields.filter((f) => f && f.priority === 'medium' && selectedMediumFieldIds.includes(f.id));
     return [...highs, ...meds];
-  }, [templateRaw, selectedMediumFieldIds.join('|')]);
+  })();
 
-  const optionalFields: DocPlanTemplateField[] = useMemo(() => {
+  const optionalFields: DocPlanTemplateField[] = (() => {
     if (!template) return [];
     const notAskedMedium = template.fields.filter((f) => f.priority === 'medium' && !selectedMediumFieldIds.includes(f.id));
     const lows = template.fields.filter((f) => f.priority === 'low');
     return [...notAskedMedium, ...lows];
-  }, [templateRaw, selectedMediumFieldIds.join('|')]);
+  })();
 
   return (
     <div className="h-full w-full overflow-hidden">

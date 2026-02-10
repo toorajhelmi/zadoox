@@ -58,7 +58,7 @@ export async function loadDocPlanTemplate(docType: string): Promise<DocPlanTempl
     }
     throw new Error(`Failed to load DocPlan template for ${key}: ${error.message}`);
   }
-  const raw = (data as any)?.template ?? null;
+  const raw = (data as { template?: unknown } | null)?.template ?? null;
   if (!raw) return null;
 
   const template = DocPlanTemplate.parse(raw);
