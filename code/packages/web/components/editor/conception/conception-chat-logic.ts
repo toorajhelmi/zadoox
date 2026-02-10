@@ -1,13 +1,121 @@
 'use client';
 
-import type { ConceptionChatTurn, ConceptionProvenanceRef, ConceptionState } from '@zadoox/shared';
+import type { ConceptionChatTurn, ConceptionProvenanceRef, ConceptionState, DocPlan, DocPlanSection } from '@zadoox/shared';
 import { api } from '@/lib/api/client';
-import { BeliefPolicyV0 } from './strategy/belief-policy-v0';
 import { TwoStageV0 } from './strategy/two-stage-v0';
 import type { ConceptionStrategy } from './strategy/types';
 
 function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n));
+}
+
+function isRecord(x: unknown): x is Record<string, unknown> {
+  return !!x && typeof x === 'object' && !Array.isArray(x);
+}
+
+function applyDocPlanPatch(existing: DocPlan | undefined, patch: unknown): DocPlan | undefined {
+  if (!isRecord(patch)) return existing;
+
+  const base: DocPlan = existing ?? { docType: 'unknown', sections: [] };
+  const next: DocPlan = {
+    ...base,
+    sections: Array.isArray(base.sections) ? base.sections.map((s) => ({ ...s, bullets: Array.isArray(s.bullets) ? [...s.bullets] : [] })) : [],
+    openQuestions: Array.isArray(base.openQuestions) ? base.openQuestions.map((q) => ({ ...q })) : [],
+    scope: base.scope
+      ? {
+          inScope: Array.isArray(base.scope.inScope) ? base.scope.inScope.map((x) => ({ ...x })) : [],
+          outOfScope: Array.isArray(base.scope.outOfScope) ? base.scope.outOfScope.map((x) => ({ ...x })) : [],
+        }
+      : undefined,
+    toneGuess: Array.isArray(base.toneGuess) ? [...base.toneGuess] : [],
+  };
+
+  const docType = typeof patch.docType === 'string' ? patch.docType.trim() : '';
+  if (docType) (next as any).docType = docType as DocPlan['docType'];
+  if (typeof patch.workingTitle === 'string') next.workingTitle = patch.workingTitle;
+  if (typeof patch.oneLiner === 'string') next.oneLiner = patch.oneLiner;
+  if (Array.isArray(patch.toneGuess)) {
+    next.toneGuess = patch.toneGuess.map((x) => String(x).trim()).filter(Boolean).slice(0, 10);
+  }
+
+  if (isRecord((patch as any).prefs)) {
+    const basePrefs = isRecord((next as any).prefs) ? ((next as any).prefs as Record<string, unknown>) : {};
+    (next as any).prefs = { ...basePrefs, ...(((patch as any).prefs as Record<string, unknown>) ?? {}) };
+  }
+
+  if (isRecord(patch.scope)) {
+    const scope = next.scope ?? {};
+    if (Array.isArray(patch.scope.inScope)) {
+      const byId = new Map((scope.inScope ?? []).map((x) => [String(x.igId), x]));
+      for (const raw of patch.scope.inScope) {
+        const r = isRecord(raw) ? raw : null;
+        const igId = String(r?.igId ?? '').trim();
+        if (!igId) continue;
+        const targetWeight = r && typeof r.targetWeight === 'number' ? clamp01(r.targetWeight) : undefined;
+        byId.set(igId, { igId, ...(typeof targetWeight === 'number' ? { targetWeight } : {}) });
+      }
+      scope.inScope = Array.from(byId.values());
+    }
+    if (Array.isArray(patch.scope.outOfScope)) {
+      const byId = new Map((scope.outOfScope ?? []).map((x) => [String(x.igId), x]));
+      for (const raw of patch.scope.outOfScope) {
+        const r = isRecord(raw) ? raw : null;
+        const igId = String(r?.igId ?? '').trim();
+        if (!igId) continue;
+        byId.set(igId, { igId });
+      }
+      scope.outOfScope = Array.from(byId.values());
+    }
+    next.scope = scope;
+  }
+
+  if (Array.isArray(patch.openQuestions)) {
+    const existingByKey = new Map<string, { igId?: string; question: string }>();
+    for (const q of next.openQuestions ?? []) {
+      const key = normalizeLabel(String(q.question ?? ''));
+      if (key) existingByKey.set(key, { ...q });
+    }
+    for (const raw of patch.openQuestions) {
+      const r = isRecord(raw) ? raw : null;
+      const question = String(r?.question ?? '').trim();
+      if (!question) continue;
+      const key = normalizeLabel(question);
+      const igId = r?.igId ? String(r.igId).trim() : undefined;
+      existingByKey.set(key, { ...(igId ? { igId } : {}), question });
+    }
+    next.openQuestions = Array.from(existingByKey.values()).slice(0, 20);
+  }
+
+  if (Array.isArray(patch.sections)) {
+    const byKey = new Map<string, DocPlanSection>();
+    for (const s of next.sections ?? []) {
+      byKey.set(normalizeLabel(String(s.title ?? '')), s);
+    }
+    for (const raw of patch.sections) {
+      const r = isRecord(raw) ? raw : null;
+      const title = String(r?.title ?? '').trim();
+      if (!title) continue;
+      const key = normalizeLabel(title);
+      const intent = typeof r?.intent === 'string' ? r.intent : undefined;
+      const bullets = Array.isArray(r?.bullets) ? r!.bullets.map((x) => String(x).trim()).filter(Boolean).slice(0, 30) : undefined;
+      const existing = byKey.get(key);
+      if (existing) {
+        if (typeof intent === 'string') existing.intent = intent;
+        if (bullets) existing.bullets = bullets;
+        continue;
+      }
+      const sec: DocPlanSection = {
+        id: `S-${generateId()}`,
+        title,
+        ...(typeof intent === 'string' && intent.trim() ? { intent } : {}),
+        ...(bullets ? { bullets } : {}),
+      };
+      (next.sections ?? []).push(sec);
+      byKey.set(key, sec);
+    }
+  }
+
+  return next;
 }
 
 function provTurn(id: string): ConceptionProvenanceRef {
@@ -545,7 +653,10 @@ function buildConceptionDR(
   };
 
   return {
-    phase: conception.phase,
+    // UI surface is driven by `conception.phase`, but LLM mode is driven by DM.
+    // We keep the UI in ideation until the user explicitly starts drafting, while allowing the DM
+    // to switch into formalization mode for DocPlan questions.
+    phase: (conception as any)?.dm?.phase ?? conception.phase,
     turnCount,
     dm: conception.dm ?? {},
     goalHypotheses: conception.goalHypotheses ?? [],
@@ -573,9 +684,9 @@ export async function sendConceptionMessage(args: {
   const userTurn: ConceptionChatTurn = { id: `t-${generateId()}`, role: 'user', content: msg, createdAt: new Date().toISOString() };
 
   const pickStrategy = (s: ConceptionState): ConceptionStrategy => {
-    // v0: lookup by strategyId; default to two-stage.
-    if (s.strategyId === 'belief_policy:v0') return BeliefPolicyV0;
-    if (s.strategyId === 'two_stage:v0') return TwoStageV0;
+    // Full‑AI Conception: always use two-stage so phase detection is available.
+    // Old docs may have strategyId="belief_policy:v0"; treat it as deprecated.
+    void s;
     return TwoStageV0;
   };
 
@@ -614,16 +725,56 @@ export async function sendConceptionMessage(args: {
 
   // Two-stage strategy: single backend call yields both assistant text and KP/IG deltas.
   if (out.next.strategyId === 'two_stage:v0') {
-    const step = await api.ai.conception.twoStageStep({ message: msg, dr, model: 'auto' });
+    let step: Awaited<ReturnType<typeof api.ai.conception.twoStageStep>> | null = null;
+    try {
+      step = await api.ai.conception.twoStageStep({ message: msg, dr, model: 'auto' });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      const assistantTurn: ConceptionChatTurn = {
+        id: `t-${generateId()}`,
+        role: 'assistant',
+        content:
+          `I hit an error while planning the Doc Plan.\n\n` +
+          `${message}\n\n` +
+          `If this mentions \`docplan_templates\`, run:\n` +
+          `- pnpm --filter @zadoox/backend db:migrate`,
+        createdAt: new Date().toISOString(),
+      };
+      const final: ConceptionState = {
+        ...out.next,
+        turns: [...(out.next.turns ?? []), assistantTurn],
+        updatedAt: new Date().toISOString(),
+      };
+      onSaveConception(final, 'auto-save');
+      return;
+    }
+    if (!step) return;
     (out.next as any).dm = {
       ...(out.next as any).dm,
       phase: step.phase,
       convergenceScore: step.convergenceScore,
+      allowIgUpdates: step.allowIgUpdates,
     };
-    // Phase transition is decided by the same LLM call that generated assistantText.
-    // This ensures Z knows whether to keep ideating or start formalization.
-    out.next.phase = step.phase;
+    if ((step as any).dmPatch && typeof (step as any).dmPatch === 'object') {
+      (out.next as any).dm = {
+        ...(out.next as any).dm,
+        ...((step as any).dmPatch as Record<string, unknown>),
+      };
+    }
+    // Record the first user turn that triggered formalization so we can debug-reset later.
+    if (step.phase === 'formalization' && !String(((out.next as any).dm ?? {}).formalizationStartTurnId ?? '').trim()) {
+      (out.next as any).dm = {
+        ...(out.next as any).dm,
+        formalizationStartTurnId: userTurn.id,
+      };
+    }
+    // Do NOT switch UI surfaces here. Keep the Ideation surface visible.
+    // Formalization is a DM mode until the user explicitly starts drafting/materializing content.
+    if ((step as any).docPlanPatch) {
+      out.next.docPlan = applyDocPlanPatch(out.next.docPlan, (step as any).docPlanPatch);
+    }
     mergeTwoStageKps(out.next, userTurn.id, step.kps);
+
     const assistantTurn: ConceptionChatTurn = {
       id: `t-${generateId()}`,
       role: 'assistant',

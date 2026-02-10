@@ -485,8 +485,24 @@ export const api = {
         message: string;
         dr: unknown;
         model?: 'openai' | 'auto';
-      }): Promise<{ assistantText: string; phase: 'ideation' | 'formalization'; convergenceScore: number; kps: unknown }> => {
-        const response = await fetchApi<{ assistantText: string; phase: 'ideation' | 'formalization'; convergenceScore: number; kps: unknown }>(
+      }): Promise<{
+        assistantText: string;
+        phase: 'ideation' | 'formalization';
+        convergenceScore: number;
+        allowIgUpdates: boolean;
+        docPlanPatch?: unknown;
+        dmPatch?: unknown;
+        kps: unknown;
+      }> => {
+        const response = await fetchApi<{
+          assistantText: string;
+          phase: 'ideation' | 'formalization';
+          convergenceScore: number;
+          allowIgUpdates: boolean;
+          docPlanPatch?: unknown;
+          dmPatch?: unknown;
+          kps: unknown;
+        }>(
           '/ai/conception/two-stage/step',
           {
             method: 'POST',

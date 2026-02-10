@@ -6,8 +6,9 @@ import type { ConceptionState } from '@zadoox/shared';
 export function ConceptionChat(props: {
   conception: ConceptionState;
   onDeleteFromTurn?: (turnId: string) => void;
+  onSelectOption?: (text: string) => void;
 }) {
-  const { conception, onDeleteFromTurn } = props;
+  const { conception, onDeleteFromTurn, onSelectOption } = props;
   const endRef = useRef<HTMLDivElement | null>(null);
 
   const turns = conception.turns ?? [];
@@ -63,6 +64,25 @@ export function ConceptionChat(props: {
     };
   }, [turns.length, introText]);
 
+  function extractQuickReplies(content: string): { cleaned: string; options: string[] } {
+    const lines = String(content ?? '').split('\n');
+    const options: string[] = [];
+    const keep: string[] = [];
+    for (const line of lines) {
+      const m = /^\s*-\s+(.+?)\s*$/.exec(line);
+      if (m && m[1]) {
+        options.push(m[1]);
+        continue;
+      }
+      keep.push(line);
+    }
+    // Only treat as quick replies when there's at least 2 options.
+    if (options.length < 2) return { cleaned: content, options: [] };
+    // Keep text, but remove trailing blank lines where list used to be.
+    const cleaned = keep.join('\n').replace(/\n{3,}$/g, '\n\n').trim();
+    return { cleaned, options: options.slice(0, 8) };
+  }
+
   return (
     <div className="h-full flex flex-col">
       <div className="flex-1 overflow-auto space-y-3">
@@ -87,8 +107,20 @@ export function ConceptionChat(props: {
           </div>
         ) : null}
 
-        {turns.map((t) => (
-          <div key={t.id} className={`p-2 rounded border ${t.role === 'user' ? 'border-[#a855f7]/30 bg-[#a855f7]/10' : 'border-[#3e3e42] bg-[#1e1e1e]'}`}>
+        {turns.map((t) => {
+          const isSystem = t.role === 'assistant' && t.meta?.source === 'system';
+          const quick = t.role === 'assistant' ? extractQuickReplies(t.content) : { cleaned: t.content, options: [] as string[] };
+          return (
+          <div
+            key={t.id}
+            className={`p-2 rounded border ${
+              t.role === 'user'
+                ? 'border-[#a855f7]/30 bg-[#a855f7]/10'
+                : isSystem
+                  ? 'border-[#3e3e42] bg-[#111111]'
+                  : 'border-[#3e3e42] bg-[#1e1e1e]'
+            }`}
+          >
             <div className="text-[10px] font-mono uppercase text-[#969696] mb-1 flex items-center justify-between gap-2">
               <div>
                 {t.role === 'assistant' ? (
@@ -109,9 +141,24 @@ export function ConceptionChat(props: {
                 </button>
               ) : null}
             </div>
-            <div className="text-sm text-[#e5e5e5] whitespace-pre-wrap">{t.content}</div>
+            <div className="text-sm text-[#e5e5e5] whitespace-pre-wrap">{quick.cleaned}</div>
+            {t.role === 'assistant' && quick.options.length > 0 && onSelectOption ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {quick.options.map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    className="px-2 py-1 rounded border border-[#3e3e42] bg-[#0f0f0f] hover:bg-[#1e1e1e] text-[11px] text-[#cccccc] transition-colors"
+                    onClick={() => onSelectOption(opt)}
+                    title={`Select: ${opt}`}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
-        ))}
+        )})}
         <div ref={endRef} />
       </div>
     </div>

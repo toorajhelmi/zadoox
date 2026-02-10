@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ConceptionState } from '@zadoox/shared';
 import { IdeaGraphCanvas } from './idea-graph-canvas';
 import { IdeaGraphPropertiesPanel } from './idea-graph-properties-panel';
+import { DocPlanPanel } from './doc-plan-panel';
 
 function cascadeDeleteIds(ig: NonNullable<ConceptionState['ideaGraph']>, rootId: string): Set<string> {
   const toDelete = new Set<string>();
@@ -26,6 +27,8 @@ export function IdeationSurface(props: {
   onSelectionKpsChange?: (kps: Array<{ id: string; label: string }>) => void;
 }) {
   const { conception, onSaveConception, onPinKp, onSelectionKpsChange } = props;
+  const [activeTab, setActiveTab] = useState<'ideagraph' | 'docplan'>('ideagraph');
+  const [manualTab, setManualTab] = useState<'ideagraph' | 'docplan' | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [clearSelectionNonce, setClearSelectionNonce] = useState(0);
   const [propsMode, setPropsMode] = useState<'closed' | 'open' | 'minimized'>('closed');
@@ -108,15 +111,69 @@ export function IdeationSurface(props: {
 
   const primarySelectedId = selectedIds.length === 1 ? selectedIds[0]! : null;
   const selectedCount = selectedIds.length;
+  const dmPhase = (conception as any)?.dm?.phase as string | undefined;
+  const showDocPlanTab =
+    dmPhase === 'formalization' || (conception?.docPlan?.docType && conception.docPlan.docType !== 'unknown') || false;
+  useEffect(() => {
+    if (!showDocPlanTab && activeTab === 'docplan') setActiveTab('ideagraph');
+  }, [showDocPlanTab, activeTab]);
+
+  const prevDmPhaseRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const prev = prevDmPhaseRef.current;
+    prevDmPhaseRef.current = dmPhase;
+    // Auto-switch to Doc Plan when formalization begins, unless user explicitly chose IG.
+    if (dmPhase === 'formalization' && prev !== 'formalization') {
+      if (manualTab !== 'ideagraph') setActiveTab('docplan');
+    }
+  }, [dmPhase, manualTab]);
 
   return (
     <div className="h-full w-full border border-vscode-border bg-[#1e1e1e] overflow-hidden">
       <div className="px-4 py-3 border-b border-vscode-border bg-[#252526] flex items-center justify-between">
-        <div className="text-xs font-mono uppercase text-[#a855f7]">Ideation • IdeaGraph</div>
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="text-xs font-mono uppercase text-[#a855f7]">Ideation</div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className={`px-2 py-1 rounded border text-[10px] font-mono uppercase transition-colors ${
+                activeTab === 'ideagraph'
+                  ? 'border-[#a855f7]/40 bg-[#a855f7]/10 text-[#e9d5ff]'
+                  : 'border-transparent hover:border-[#3e3e42] hover:bg-[#1e1e1e] text-[#969696] hover:text-[#cccccc]'
+              }`}
+              onClick={() => {
+                setManualTab('ideagraph');
+                setActiveTab('ideagraph');
+              }}
+              title="Idea Graph"
+              aria-label="Idea Graph"
+            >
+              Idea Graph
+            </button>
+            {showDocPlanTab ? (
+              <button
+                type="button"
+                className={`px-2 py-1 rounded border text-[10px] font-mono uppercase transition-colors ${
+                  activeTab === 'docplan'
+                    ? 'border-[#3e3e42] bg-[#1e1e1e] text-[#cccccc]'
+                    : 'border-transparent hover:border-[#3e3e42] hover:bg-[#1e1e1e] text-[#969696] hover:text-[#cccccc]'
+                }`}
+                onClick={() => {
+                  setManualTab('docplan');
+                  setActiveTab('docplan');
+                }}
+                title="Doc Plan"
+                aria-label="Doc Plan"
+              >
+                Doc Plan
+              </button>
+            ) : null}
+          </div>
+        </div>
       </div>
 
       <div className="h-[calc(100%-44px)] flex min-w-0 min-h-0 overflow-hidden">
-        {primarySelectedId && propsMode === 'open' ? (
+        {activeTab === 'ideagraph' && primarySelectedId && propsMode === 'open' ? (
           <IdeaGraphPropertiesPanel
             ig={conception.ideaGraph}
             selectedId={primarySelectedId}
@@ -130,7 +187,7 @@ export function IdeationSurface(props: {
         ) : null}
 
         <div className="flex-1 relative min-w-0 min-h-0 overflow-hidden">
-          {primarySelectedId && propsMode === 'minimized' ? (
+          {activeTab === 'ideagraph' && primarySelectedId && propsMode === 'minimized' ? (
             <button
               type="button"
               className="absolute left-0 top-14 z-30 w-[34px] h-[140px] rounded-r border border-l-0 border-vscode-border bg-[#111111] hover:bg-[#222222] text-[#e9d5ff] transition-colors flex flex-col items-center justify-center gap-2"
@@ -145,18 +202,22 @@ export function IdeationSurface(props: {
             </button>
           ) : null}
 
-          <IdeaGraphCanvas
-            ig={conception.ideaGraph}
-            selectedIds={selectedIds}
-            onSelectIds={handleSelectIds}
-            clearSelectionNonce={clearSelectionNonce}
-            onInspectSelected={() => {
-              if (selectedIds.length === 1) setPropsMode('open');
-            }}
-            onAddSelectedToChat={(kp) => onPinKp(kp)}
-            onDeleteSelectedCascade={(id) => handleDeleteCascade(id)}
-            onDeleteSelectedManyCascade={(ids) => handleDeleteCascadeMany(ids)}
-          />
+          {activeTab === 'ideagraph' ? (
+            <IdeaGraphCanvas
+              ig={conception.ideaGraph}
+              selectedIds={selectedIds}
+              onSelectIds={handleSelectIds}
+              clearSelectionNonce={clearSelectionNonce}
+              onInspectSelected={() => {
+                if (selectedIds.length === 1) setPropsMode('open');
+              }}
+              onAddSelectedToChat={(kp) => onPinKp(kp)}
+              onDeleteSelectedCascade={(id) => handleDeleteCascade(id)}
+              onDeleteSelectedManyCascade={(ids) => handleDeleteCascadeMany(ids)}
+            />
+          ) : (
+            <DocPlanPanel conception={conception} onSaveConception={onSaveConception} />
+          )}
         </div>
       </div>
     </div>
