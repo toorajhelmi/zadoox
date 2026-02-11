@@ -515,6 +515,49 @@ export function ChatPanel(props: {
                         Back to IG
                       </button>
                     ) : null}
+                    {(() => {
+                      const dmAny = (conception as any)?.dm ?? {};
+                      const drafting = (dmAny as any)?.drafting ?? null;
+                      const stage = String(drafting?.stage ?? '').trim();
+                      if (stage !== 'done') return null;
+                      return (
+                        <button
+                          type="button"
+                          className="text-[10px] font-mono uppercase px-2 py-1 rounded border border-[rgba(59,130,246,0.45)] text-[#bfe3ff] bg-[rgba(59,130,246,0.10)] hover:bg-[rgba(59,130,246,0.16)] transition-colors disabled:opacity-50"
+                          disabled={sending}
+                          title="Redo drafting (overwrites the current document draft)"
+                          onClick={() => {
+                            const dm = (conception as any)?.dm ?? {};
+                            const curDrafting = (dm as any)?.drafting ?? { stage: 'done', includedNodeIds: [], importanceById: {} };
+                            const next = {
+                              ...conception,
+                              phase: 'ideation',
+                              dm: {
+                                ...dm,
+                                drafting: {
+                                  ...curDrafting,
+                                  stage: 'rank_nodes',
+                                },
+                              },
+                              turns: [
+                                ...(conception.turns ?? []),
+                                {
+                                  id: `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+                                  role: 'assistant',
+                                  createdAt: new Date().toISOString(),
+                                  meta: { source: 'system' },
+                                  content: `Redo drafting is ready.\n\nGo to the IdeaGraph header and click “Redo drafting”.\n\nNote: this will overwrite the current document content.`,
+                                },
+                              ],
+                              updatedAt: new Date().toISOString(),
+                            };
+                            onSaveConception(next as any, 'ai-action');
+                          }}
+                        >
+                          Redo draft
+                        </button>
+                      );
+                    })()}
                     <button
                       type="button"
                       className="text-[10px] font-mono uppercase px-2 py-1 rounded border border-[#a855f7]/30 text-[#e9d5ff] hover:bg-[#a855f7]/10 transition-colors disabled:opacity-50"

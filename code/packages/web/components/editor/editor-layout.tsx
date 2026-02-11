@@ -171,6 +171,10 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
   const [pendingChangeContent, setPendingChangeContent] = useState<{ original: string; new: string } | null>(null);
   const [isGeneratingContent, setIsGeneratingContent] = useState(false);
   const [busyOverlayMessage, setBusyOverlayMessage] = useState<string>('Generating content...');
+  const ghostDraftTimerRef = useRef<number | null>(null); // timeout id
+  const draftGhostSkipRef = useRef(false);
+  const draftGhostFullRef = useRef<string>('');
+  const [draftGhostPhase, setDraftGhostPhase] = useState<'thinking' | 'typing' | null>(null);
   const [isSgBootstrapping, setIsSgBootstrapping] = useState(false);
   const [sgBootstrapError, setSgBootstrapError] = useState<string | null>(null);
   const [sgBootstrapAttempt, setSgBootstrapAttempt] = useState(0);
@@ -195,6 +199,15 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
     analyzedSections: number;
     isAnalyzing: boolean;
   } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (ghostDraftTimerRef.current) {
+        window.clearTimeout(ghostDraftTimerRef.current);
+        ghostDraftTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Phase 11: keep IR updated as XMD changes (debounced), compute node-level delta + events.
   const irState = useIrDocument({
@@ -1146,19 +1159,34 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                       },
                       updatedAt: new Date().toISOString(),
                     };
+                    // IMPORTANT: flip local metadata immediately so the editor renders right away
+                    // (saveMetadataPatch persistence is async and can lag behind UI).
+                    setDocumentMetadata((prev) => ({ ...((prev as any) ?? {}), conception: nextConception } as any));
                     saveMetadataPatch({ conception: nextConception }, 'ai-action');
 
                     setSgBootstrapError(null);
-                    setBusyOverlayMessage('Planning outline…');
-                    setIsGeneratingContent(true);
+                    // Show the editor immediately. Avoid blocking overlay; we'll "type" the draft in once it arrives.
+                    setBusyOverlayMessage('Drafting…');
 
                     try {
+                      // Stop any in-flight typewriter effect.
+                      if (ghostDraftTimerRef.current) {
+                        window.clearTimeout(ghostDraftTimerRef.current);
+                        ghostDraftTimerRef.current = null;
+                      }
+                      draftGhostSkipRef.current = false;
+                      draftGhostFullRef.current = '';
+                      setDraftGhostPhase('thinking');
+
                       if (editMode !== 'markdown') {
                         await handleEditModeChangeStable('markdown');
                       }
 
+                      // Clear the editor immediately so the user sees the "typing" happen into a blank doc.
+                      setContentWithoutSave('');
+                      isUserInputRef.current = false;
+
                       const dr = buildConceptionDR(nextConception);
-                      setBusyOverlayMessage('Materializing draft…');
                       const out = await api.ai.conception.materializeDraft({
                         dr,
                         includedNodeIds: Array.isArray(includedNodeIds) ? includedNodeIds : undefined,
@@ -1166,8 +1194,52 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                         model: 'auto',
                       });
 
-                      setBusyOverlayMessage('Saving draft…');
-                      updateContent(out.xmd);
+                      // Typewriter effect: write into the editor UI first (no save spam),
+                      // then persist once complete.
+                      const full = String(out.xmd ?? '');
+                      draftGhostFullRef.current = full;
+                      setDraftGhostPhase('typing');
+
+                      const baseDelayMs = 52; // slower feel
+                      const chunkChars = Math.max(3, Math.min(10, Math.round(full.length / 1600)));
+                      await new Promise<void>((resolve) => {
+                        let i = 0;
+                        const tick = () => {
+                          if (draftGhostSkipRef.current) {
+                            setContentWithoutSave(full);
+                            resolve();
+                            return;
+                          }
+
+                          const nextI = Math.min(full.length, i + chunkChars);
+                          const wrote = full.slice(i, nextI);
+                          i = nextI;
+                          setContentWithoutSave(full.slice(0, i));
+
+                          if (i >= full.length) {
+                            resolve();
+                            return;
+                          }
+
+                          // Add tiny "human" pauses at structural boundaries.
+                          let delay = baseDelayMs;
+                          const tail = full.slice(Math.max(0, i - 12), i);
+                          if (wrote.includes('\n\n') || /(^|\n)#+\s/.test(tail)) delay += 280;
+                          if (wrote.includes('\n') && /TODO:/.test(wrote)) delay += 200;
+                          if (full[i - 1] === '\n' && full[i] === '\n') delay += 420;
+
+                          ghostDraftTimerRef.current = window.setTimeout(tick, delay);
+                        };
+
+                        ghostDraftTimerRef.current = window.setTimeout(tick, baseDelayMs + 250);
+                      });
+                      if (ghostDraftTimerRef.current) {
+                        window.clearTimeout(ghostDraftTimerRef.current);
+                        ghostDraftTimerRef.current = null;
+                      }
+                      setDraftGhostPhase(null);
+
+                      updateContent(full);
                       await saveDocument(out.xmd, 'ai-action');
 
                       // Mark drafting done (do not store large artifacts in metadata).
@@ -1182,10 +1254,16 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                         },
                         updatedAt: new Date().toISOString(),
                       };
+                      setDocumentMetadata((prev) => ({ ...((prev as any) ?? {}), conception: final } as any));
                       saveMetadataPatch({ conception: final }, 'ai-action');
                     } catch (err: unknown) {
                       const msg = err instanceof Error ? err.message : String(err);
                       console.error('Draft materialization failed:', err);
+                      if (ghostDraftTimerRef.current) {
+                        window.clearTimeout(ghostDraftTimerRef.current);
+                        ghostDraftTimerRef.current = null;
+                      }
+                      setDraftGhostPhase(null);
                       // Roll back into drafting so the user can retry (avoid getting stuck in "materializing").
                       const rolled: ConceptionState = {
                         ...nextConception,
@@ -1212,9 +1290,10 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                         ],
                         updatedAt: new Date().toISOString(),
                       };
+                      setDocumentMetadata((prev) => ({ ...((prev as any) ?? {}), conception: rolled } as any));
                       saveMetadataPatch({ conception: rolled }, 'ai-action');
                     } finally {
-                      setIsGeneratingContent(false);
+                      // no blocking overlay used for drafting
                     }
                   }}
                   onPinKp={(kp) => {
@@ -1248,6 +1327,7 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                       editorViewRef.current = view;
                     },
                     readOnly: (() => {
+                      if (draftGhostPhase) return true;
                       if (changeTracking.isTracking) return true;
                       if (thinkPanelOpen) return true;
                       if (inlineAIChatOpen) return true;
@@ -1345,6 +1425,58 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
               </div>
             </div>
           )}
+
+          {/* Drafting: block interaction + show Z thinking/writing */}
+          {draftGhostPhase ? (
+            <div className="fixed inset-0 z-[95] bg-black/45 pointer-events-auto cursor-wait">
+              <div className="absolute left-1/2 top-24 -translate-x-1/2">
+                <div className="rounded border border-[#3e3e42] bg-[#111111] px-4 py-3 shadow-lg flex items-center gap-3">
+                  {draftGhostPhase === 'thinking' ? (
+                    <div className="w-5 h-5 rounded-full border-2 border-[#3e3e42] border-t-[#a855f7] animate-spin" />
+                  ) : (
+                    <div className="w-5 h-5 rounded-full border border-[#3e3e42] bg-[#0f0f0f] flex items-center justify-center text-[10px] text-[#e9d5ff]">
+                      Z
+                    </div>
+                  )}
+                  <div className="text-xs text-[#cccccc]">
+                    <div className="flex items-center gap-2">
+                      <span className="font-serif italic tracking-wide text-[#e9d5ff]">Z</span>
+                      <span>
+                        {draftGhostPhase === 'thinking' ? 'is thinking…' : 'is writing…'}
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <span className="inline-block w-1 h-1 rounded-full bg-[#969696] animate-pulse" />
+                        <span className="inline-block w-1 h-1 rounded-full bg-[#969696] animate-pulse [animation-delay:120ms]" />
+                        <span className="inline-block w-1 h-1 rounded-full bg-[#969696] animate-pulse [animation-delay:240ms]" />
+                      </span>
+                    </div>
+                    {draftGhostPhase === 'thinking' ? (
+                      <div className="mt-1 text-[10px] text-[#9aa0a6]">Preparing the draft…</div>
+                    ) : null}
+                  </div>
+                  {draftGhostPhase === 'typing' ? (
+                    <button
+                      type="button"
+                      className="ml-2 px-2 py-1 rounded border border-[#3e3e42] bg-[#0f0f0f] hover:bg-[#1e1e1e] text-[10px] font-mono uppercase text-[#cccccc] transition-colors cursor-pointer"
+                      title="Skip animation"
+                      onClick={() => {
+                        draftGhostSkipRef.current = true;
+                        const full = draftGhostFullRef.current;
+                        if (full) setContentWithoutSave(full);
+                        if (ghostDraftTimerRef.current) {
+                          window.clearTimeout(ghostDraftTimerRef.current);
+                          ghostDraftTimerRef.current = null;
+                        }
+                        setDraftGhostPhase(null);
+                      }}
+                    >
+                      Skip
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           {/* Blocking Progress Overlay - shown when generating content OR when bootstrapping SG */}
           {(isGeneratingContent || isSgBootstrapping || (shouldBootstrapSg && Boolean(sgBootstrapError))) && (

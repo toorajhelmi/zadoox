@@ -367,6 +367,28 @@ export function IdeationSurface(props: {
                 </button>
               </>
             ) : null}
+
+            {draftingStage === 'done' ? (
+              <>
+                <button
+                  type="button"
+                  disabled={!onStartDrafting}
+                  className="px-2 py-1 rounded border border-[rgba(59,130,246,0.45)] bg-[rgba(59,130,246,0.12)] hover:bg-[rgba(59,130,246,0.18)] disabled:opacity-50 disabled:hover:bg-[rgba(59,130,246,0.12)] text-[10px] font-mono uppercase text-[#bfe3ff] transition-colors"
+                  onClick={() => void onStartDrafting?.({ includedNodeIds: draftingIncludedNodeIds, importanceById: draftingImportanceById })}
+                  title="Redo drafting (overwrites the current document)"
+                >
+                  Redo drafting
+                </button>
+                <button
+                  type="button"
+                  className="px-2 py-1 rounded border border-[#3e3e42] bg-[#111111] hover:bg-[#222222] text-[10px] font-mono uppercase text-[#cccccc] transition-colors"
+                  onClick={() => updateDrafting({ stage: 'review', includedNodeIds: [], importanceById: draftingImportanceById })}
+                  title="Change selection / settings"
+                >
+                  Change
+                </button>
+              </>
+            ) : null}
           </div>
         ) : null}
       </div>
