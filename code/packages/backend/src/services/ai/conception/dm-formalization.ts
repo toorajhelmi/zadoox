@@ -4,9 +4,20 @@ import { loadDocPlanTemplate } from './docplan-template.js';
 import type { DocPlanTemplate, DocPlanTemplateField } from './docplan-template.js';
 import { pickMediumFieldsToAsk } from './formalization-medium-pick.js';
 import { shortlistFieldOptions } from './formalization-field-shortlist.js';
+import { generateFormalizationQuestion } from './formalization-question.js';
 import { suggestFormalizationForSlot } from './formalization-suggest.js';
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return new Promise<T>((resolve, reject) => {
+    timer = setTimeout(() => reject(new Error('TIMEOUT')), ms);
+    p.then(resolve, reject).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+  });
+}
 
 function normalize(s: string): string {
   return String(s ?? '')
@@ -130,12 +141,18 @@ export async function runConceptionFormalizationStep(args: {
   const docTypeEffective = String(patchedDocType ?? priorDocType ?? 'unknown').trim() || 'unknown';
   if (docTypeEffective === 'unknown') {
     const s = await suggestFormalizationForSlot({ service: args.service, dr: args.dr, slot: 'docType', model: args.model });
-    const options = (s.options.length > 0 ? s.options : DOC_PLAN_DOC_TYPE_PRIMARY_CHOICES.map((c) => c.label))
-      .slice(0, 4)
-      .map((x) => `- ${x}`)
-      .join('\n');
+    const optionLabels = (s.options.length > 0 ? s.options : DOC_PLAN_DOC_TYPE_PRIMARY_CHOICES.map((c) => c.label)).slice(0, 4);
+    const q = await generateFormalizationQuestion({
+      service: args.service,
+      dr: args.dr,
+      docType: 'unknown',
+      field: { id: 'docType', label: 'document type', inputKind: 'dropdown', priority: 'high', options: [] },
+      options: optionLabels,
+      model: args.model,
+    });
+    const options = optionLabels.map((x) => `- ${x}`).join('\n');
     return {
-      assistantText: `OK — let’s plan the document.\n\nWhat kind of document are we writing?\n${options}`,
+      assistantText: `${q}\n${options}`,
       phase: 'formalization',
       convergenceScore: 0.2,
       allowIgUpdates: false,
@@ -235,12 +252,36 @@ export async function runConceptionFormalizationStep(args: {
     };
   }
 
-  let assistantText = `${field.label}?\n`;
+  let assistantText = '';
   if (field.inputKind === 'dropdown' && field.options) {
-    const shortlist = await shortlistFieldOptions({ service: args.service, dr: args.dr, field, model: args.model });
-    assistantText += `\n${shortlist.map((x) => `- ${x}`).join('\n')}`;
+    const fallbackOptions = field.options.map((o) => o.label).slice(0, 4);
+    const shortlistRes = await withTimeout(
+      shortlistFieldOptions({ service: args.service, dr: args.dr, field, model: args.model }),
+      12_000
+    ).catch(() => ({ options: fallbackOptions } as { options: string[]; question?: string }));
+    const shortlist = shortlistRes.options?.length ? shortlistRes.options : fallbackOptions;
+
+    const q =
+      shortlistRes.question?.trim() ||
+      (await withTimeout(
+        generateFormalizationQuestion({
+          service: args.service,
+          dr: args.dr,
+          docType: docTypeEffective,
+          field,
+          options: shortlist,
+          model: args.model,
+        }),
+        8_000
+      ).catch(() => `Which option should we pick?`));
+
+    assistantText = `${q}\n\n${shortlist.map((x) => `- ${x}`).join('\n')}`;
   } else {
-    assistantText += `\n- Other (type it)`;
+    const q = await withTimeout(
+      generateFormalizationQuestion({ service: args.service, dr: args.dr, docType: docTypeEffective, field, model: args.model }),
+      8_000
+    ).catch(() => `What should we use here?`);
+    assistantText = q;
   }
 
   return {
