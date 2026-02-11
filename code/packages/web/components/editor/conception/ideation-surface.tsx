@@ -83,17 +83,22 @@ export function IdeationSurface(props: {
     | 'materializing'
     | 'done'
     | '';
-  const draftingIncludedNodeIds = Array.isArray(draftingAny?.includedNodeIds)
-    ? (draftingAny!.includedNodeIds as unknown[]).map(String).filter(Boolean)
-    : [];
-  const draftingImportanceById: Record<string, 'H' | 'M' | 'L'> =
-    draftingAny?.importanceById && typeof draftingAny.importanceById === 'object'
-      ? Object.fromEntries(
-          Object.entries(draftingAny.importanceById as Record<string, unknown>)
+  const draftingIncludedRaw = draftingAny?.includedNodeIds;
+  const draftingImportanceRaw = draftingAny?.importanceById;
+  const draftingIncludedNodeIds = useMemo(() => {
+    return Array.isArray(draftingIncludedRaw)
+      ? (draftingIncludedRaw as unknown[]).map(String).filter(Boolean)
+      : [];
+  }, [draftingIncludedRaw]);
+  const draftingImportanceById: Record<string, 'H' | 'M' | 'L'> = useMemo(() => {
+    return draftingImportanceRaw && typeof draftingImportanceRaw === 'object'
+      ? (Object.fromEntries(
+          Object.entries(draftingImportanceRaw as Record<string, unknown>)
             .map(([k, v]) => [String(k), String(v)])
             .filter(([, v]) => v === 'H' || v === 'M' || v === 'L')
-        )
+        ) as Record<string, 'H' | 'M' | 'L'>)
       : {};
+  }, [draftingImportanceRaw]);
 
   const updateDrafting = useCallback(
     (patch: Partial<{ stage: 'review' | 'select_nodes' | 'rank_nodes' | 'materializing' | 'done'; includedNodeIds: string[]; importanceById: Record<string, 'H' | 'M' | 'L'> }>) => {
