@@ -7,6 +7,7 @@ import { getAIService } from '../../services/ai/ai-service-singleton.js';
 import { runConceptionChat } from '../../services/ai/conception/chat.js';
 import { extractConceptionIg } from '../../services/ai/conception/extract-ig.js';
 import { runConceptionTwoStageStep } from '../../services/ai/conception/two-stage-step.js';
+import { materializeConceptionDraft } from '../../services/ai/conception/drafting/materialize.js';
 import { simulateConceptionUserMessage } from '../../services/ai/conception/simulate-user.js';
 
 /**
@@ -271,6 +272,63 @@ export async function registerConceptionAiRoutes(fastify: FastifyInstance) {
           success: false,
           error: { code: 'INTERNAL_ERROR', message: errorMessage },
         };
+        return reply.status(500).send(response);
+      }
+    }
+  );
+
+  /**
+   * POST /api/v1/ai/conception/draft/materialize
+   */
+  fastify.post(
+    '/ai/conception/draft/materialize',
+    {
+      schema: {
+        description: 'Conception drafting - materialize first draft (XMD) from IdeaGraph + DocPlan',
+        tags: ['AI'],
+        security,
+        body: {
+          type: 'object',
+          required: ['dr'],
+          properties: {
+            dr: { type: 'object' },
+            includedNodeIds: { type: 'array', items: { type: 'string' } },
+            importanceById: { type: 'object', additionalProperties: { type: 'string', enum: ['H', 'M', 'L'] } },
+            model: { type: 'string', enum: ['openai', 'auto'] },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              data: {
+                type: 'object',
+                properties: {
+                  summary: { type: 'string' },
+                  xmd: { type: 'string' },
+                  outlinePlan: { type: 'object', additionalProperties: true },
+                },
+              },
+            },
+            required: ['success'],
+          },
+          400: schemas.ApiResponse,
+          500: schemas.ApiResponse,
+        },
+      },
+    },
+    async (request: AuthenticatedRequest, reply) => {
+      try {
+        const body = request.body as { dr: unknown; includedNodeIds?: string[]; importanceById?: Record<string, unknown>; model?: AIModel };
+        const service = getAIService();
+        const out = await materializeConceptionDraft({ service, model: body.model, body });
+        const response: ApiResponse<typeof out> = { success: true, data: out };
+        return reply.send(response);
+      } catch (error: unknown) {
+        fastify.log.error(error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to materialize draft';
+        const response: ApiResponse<null> = { success: false, error: { code: 'INTERNAL_ERROR', message: errorMessage } };
         return reply.status(500).send(response);
       }
     }

@@ -525,6 +525,22 @@ export const api = {
         }
         return response.data;
       },
+
+      materializeDraft: async (request: {
+        dr: unknown;
+        includedNodeIds?: string[];
+        importanceById?: Record<string, 'H' | 'M' | 'L'>;
+        model?: 'openai' | 'auto';
+      }): Promise<{ summary: string; xmd: string; outlinePlan: unknown }> => {
+        const response = await fetchApi<{ summary: string; xmd: string; outlinePlan: unknown }>('/ai/conception/draft/materialize', {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+        if (!response.data) {
+          throw new ApiError('Failed to materialize first draft', 'CONCEPTION_DRAFT_MATERIALIZE_FAILED', 500);
+        }
+        return response.data;
+      },
     },
 
     draft: {

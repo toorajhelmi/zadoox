@@ -118,6 +118,38 @@ describe('sendConceptionMessage (Conception)', () => {
     expect(final?.docPlan?.sections?.[0]?.title).toBeTruthy();
   });
 
+  it('when docPlanReady becomes true, initializes drafting state and emits a system drafting prompt', async () => {
+    (api.ai.conception.twoStageStep as any).mockImplementationOnce(async () => ({
+      assistantText: 'All set — your Doc Plan is complete.',
+      phase: 'formalization',
+      convergenceScore: 0.95,
+      allowIgUpdates: false,
+      dmPatch: { phase: 'formalization', docPlanReady: true },
+      kps: { add: [], strengthen: [], supersede: [], edges: [] },
+    }));
+
+    const conception: ConceptionState = {
+      version: 1,
+      phase: 'ideation',
+      turns: [],
+      ideaGraph: { nodes: [{ id: 'i-1', label: 'Core idea', weight: 0.8 } as any], edges: [] },
+      docPlan: { sections: [], docType: 'blog', prefs: { 'length.target': '800-1200 words' } as any } as any,
+      goalHypotheses: [],
+      updatedAt: new Date().toISOString(),
+    };
+
+    const onSaveConception = vi.fn();
+    await sendConceptionMessage({ conception, message: 'ok', onSaveConception });
+
+    const savedStates = onSaveConception.mock.calls.map((c) => c[0] as ConceptionState);
+    const final = savedStates[savedStates.length - 1];
+    expect((final as any)?.dm?.drafting?.stage).toBe('review');
+    const sysTurns = (final.turns ?? []).filter((t) => t.role === 'assistant' && (t as any)?.meta?.source === 'system');
+    expect(sysTurns.length).toBeGreaterThanOrEqual(1);
+    expect(sysTurns[0]!.content).toContain('Include all ideas');
+    expect(sysTurns[0]!.content).toContain('Select in the graph');
+  });
+
   // NOTE: we intentionally do not emit a "NOT detected" marker.
   // The only marker is when formalization is detected (phase="formalization").
 });

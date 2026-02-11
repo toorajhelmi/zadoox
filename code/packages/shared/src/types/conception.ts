@@ -115,6 +115,22 @@ export interface ConceptionGoalHypothesis {
   evidence: string[]; // short snippets / reasons derived from turns
 }
 
+export type ConceptionDraftingStage = 'review' | 'select_nodes' | 'rank_nodes' | 'materializing' | 'done';
+
+export interface ConceptionDraftingState {
+  stage: ConceptionDraftingStage;
+  /**
+   * Included IdeaGraph node IDs for drafting.
+   * If empty, the client may treat it as "include all" (but UX typically expands to explicit ids).
+   */
+  includedNodeIds: string[];
+  /**
+   * Per-node importance ranking for drafting.
+   * Unspecified nodes are implicitly Low ('L').
+   */
+  importanceById: Record<string, 'H' | 'M' | 'L'>;
+}
+
 export interface ConceptionDmState {
   /**
    * LLM-detected dialogue phase (decoupled from UI surface `conception.phase`).
@@ -141,6 +157,10 @@ export interface ConceptionDmState {
    * Used to truncate turns back to pre-formalization ideation.
    */
   formalizationStartTurnId?: string;
+  /**
+   * Drafting flow state (after DocPlan is ready, before the editor surface takes over).
+   */
+  drafting?: ConceptionDraftingState;
 }
 
 export interface ConceptionState {

@@ -25,8 +25,9 @@ export function IdeationSurface(props: {
   onSaveConception: (next: ConceptionState, changeType?: 'auto-save' | 'ai-action') => void;
   onPinKp: (kp: { id: string; label: string }) => void;
   onSelectionKpsChange?: (kps: Array<{ id: string; label: string }>) => void;
+  onStartDrafting?: (args: { includedNodeIds?: string[]; importanceById?: Record<string, 'H' | 'M' | 'L'> }) => void | Promise<void>;
 }) {
-  const { conception, onSaveConception, onPinKp, onSelectionKpsChange } = props;
+  const { conception, onSaveConception, onPinKp, onSelectionKpsChange, onStartDrafting } = props;
   const [activeTab, setActiveTab] = useState<'ideagraph' | 'docplan'>('ideagraph');
   const [manualTab, setManualTab] = useState<'ideagraph' | 'docplan' | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -69,9 +70,98 @@ export function IdeationSurface(props: {
   const dmPhase = (conception as any)?.dm?.phase as string | undefined;
   const showDocPlanTab =
     dmPhase === 'formalization' || (conception?.docPlan?.docType && conception.docPlan.docType !== 'unknown') || false;
+
+  const dmAny = ((conception as any)?.dm ?? {}) as Record<string, unknown>;
+  const docPlanReady = Boolean((dmAny as any).docPlanReady);
+  const draftingAny = ((dmAny as any).drafting ?? null) as
+    | { stage?: unknown; includedNodeIds?: unknown; importanceById?: unknown }
+    | null;
+  const draftingStage = String(draftingAny?.stage ?? '').trim() as
+    | 'review'
+    | 'select_nodes'
+    | 'rank_nodes'
+    | 'materializing'
+    | 'done'
+    | '';
+  const draftingIncludedNodeIds = Array.isArray(draftingAny?.includedNodeIds)
+    ? (draftingAny!.includedNodeIds as unknown[]).map(String).filter(Boolean)
+    : [];
+  const draftingImportanceById: Record<string, 'H' | 'M' | 'L'> =
+    draftingAny?.importanceById && typeof draftingAny.importanceById === 'object'
+      ? Object.fromEntries(
+          Object.entries(draftingAny.importanceById as Record<string, unknown>)
+            .map(([k, v]) => [String(k), String(v)])
+            .filter(([, v]) => v === 'H' || v === 'M' || v === 'L')
+        )
+      : {};
+
+  const updateDrafting = useCallback(
+    (patch: Partial<{ stage: 'review' | 'select_nodes' | 'rank_nodes' | 'materializing' | 'done'; includedNodeIds: string[]; importanceById: Record<string, 'H' | 'M' | 'L'> }>) => {
+      if (!conception) return;
+      const curDm = ((conception as any).dm ?? {}) as any;
+      const cur = (curDm.drafting ?? { stage: 'review', includedNodeIds: [], importanceById: {} }) as any;
+      const nextDrafting = {
+        ...cur,
+        ...(patch.stage ? { stage: patch.stage } : {}),
+        ...(patch.includedNodeIds ? { includedNodeIds: patch.includedNodeIds } : {}),
+        ...(patch.importanceById ? { importanceById: patch.importanceById } : {}),
+      };
+      const next: ConceptionState = {
+        ...conception,
+        dm: { ...curDm, drafting: nextDrafting },
+        updatedAt: new Date().toISOString(),
+      };
+      onSaveConception(next, 'ai-action');
+    },
+    [conception, onSaveConception]
+  );
+
+  const computeIncludedClosure = useCallback(
+    (explicitIds: string[]): string[] => {
+      const ig = conception?.ideaGraph;
+      const nodes = ig?.nodes ?? [];
+      const edges = ig?.edges ?? [];
+      const byId = new Set(nodes.map((n) => n.id));
+      const explicit = explicitIds.map(String).filter((id) => byId.has(id));
+      // In rank_nodes: empty explicit ids means "include all".
+      if (explicit.length === 0 && draftingStage === 'rank_nodes') {
+        return nodes.map((n) => n.id).filter(Boolean).sort();
+      }
+      if (explicit.length === 0) return [];
+      const incoming = new Map<string, string[]>();
+      for (const e of edges) {
+        const dst = String((e as any).dst ?? '');
+        const src = String((e as any).src ?? '');
+        if (!dst || !src) continue;
+        const arr = incoming.get(dst) ?? [];
+        arr.push(src);
+        incoming.set(dst, arr);
+      }
+      const out = new Set<string>();
+      const q = [...explicit];
+      while (q.length) {
+        const cur = q.pop()!;
+        if (out.has(cur)) continue;
+        out.add(cur);
+        for (const p of incoming.get(cur) ?? []) {
+          if (!out.has(p)) q.push(p);
+        }
+      }
+      return Array.from(out).sort();
+    },
+    [conception?.ideaGraph, draftingStage]
+  );
+
+  const effectiveIncludedIds = useMemo(() => computeIncludedClosure(draftingIncludedNodeIds), [computeIncludedClosure, draftingIncludedNodeIds]);
   useEffect(() => {
     if (!showDocPlanTab && activeTab === 'docplan') setActiveTab('ideagraph');
   }, [showDocPlanTab, activeTab]);
+
+  useEffect(() => {
+    if (draftingStage === 'select_nodes' || draftingStage === 'rank_nodes') {
+      if (activeTab !== 'ideagraph') setActiveTab('ideagraph');
+    }
+  }, [draftingStage, activeTab]);
 
   const prevDmPhaseRef = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -171,10 +261,95 @@ export function IdeationSurface(props: {
             ) : null}
           </div>
         </div>
+        {docPlanReady ? (
+          <div className="flex items-center gap-2">
+            {draftingStage ? (
+              <div className="px-2 py-1 rounded border border-[#3e3e42] bg-[#111111] text-[10px] font-mono uppercase text-[#bfe3ff]">
+                Drafting: {draftingStage.replace('_', ' ')}
+              </div>
+            ) : null}
+
+            {draftingStage === 'review' || draftingStage === '' ? (
+              <>
+                <button
+                  type="button"
+                  className="px-2 py-1 rounded border border-[rgba(59,130,246,0.45)] bg-[rgba(59,130,246,0.12)] hover:bg-[rgba(59,130,246,0.18)] text-[10px] font-mono uppercase text-[#bfe3ff] transition-colors"
+                  onClick={() => {
+                    updateDrafting({ stage: 'rank_nodes', includedNodeIds: [], importanceById: draftingImportanceById });
+                  }}
+                  title="Include all ideas"
+                >
+                  Include all
+                </button>
+                <button
+                  type="button"
+                  className="px-2 py-1 rounded border border-[#3e3e42] bg-[#111111] hover:bg-[#222222] text-[10px] font-mono uppercase text-[#cccccc] transition-colors"
+                  onClick={() => {
+                    updateDrafting({ stage: 'select_nodes', includedNodeIds: [], importanceById: draftingImportanceById });
+                  }}
+                  title="Select nodes in the graph"
+                >
+                  Select nodes
+                </button>
+              </>
+            ) : null}
+
+            {draftingStage === 'select_nodes' ? (
+              <>
+                <div className="text-[10px] font-mono uppercase text-[#969696]">
+                  {draftingIncludedNodeIds.length} picked
+                </div>
+                <button
+                  type="button"
+                  disabled={draftingIncludedNodeIds.length === 0}
+                  className="px-2 py-1 rounded border border-[rgba(59,130,246,0.45)] bg-[rgba(59,130,246,0.12)] hover:bg-[rgba(59,130,246,0.18)] disabled:opacity-50 disabled:hover:bg-[rgba(59,130,246,0.12)] text-[10px] font-mono uppercase text-[#bfe3ff] transition-colors"
+                  onClick={() => updateDrafting({ stage: 'rank_nodes', includedNodeIds: draftingIncludedNodeIds, importanceById: draftingImportanceById })}
+                  title="Done selecting"
+                >
+                  Done selecting
+                </button>
+                <button
+                  type="button"
+                  className="px-2 py-1 rounded border border-[#3e3e42] bg-[#111111] hover:bg-[#222222] text-[10px] font-mono uppercase text-[#cccccc] transition-colors"
+                  onClick={() => updateDrafting({ stage: 'review', includedNodeIds: [], importanceById: draftingImportanceById })}
+                  title="Back"
+                >
+                  Back
+                </button>
+              </>
+            ) : null}
+
+            {draftingStage === 'rank_nodes' ? (
+              <>
+                <button
+                  type="button"
+                  disabled={!onStartDrafting}
+                  className="px-2 py-1 rounded border border-[rgba(59,130,246,0.45)] bg-[rgba(59,130,246,0.12)] hover:bg-[rgba(59,130,246,0.18)] disabled:opacity-50 disabled:hover:bg-[rgba(59,130,246,0.12)] text-[10px] font-mono uppercase text-[#bfe3ff] transition-colors"
+                  onClick={() => void onStartDrafting?.({ includedNodeIds: draftingIncludedNodeIds, importanceById: draftingImportanceById })}
+                  title="Start drafting"
+                >
+                  Start drafting
+                </button>
+                <button
+                  type="button"
+                  className="px-2 py-1 rounded border border-[#3e3e42] bg-[#111111] hover:bg-[#222222] text-[10px] font-mono uppercase text-[#cccccc] transition-colors"
+                  onClick={() => updateDrafting({ stage: 'select_nodes', includedNodeIds: draftingIncludedNodeIds, importanceById: draftingImportanceById })}
+                  title="Back"
+                >
+                  Back
+                </button>
+              </>
+            ) : null}
+
+            {draftingStage === 'materializing' ? (
+              <div className="text-[10px] font-mono uppercase text-[#969696]">Materializing…</div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="h-[calc(100%-44px)] flex min-w-0 min-h-0 overflow-hidden">
-        {activeTab === 'ideagraph' && primarySelectedId && propsMode === 'open' ? (
+        {activeTab === 'ideagraph' && primarySelectedId && propsMode === 'open' && draftingStage !== 'select_nodes' && draftingStage !== 'rank_nodes' ? (
           <IdeaGraphPropertiesPanel
             ig={conception.ideaGraph}
             selectedId={primarySelectedId}
@@ -188,7 +363,7 @@ export function IdeationSurface(props: {
         ) : null}
 
         <div className="flex-1 relative min-w-0 min-h-0 overflow-hidden">
-          {activeTab === 'ideagraph' && primarySelectedId && propsMode === 'minimized' ? (
+          {activeTab === 'ideagraph' && primarySelectedId && propsMode === 'minimized' && draftingStage !== 'select_nodes' && draftingStage !== 'rank_nodes' ? (
             <button
               type="button"
               className="absolute left-0 top-14 z-30 w-[34px] h-[140px] rounded-r border border-l-0 border-vscode-border bg-[#111111] hover:bg-[#222222] text-[#e9d5ff] transition-colors flex flex-col items-center justify-center gap-2"
@@ -215,6 +390,26 @@ export function IdeationSurface(props: {
               onAddSelectedToChat={(kp) => onPinKp(kp)}
               onDeleteSelectedCascade={(id) => handleDeleteCascade(id)}
               onDeleteSelectedManyCascade={(ids) => handleDeleteCascadeMany(ids)}
+              drafting={
+                draftingStage === 'select_nodes' || draftingStage === 'rank_nodes'
+                  ? {
+                      stage: draftingStage as 'select_nodes' | 'rank_nodes',
+                      includedIds: effectiveIncludedIds,
+                      importanceById: draftingImportanceById,
+                      onToggleExplicit: (id: string) => {
+                        if (draftingStage === 'rank_nodes' && draftingIncludedNodeIds.length === 0) return;
+                        const cur = draftingIncludedNodeIds;
+                        const has = cur.includes(id);
+                        const next = has ? cur.filter((x) => x !== id) : Array.from(new Set([...cur, id])).sort();
+                        updateDrafting({ includedNodeIds: next, importanceById: draftingImportanceById });
+                      },
+                      onSetImportance: (id: string, v: 'H' | 'M' | 'L') => {
+                        const next = { ...draftingImportanceById, [id]: v };
+                        updateDrafting({ importanceById: next, includedNodeIds: draftingIncludedNodeIds });
+                      },
+                    }
+                  : undefined
+              }
             />
           ) : (
             <DocPlanPanel conception={conception} onSaveConception={onSaveConception} />

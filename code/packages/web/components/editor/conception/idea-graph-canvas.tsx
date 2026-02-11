@@ -34,6 +34,11 @@ type KpNodeData = {
   isAssistant: boolean;
   multiSelectActive?: boolean;
   isGroup?: boolean;
+  draftStage?: 'select_nodes' | 'rank_nodes';
+  draftIncluded?: boolean;
+  draftImportance?: 'H' | 'M' | 'L';
+  onToggleInclude?: () => void;
+  onSetImportance?: (v: 'H' | 'M' | 'L') => void;
   onSelect?: (opts: { additive: boolean }) => void;
   onInspect?: () => void;
   onAddToChat?: () => void;
@@ -45,10 +50,12 @@ const EMPTY_IDS: string[] = [];
 function KpNode(props: NodeProps<KpNodeData>) {
   const { data, selected } = props;
   const [hover, setHover] = useState(false);
+  const isDrafting = Boolean(data.draftStage);
+  const isIncluded = Boolean(data.draftIncluded);
   // Match chat bubble styling for Z (assistant) nodes.
   // Context/analysis group nodes should look like user-origin KPs (purple), not a separate visual type.
-  const fill = data.isAssistant ? '#1e1e1e' : 'rgba(168,85,247,0.18)';
-  const stroke = data.isAssistant ? '#3e3e42' : 'rgba(168,85,247,0.75)';
+  const fill = isIncluded ? 'rgba(59,130,246,0.18)' : data.isAssistant ? '#1e1e1e' : 'rgba(168,85,247,0.18)';
+  const stroke = isIncluded ? 'rgba(59,130,246,0.85)' : data.isAssistant ? '#3e3e42' : 'rgba(168,85,247,0.75)';
   const selectedRing = data.isAssistant ? 'rgba(229,229,229,0.22)' : 'rgba(233,213,255,0.30)';
   const showTooltip = hover && (data.label?.length ?? 0) > 34;
   return (
@@ -68,6 +75,11 @@ function KpNode(props: NodeProps<KpNodeData>) {
         position: 'relative',
       }}
       onClick={(e) => {
+        if (isDrafting) {
+          e.stopPropagation();
+          data.onToggleInclude?.();
+          return;
+        }
         // Support Cmd/Ctrl-click additive selection reliably (even when React Flow's internal
         // click selection doesn't play well with controlled nodes).
         e.stopPropagation();
@@ -83,6 +95,51 @@ function KpNode(props: NodeProps<KpNodeData>) {
       <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {data.label}
       </div>
+
+      {isDrafting ? (
+        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              data.onToggleInclude?.();
+            }}
+            className={`px-2 py-1 rounded border text-[10px] font-mono uppercase transition-colors ${
+              isIncluded
+                ? 'border-[rgba(59,130,246,0.65)] bg-[rgba(59,130,246,0.12)] text-[#bfe3ff]'
+                : 'border-[#3e3e42] bg-[#111111] text-[#cccccc] hover:bg-[#222222]'
+            }`}
+            title={isIncluded ? 'Included in draft' : 'Include in draft'}
+            aria-label={isIncluded ? 'Included in draft' : 'Include in draft'}
+          >
+            {isIncluded ? 'Included' : 'Include'}
+          </button>
+
+          {isIncluded && data.draftStage === 'rank_nodes' ? (
+            <div className="flex items-center gap-1">
+              {(['H', 'M', 'L'] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    data.onSetImportance?.(v);
+                  }}
+                  className={`w-[24px] h-[22px] rounded border text-[10px] font-mono uppercase transition-colors ${
+                    (data.draftImportance ?? 'L') === v
+                      ? 'border-[rgba(59,130,246,0.75)] bg-[rgba(59,130,246,0.18)] text-[#bfe3ff]'
+                      : 'border-[#3e3e42] bg-[#0f0f0f] text-[#9aa0a6] hover:bg-[#1e1e1e] hover:text-[#cccccc]'
+                  }`}
+                  title={`Mark as ${v}`}
+                  aria-label={`Mark as ${v}`}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {showTooltip ? (
         <div
@@ -115,7 +172,7 @@ function KpNode(props: NodeProps<KpNodeData>) {
         </div>
       ) : null}
 
-      {selected && !data.multiSelectActive ? (
+      {selected && !data.multiSelectActive && !isDrafting ? (
         <div style={{ position: 'absolute', right: 8, top: -12, display: 'flex', gap: 6 }}>
           <button
             type="button"
@@ -177,6 +234,13 @@ function IdeaGraphCanvasInner(props: {
   onAddSelectedToChat?: (kp: { id: string; label: string }) => void;
   onDeleteSelectedCascade?: (id: string) => void;
   onDeleteSelectedManyCascade?: (ids: string[]) => void;
+  drafting?: {
+    stage: 'select_nodes' | 'rank_nodes';
+    includedIds: string[];
+    importanceById: Record<string, 'H' | 'M' | 'L'>;
+    onToggleExplicit: (id: string) => void;
+    onSetImportance: (id: string, v: 'H' | 'M' | 'L') => void;
+  };
 }) {
   const ig = props.ig;
   const selectedIds = props.selectedIds ?? EMPTY_IDS;
@@ -186,6 +250,9 @@ function IdeaGraphCanvasInner(props: {
   const onAddSelectedToChat = props.onAddSelectedToChat;
   const onDeleteSelectedCascade = props.onDeleteSelectedCascade;
   const onDeleteSelectedManyCascade = props.onDeleteSelectedManyCascade;
+  const drafting = props.drafting;
+  const isDrafting = Boolean(drafting);
+  const includedSet = useMemo(() => new Set((drafting?.includedIds ?? []).map(String)), [drafting?.includedIds]);
   const [rfNodes, setRfNodes] = useState<Node<KpNodeData>[]>([]);
   const [rfEdges, setRfEdges] = useState<Edge[]>([]);
   const didFitRef = useRef(false);
@@ -307,7 +374,7 @@ function IdeaGraphCanvasInner(props: {
     let cancelled = false;
     const elk = new ELK();
     const NODE_W = 260;
-    const NODE_H = 54;
+    const NODE_H = isDrafting ? 92 : 54;
 
     const isAssistantById = new Map<string, boolean>();
     for (const n of visibleNodes) {
@@ -320,6 +387,8 @@ function IdeaGraphCanvasInner(props: {
       const isAssistant = facets.includes('src:assistant');
       const isGroup = facets.includes('GROUP:context');
       const label = String(n.label ?? '').trim();
+      const draftIncluded = includedSet.has(n.id);
+      const draftImportance = (drafting?.importanceById?.[n.id] ?? 'L') as 'H' | 'M' | 'L';
       return {
         id: n.id,
         type: 'kp',
@@ -329,6 +398,15 @@ function IdeaGraphCanvasInner(props: {
           isAssistant,
           isGroup,
           multiSelectActive: false,
+          ...(isDrafting
+            ? {
+                draftStage: drafting!.stage,
+                draftIncluded,
+                draftImportance,
+                onToggleInclude: () => drafting!.onToggleExplicit(n.id),
+                onSetImportance: (v: 'H' | 'M' | 'L') => drafting!.onSetImportance(n.id, v),
+              }
+            : {}),
           onSelect: (opts) => applySelection(n.id, opts),
           onInspect: () => {
             onSelectIdsRef.current?.([n.id]);
@@ -400,7 +478,7 @@ function IdeaGraphCanvasInner(props: {
     return () => {
       cancelled = true;
     };
-  }, [ig, visibleNodes, visibleEdges, applySelection]);
+  }, [ig, visibleNodes, visibleEdges, applySelection, isDrafting, includedSet, drafting]);
 
   if (!ig) {
     return (
@@ -447,6 +525,7 @@ function IdeaGraphCanvasInner(props: {
           rfInstanceRef.current = inst;
         }}
         onPaneClick={() => {
+          if (isDrafting) return;
           setRfNodes((prev) => {
             const next = prev.map((n) =>
               n.selected ? { ...n, selected: false, data: { ...(n.data as KpNodeData), multiSelectActive: false } } : n
@@ -457,6 +536,7 @@ function IdeaGraphCanvasInner(props: {
           });
         }}
         onNodesChange={(changes: NodeChange[]) => {
+          if (isDrafting) return;
           // React Flow selection (including box-select) updates nodes via onNodesChange.
           // Since we pass controlled `nodes`, we must apply these changes for selection to work.
           setRfNodes((prev) => {
@@ -476,6 +556,7 @@ function IdeaGraphCanvasInner(props: {
           });
         }}
         onSelectionChange={(sel) => {
+          if (isDrafting) return;
           // Some React Flow versions do not always emit selection changes via onNodesChange
           // in a way that updates our controlled `nodes`. Use this as an additional signal
           // to keep the parent bulk-toolbar selection in sync with what the user sees.
@@ -488,15 +569,16 @@ function IdeaGraphCanvasInner(props: {
         proOptions={{ hideAttribution: true }}
         panOnScroll
         // Enable box selection (drag rectangle on the pane). Keep panning available on middle/right mouse.
-        selectionOnDrag
+        selectionOnDrag={!isDrafting}
         selectionMode={SelectionMode.Partial}
         panOnDrag={[1, 2]}
         zoomOnScroll={false}
         zoomOnPinch
         zoomOnDoubleClick={false}
         nodesDraggable={false}
+        nodesSelectable={!isDrafting}
       >
-        {selectedCountLocal > 1 ? (
+        {selectedCountLocal > 1 && !isDrafting ? (
           <Panel position="top-right">
             <div className="flex items-center gap-2 rounded border border-[#3e3e42] bg-[#111111] px-2 py-1 shadow">
               <div className="text-[10px] font-mono uppercase text-[#cccccc]">{selectedCountLocal} selected</div>
@@ -565,6 +647,13 @@ export function IdeaGraphCanvas(props: {
   onAddSelectedToChat?: (kp: { id: string; label: string }) => void;
   onDeleteSelectedCascade?: (id: string) => void;
   onDeleteSelectedManyCascade?: (ids: string[]) => void;
+  drafting?: {
+    stage: 'select_nodes' | 'rank_nodes';
+    includedIds: string[];
+    importanceById: Record<string, 'H' | 'M' | 'L'>;
+    onToggleExplicit: (id: string) => void;
+    onSetImportance: (id: string, v: 'H' | 'M' | 'L') => void;
+  };
 }) {
   // React Flow hooks (useStore/useReactFlow) require a provider ancestor.
   // Wrap the inner canvas so hooks run under ReactFlowProvider.

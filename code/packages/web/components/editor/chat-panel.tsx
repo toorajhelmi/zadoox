@@ -256,6 +256,41 @@ export function ChatPanel(props: {
     if (!text || sending) return;
     const latestConception = conceptionRef.current;
     if (!isFullAI || !latestConception || !onSaveConception) return;
+
+    // Drafting flow: intercept system quick replies (do NOT send them to the LLM).
+    try {
+      const dm: any = (latestConception as any).dm ?? {};
+      const drafting: any = dm.drafting ?? null;
+      const stage = String(drafting?.stage ?? '');
+      if (stage === 'review' && (text === 'Include all ideas' || text === 'Select in the graph')) {
+        const next: any = { ...latestConception, dm: { ...dm }, updatedAt: new Date().toISOString() };
+        next.dm.drafting = {
+          ...(drafting ?? { includedNodeIds: [], importanceById: {} }),
+          stage: text === 'Include all ideas' ? 'rank_nodes' : 'select_nodes',
+          includedNodeIds: Array.isArray(drafting?.includedNodeIds) ? [...drafting.includedNodeIds] : [],
+          importanceById: (drafting?.importanceById && typeof drafting.importanceById === 'object') ? { ...drafting.importanceById } : {},
+        };
+
+        // For "include all", keep includedNodeIds empty (backend interprets as "all") but guide the user.
+        // For "select", user will pick explicit nodes (ancestors auto-included by backend during materialization).
+        const sysTurn = {
+          id: `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+          role: 'assistant' as const,
+          createdAt: new Date().toISOString(),
+          meta: { source: 'system' as const },
+          content:
+            text === 'Include all ideas'
+              ? `Great — including all ideas.\n\nNext: rank what matters most (H/M/L), then click “Start drafting”.`
+              : `Select the nodes you want to include in the graph.\n\nAncestors will be included automatically.\n\nWhen you’re done, click “Done selecting”.`,
+        };
+        next.turns = [...(latestConception.turns ?? []), sysTurn];
+        onSaveConception(next, 'ai-action');
+        return;
+      }
+    } catch {
+      // ignore: fall back to normal quick reply send
+    }
+
     setSending(true);
     void (async () => {
       try {

@@ -40,6 +40,7 @@ import { ensureLatexPreambleForLatexContent } from './latex-preamble';
 import { ActiveEditorSurface } from './active-editor-surface';
 import { IdeationSurface } from './conception/ideation-surface';
 import { buildInitialConceptionState } from './conception/conception-scaffold';
+import { buildConceptionDR } from './conception/conception-dr';
 import { useCanonicalIrState } from './editor-layout-canonical-ir';
 import { getActiveEditorText, getCursorScopeText, getSurfaceCapabilities, getSurfaceSyntax, getTypingHistoryAdapter, pickUndoRedo } from './editor-surface';
 // SG is stored separately on the Document (not in metadata).
@@ -1123,6 +1124,68 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                   conception={conception}
                   onSaveConception={(next, changeType) => {
                     saveMetadataPatch({ conception: next }, changeType ?? 'ai-action');
+                  }}
+                  onStartDrafting={async ({ includedNodeIds, importanceById }) => {
+                    if (!conception) return;
+                    if (!actualDocumentId && !documentId) return;
+
+                    // Switch to editor surface immediately, then show progress overlay during materialization.
+                    const dm: any = (conception as any).dm ?? {};
+                    const drafting: any = dm.drafting ?? { stage: 'review', includedNodeIds: [], importanceById: {} };
+                    const nextConception: ConceptionState = {
+                      ...conception,
+                      phase: 'formalization',
+                      dm: {
+                        ...dm,
+                        drafting: {
+                          ...drafting,
+                          stage: 'materializing',
+                          includedNodeIds: Array.isArray(includedNodeIds) ? includedNodeIds : drafting.includedNodeIds ?? [],
+                          importanceById: importanceById ?? drafting.importanceById ?? {},
+                        },
+                      },
+                      updatedAt: new Date().toISOString(),
+                    };
+                    saveMetadataPatch({ conception: nextConception }, 'ai-action');
+
+                    setSgBootstrapError(null);
+                    setBusyOverlayMessage('Planning outline…');
+                    setIsGeneratingContent(true);
+
+                    try {
+                      if (editMode !== 'markdown') {
+                        await handleEditModeChangeStable('markdown');
+                      }
+
+                      const dr = buildConceptionDR(nextConception);
+                      setBusyOverlayMessage('Materializing draft…');
+                      const out = await api.ai.conception.materializeDraft({
+                        dr,
+                        includedNodeIds: Array.isArray(includedNodeIds) ? includedNodeIds : undefined,
+                        importanceById: importanceById ?? undefined,
+                        model: 'auto',
+                      });
+
+                      setBusyOverlayMessage('Saving draft…');
+                      updateContent(out.xmd);
+                      await saveDocument(out.xmd, 'ai-action');
+
+                      // Mark drafting done (do not store large artifacts in metadata).
+                      const final: ConceptionState = {
+                        ...nextConception,
+                        dm: {
+                          ...(nextConception as any).dm,
+                          drafting: {
+                            ...((nextConception as any).dm?.drafting ?? {}),
+                            stage: 'done',
+                          },
+                        },
+                        updatedAt: new Date().toISOString(),
+                      };
+                      saveMetadataPatch({ conception: final }, 'ai-action');
+                    } finally {
+                      setIsGeneratingContent(false);
+                    }
                   }}
                   onPinKp={(kp) => {
                     setKpInsertQueue((prev) => [...prev, { id: kp.id, label: kp.label }]);
