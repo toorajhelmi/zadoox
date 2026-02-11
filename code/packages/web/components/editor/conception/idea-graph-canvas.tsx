@@ -576,7 +576,6 @@ function IdeaGraphCanvasInner(props: {
         zoomOnPinch
         zoomOnDoubleClick={false}
         nodesDraggable={false}
-        nodesSelectable={!isDrafting}
       >
         {selectedCountLocal > 1 && !isDrafting ? (
           <Panel position="top-right">
