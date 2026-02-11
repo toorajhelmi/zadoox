@@ -4,6 +4,7 @@ import type { ConceptionChatTurn, ConceptionProvenanceRef, ConceptionState, DocP
 import { api } from '@/lib/api/client';
 import { TwoStageV0 } from './strategy/two-stage-v0';
 import type { ConceptionStrategy } from './strategy/types';
+import { buildConceptionDR } from './conception-dr';
 
 function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n));
@@ -594,80 +595,31 @@ export async function generateSimulatedUserMessage(conception: ConceptionState):
   return String(out.message ?? '').trim();
 }
 
-function buildConceptionDR(
-  conception: ConceptionState,
-  opts?: { uiPinnedKps?: Array<{ id: string; label: string }>; contextGroup?: { id: string; anchorKps: Array<{ id: string; label: string }> }; latestUserTurnId?: string }
-): unknown {
-  const turns = conception.turns ?? [];
-  const lastTurns = turns.slice(Math.max(0, turns.length - 12)).map((t) => ({
-    id: t.id,
-    role: t.role,
-    content: t.content,
-    createdAt: t.createdAt,
-  }));
-  const turnCount = turns.length;
+function draftingSummary(conception: ConceptionState): string {
+  const dp = conception.docPlan ?? {};
+  const docType = String((dp as any).docType ?? 'unknown').trim() || 'unknown';
+  const prefs = (dp as any).prefs && typeof (dp as any).prefs === 'object' ? ((dp as any).prefs as Record<string, unknown>) : {};
+  const workingTitle = typeof (dp as any).workingTitle === 'string' ? String((dp as any).workingTitle).trim() : '';
+  const oneLiner = typeof (dp as any).oneLiner === 'string' ? String((dp as any).oneLiner).trim() : '';
+  const length = prefs['length.target'] ?? prefs['academic.targetLength'];
+  const audience = prefs['audience'] ?? prefs['blog.audience'] ?? prefs['academic.audience'];
 
-  const ig = conception.ideaGraph ?? { nodes: [], edges: [] };
-  // Include accepted nodes, plus high-confidence proposed nodes (so early “main topic” doesn't disappear).
-  const includeNodeIds = new Set(
-    (ig.nodes ?? [])
-      .filter((n) => {
-        if (n.status === 'deprecated') return false;
-        if (n.status === 'proposed') return clamp01(Number(n.confidence ?? 0)) >= 0.4;
-        return true;
-      })
-      .map((n) => n.id)
-  );
-  const igCompact = {
-    nodes: (ig.nodes ?? [])
-      .filter((n) => includeNodeIds.has(n.id))
-      .slice()
-      .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
-      .slice(0, 25)
-      .map((n) => ({
-        id: n.id,
-        label: n.label,
-        state: n.state,
-        weight: n.weight,
-        confidence: n.confidence,
-        status: n.status,
-        facets: n.facets,
-      })),
-    edges: (ig.edges ?? [])
-      .filter(
-        (e) =>
-          includeNodeIds.has(e.src) &&
-          includeNodeIds.has(e.dst) &&
-          e.status !== 'deprecated' &&
-          (e.status !== 'proposed' || clamp01(Number(e.confidence ?? 0)) >= 0.4)
-      )
-      .slice(0, 40)
-      .map((e) => ({
-        src: e.src,
-        dst: e.dst,
-        weight: e.weight,
-        confidence: e.confidence,
-        status: e.status,
-        facets: e.facets,
-      })),
-  };
+  const topIdeas = (conception.ideaGraph?.nodes ?? [])
+    .filter((n: any) => n && n.status !== 'deprecated')
+    .slice()
+    .sort((a: any, b: any) => Number(b.weight ?? 0) - Number(a.weight ?? 0))
+    .slice(0, 3)
+    .map((n: any) => String(n.label ?? '').trim())
+    .filter(Boolean);
 
-  return {
-    // UI surface is driven by `conception.phase`, but LLM mode is driven by DM.
-    // We keep the UI in ideation until the user explicitly starts drafting, while allowing the DM
-    // to switch into formalization mode for DocPlan questions.
-    phase: (conception as any)?.dm?.phase ?? conception.phase,
-    turnCount,
-    dm: conception.dm ?? {},
-    goalHypotheses: conception.goalHypotheses ?? [],
-    docPlan: conception.docPlan ?? {},
-    ideaGraph: igCompact,
-    lastTurns,
-    ...(opts?.uiPinnedKps && opts.uiPinnedKps.length > 0 ? { uiPinnedKps: opts.uiPinnedKps } : {}),
-    ...(opts?.contextGroup && opts.contextGroup.anchorKps.length >= 2
-      ? { contextGroup: { id: opts.contextGroup.id, anchorKps: opts.contextGroup.anchorKps, latestUserTurnId: opts.latestUserTurnId ?? '' } }
-      : {}),
-  };
+  const bits: string[] = [];
+  bits.push(`Doc type: ${docType}`);
+  if (workingTitle) bits.push(`Title: ${workingTitle}`);
+  if (!workingTitle && oneLiner) bits.push(`One-liner: ${oneLiner}`);
+  if (length) bits.push(`Target length: ${String(length)}`);
+  if (audience) bits.push(`Audience: ${String(audience)}`);
+  if (topIdeas.length > 0) bits.push(`Core ideas: ${topIdeas.join(' • ')}`);
+  return bits.join('\n');
 }
 
 export async function sendConceptionMessage(args: {
@@ -781,6 +733,42 @@ export async function sendConceptionMessage(args: {
       content: step.assistantText,
       createdAt: new Date().toISOString(),
     };
+
+    // If DocPlan is ready, kick off the drafting review/select flow (system turn + persisted drafting state).
+    try {
+      const dmAny = (out.next as any).dm ?? {};
+      const docPlanReady = Boolean((dmAny as any).docPlanReady);
+      const hasDrafting = Boolean((dmAny as any).drafting);
+      if (docPlanReady && !hasDrafting) {
+        (out.next as any).dm = {
+          ...(dmAny ?? {}),
+          drafting: {
+            stage: 'review',
+            includedNodeIds: [],
+            importanceById: {},
+          },
+        };
+        const sys: ConceptionChatTurn = {
+          id: `t-${generateId()}`,
+          role: 'assistant',
+          content:
+            `Doc Plan is ready.\n\n` +
+            `Here’s a quick summary:\n` +
+            `${draftingSummary(out.next)}\n\n` +
+            `Next, do you want to include **all** ideas, or select a subset in the graph?\n\n` +
+            `- Include all ideas\n` +
+            `- Select in the graph`,
+          createdAt: new Date().toISOString(),
+          meta: { source: 'system' },
+        };
+        out.next.turns = [...(out.next.turns ?? []), assistantTurn, sys];
+        const final: ConceptionState = { ...out.next, updatedAt: new Date().toISOString() };
+        onSaveConception(final, 'auto-save');
+        return;
+      }
+    } catch {
+      // ignore: drafting prompt is best-effort; core chat must continue
+    }
 
     const final: ConceptionState = {
       ...out.next,
