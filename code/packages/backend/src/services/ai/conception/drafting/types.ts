@@ -41,6 +41,8 @@ export const MaterializeDraftRequest = z
     dr: z.unknown(),
     includedNodeIds: IncludedNodeIds.optional(),
     importanceById: ImportanceById.optional(),
+    // Present on the API route; accepted here so strict parsing doesn't reject it.
+    model: z.enum(['openai', 'auto']).optional(),
   })
   .strict();
 export type MaterializeDraftRequest = z.infer<typeof MaterializeDraftRequest>;
