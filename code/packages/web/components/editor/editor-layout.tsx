@@ -1183,6 +1183,36 @@ export function EditorLayout({ projectId, documentId }: EditorLayoutProps) {
                         updatedAt: new Date().toISOString(),
                       };
                       saveMetadataPatch({ conception: final }, 'ai-action');
+                    } catch (err: unknown) {
+                      const msg = err instanceof Error ? err.message : String(err);
+                      console.error('Draft materialization failed:', err);
+                      // Roll back into drafting so the user can retry (avoid getting stuck in "materializing").
+                      const rolled: ConceptionState = {
+                        ...nextConception,
+                        phase: 'ideation',
+                        dm: {
+                          ...(nextConception as any).dm,
+                          drafting: {
+                            ...((nextConception as any).dm?.drafting ?? {}),
+                            stage: 'rank_nodes',
+                          },
+                        },
+                        turns: [
+                          ...(nextConception.turns ?? []),
+                          {
+                            id: `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+                            role: 'assistant',
+                            createdAt: new Date().toISOString(),
+                            meta: { source: 'system' },
+                            content:
+                              `Drafting failed.\n\n` +
+                              `${msg}\n\n` +
+                              `I switched you back to the IdeaGraph so you can retry “Start drafting”.`,
+                          } as any,
+                        ],
+                        updatedAt: new Date().toISOString(),
+                      };
+                      saveMetadataPatch({ conception: rolled }, 'ai-action');
                     } finally {
                       setIsGeneratingContent(false);
                     }

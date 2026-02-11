@@ -347,7 +347,25 @@ export function IdeationSurface(props: {
             ) : null}
 
             {draftingStage === 'materializing' ? (
-              <div className="text-[10px] font-mono uppercase text-[#969696]">Materializing…</div>
+              <>
+                <div className="text-[10px] font-mono uppercase text-[#969696]">Materializing…</div>
+                <button
+                  type="button"
+                  className="px-2 py-1 rounded border border-[rgba(59,130,246,0.45)] bg-[rgba(59,130,246,0.12)] hover:bg-[rgba(59,130,246,0.18)] text-[10px] font-mono uppercase text-[#bfe3ff] transition-colors"
+                  onClick={() => updateDrafting({ stage: 'rank_nodes', includedNodeIds: draftingIncludedNodeIds, importanceById: draftingImportanceById })}
+                  title="Retry drafting"
+                >
+                  Retry
+                </button>
+                <button
+                  type="button"
+                  className="px-2 py-1 rounded border border-[#3e3e42] bg-[#111111] hover:bg-[#222222] text-[10px] font-mono uppercase text-[#cccccc] transition-colors"
+                  onClick={() => updateDrafting({ stage: 'review', includedNodeIds: [], importanceById: draftingImportanceById })}
+                  title="Back"
+                >
+                  Back
+                </button>
+              </>
             ) : null}
           </div>
         ) : null}
